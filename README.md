@@ -45,9 +45,17 @@ An empty chat leaves no file.
 
 `curl`, `jq`, and [`usage`](https://usage.jdx.dev), which parses the
 `#USAGE` block at the top of the script into flags, help, and shell
-completions.
+completions. `mise install` provides `jq` and `usage` at the versions
+pinned in `mise.toml`; `curl` comes from the system.
 
 bash 5.1 or newer, so a multi-line paste in the chat loop is one turn.
+
+## Development
+
+```
+mise install                                  # every tool, pinned
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env    # every just recipe needs .env
+```
 
 ---
 

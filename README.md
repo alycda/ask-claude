@@ -52,8 +52,19 @@ bash 5.1 or newer, so a multi-line paste in the chat loop is one turn.
 
 ## Development
 
-```
-mise install                                  # every tool, pinned
+Every tool is pinned in `mise.toml`; there are two ways to get them.
+
+**Devcontainer.** Open the folder in VS Code and run *Dev Containers:
+Reopen in Container*, or `devcontainer up --workspace-folder .` from a
+shell. The mise feature installs mise, and `postCreateCommand` runs
+`mise install`, so `jq` and `usage` are on `PATH` once the container is
+up. The mise binary comes from the feature's pinned release and does not
+update itself; rebuild without the cache to get a newer one.
+
+**On the host.** Install [mise](https://mise.jdx.dev), then:
+
+```sh
+mise install                                  # jq and usage, pinned
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env    # every just recipe needs .env
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "ask-claude",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
     "ghcr.io/devcontainers-extra/features/mise:1": {}
   },
@@ -9,7 +9,8 @@
       "extensions": [
         "davidanson.vscode-markdownlint",
         "editorconfig.editorconfig",
-        "hverlin.mise-vscode"
+        "hverlin.mise-vscode",
+        "jacobpfeifer.pfeifer-hurl"
       ],
       "settings": {
         "mise.configureExtensionsAutomatically": false

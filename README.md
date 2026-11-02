@@ -75,6 +75,7 @@ just --list                                   # the map
 
 - [Bash](https://learnxinyminutes.com/bash/)
 - [Curl](https://curl.se/docs/tutorial.html)
+- [Hurl](https://hurl.dev/)
 - [JQ](https://learnxinyminutes.com/jq/)
 - [Usage](https://usage.jdx.dev/)
 - [Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages)

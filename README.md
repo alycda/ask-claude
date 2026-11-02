@@ -69,6 +69,9 @@ mise install                                  # jq and usage, pinned
 just --list                                   # the map
 ```
 
+`just completions zsh --install` (or bash, fish) installs tab completion for
+the spec, and says what to add to the shell's rc file.
+
 ---
 
 ### Resources

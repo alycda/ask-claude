@@ -62,3 +62,9 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
 @test "version: the script's copy matches VERSION (just check-version-line)" {
     grep -qx "readonly ASK_CLAUDE_VERSION=$(cat "$ROOT/VERSION")" "$BIN"
 }
+
+@test "completions: usage generates a script for each shell from the spec" {
+    usage generate completion zsh  ask-claude -f "$BIN" | grep -q '^#compdef ask-claude$'
+    usage generate completion bash ask-claude -f "$BIN" | grep -q 'complete .*ask-claude'
+    usage generate completion fish ask-claude -f "$BIN" | grep -q 'complete .*ask-claude'
+}

@@ -6,6 +6,17 @@ help:
 ask question="" *FLAGS:
     ./ask-claude {{FLAGS}} {{ quote(question) }}
 
+# shell completions from the #USAGE spec (bash, fish, nu, powershell, zsh). The
+# script embeds the spec, so re-run it after the spec changes. --install writes
+# it where the shell looks (zsh ~/.local/share/zsh/site-functions/_ask-claude,
+# bash ~/.local/share/bash-completion/completions/ask-claude,
+# fish ~/.config/fish/completions/ask-claude.fish) and prints the one-time
+# rc line zsh needs; without it the script goes to stdout.
+
+# tab completion for <shell> from the #USAGE spec; --install puts it where the shell looks
+completions shell *flags:
+    usage generate completion {{ quote(shell) }} ask-claude -f ask-claude {{ flags }}
+
 # offline: bats over recorded fixtures (tests/unit), no key needed
 unit-tests:
     bats tests/unit

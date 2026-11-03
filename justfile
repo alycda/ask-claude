@@ -8,6 +8,9 @@ help:
 unit-tests:
     bats tests/unit
 
+unit-test unit:
+    bats tests/unit/{{unit}}.bats
+
 # live Anthropic contracts; one cheap call each
 [working-directory: 'tests']
 test:

@@ -101,13 +101,19 @@ so the goldens stay valid and the Rust port has one shape to match.
 
 | # | Commit | Validation | Status |
 | --- | --- | --- | --- |
-| T9 | test: provider contracts | `tests/providers/openai-chat.hurl`, `tests/providers/venice-chat.hurl`: `POST /chat/completions`, `stream: true`, body contains `chat.completion.chunk` and ends with `data: [DONE]`; needs `OPENAI_API_KEY` / `VENICE_API_KEY`, run by `just test-providers`, not by `just test` | [t] |
+| T9 | test: provider contracts | `tests/providers/openai-compatible.hurl`, run once per provider by `just test-providers` with `base_url`, `api_key`, `model` variables: `POST /chat/completions`, `stream: true`, `chat.completion.chunk`, `finish_reason: stop`, `data: [DONE]`; needs `OPENAI_API_KEY` / `VENICE_API_KEY`, never run by `just test` | [t] |
 | F9 | feat: `--provider` in the spec | `flag "-p --provider <provider>" default="anthropic"`; bash rejects anything else with exit 2 and the message "not implemented in the bash version, see docs/plan.md" | T9 unchanged, spec test extended |
 
-Venice is OpenAI-compatible at `https://api.venice.ai/api/v1` (Bearer auth,
-`venice_parameters` extension). OpenAI chat streaming: `data:` lines carrying
-`chat.completion.chunk` objects, terminated by `data: [DONE]`. Both are one
-reassembler away; that reassembler is written once, in Rust.
+Venice is OpenAI-compatible at `https://api.venice.ai/api/v1` (Bearer auth;
+accepts `max_completion_tokens` and `stream_options`; `venice_parameters` is
+its only extension, `store` and `user` are accepted and ignored). OpenAI chat
+streaming: `data:` lines carrying `chat.completion.chunk` objects, terminated
+by `data: [DONE]`. One reassembler covers both; it is written once, in Rust.
+
+| provider | base_url | key | default model |
+|---|---|---|---|
+| openai | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-4.1-mini` |
+| venice | `https://api.venice.ai/api/v1` | `VENICE_API_KEY` | `zai-org-glm-5-1` |
 
 ## Phase 4: Rust port
 
@@ -122,7 +128,7 @@ Crate `ask-claude` in `rust/` (own line, merged when it reaches parity).
 | R4 | feat: stream printer | same bytes as `*.stream.txt` | [ ] |
 | R5 | feat: transport trait, replay impl | the bats suite runs unchanged against the Rust binary via `ASK_CLAUDE_BIN` | [ ] |
 | R6 | feat: history, list, resume, chat loop | same bats files, same `XDG_STATE_HOME` seam | [ ] |
-| R7 | feat: `Provider` trait, OpenAI-style reassembler | `tests/providers/*.hurl` green; a recorded OpenAI fixture gets its own goldens then | [ ] |
+| R7 | feat: `Provider` trait with two impls: `Anthropic` and `OpenAiCompatible { base_url }`; openai and venice are rows in a table, not types | `tests/providers/openai-compatible.hurl` green for both rows; a recorded OpenAI-shape fixture gets its own goldens then | [ ] |
 | R8 | chore: `just test-rust` runs the bats suite against both binaries | both green; bash stays the oracle until R8 is merged | [ ] |
 
 Parity gate before replacing the bash binary: every bats test green on both,

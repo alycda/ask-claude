@@ -49,7 +49,8 @@ skills:
         jq -r 'if .data then .data[] | [.id, (.display_title // "-"), (.latest_version // "-")] | @tsv
                else "just skills: \(.error.message // "unreadable response")\n" | halt_error end'
 
-# live OpenAI-style contracts; needs OPENAI_API_KEY and VENICE_API_KEY in .env
+# live OpenAI-compatible contract, once per provider; needs OPENAI_API_KEY and VENICE_API_KEY in .env
 [working-directory: 'tests/providers']
 test-providers:
-    hurl --test --secret openai_key="$OPENAI_API_KEY" --secret venice_key="$VENICE_API_KEY" openai-chat.hurl venice-chat.hurl
+    hurl --test --variable base_url=https://api.openai.com/v1    --variable model=gpt-4.1-mini    --secret api_key="$OPENAI_API_KEY" openai-compatible.hurl
+    hurl --test --variable base_url=https://api.venice.ai/api/v1 --variable model=zai-org-glm-5-1 --secret api_key="$VENICE_API_KEY" openai-compatible.hurl

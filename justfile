@@ -12,7 +12,7 @@ unit-test unit:
     bats tests/unit/{{unit}}.bats
 
 step name:
-    bats --filter-tags step:{{ name }} tests/unit/reassemble-steps.bats
+    bats --filter-tags step:{{ name }} tests/unit/*-steps.bats
 
 # live Anthropic contracts; one cheap call each
 [working-directory: 'tests']

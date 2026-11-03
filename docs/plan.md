@@ -72,12 +72,12 @@ change, that is its own commit with the reason in the message.
 | T0 | test: harness | `mise.toml` (+bats), `justfile` (`test-unit`, `test-live`), `tests/fixtures/**`, `tests/unit/helpers.bash` | `just test-unit` runs, 0 tests | [t] |
 | T1 | test: reassembler goldens | `tests/unit/reassemble.bats` | `jq -s -f lib/reassemble.jq fixture` == `fixture.message.json`, 3 fixtures | [x] |
 | F1 | feat: lib/reassemble.jq | the `jq -s` program from `call()`, verbatim | T1 green | [x] |
-| T2 | test: stream printer goldens | `tests/unit/stream.bats` | `jq -rj -f lib/stream.jq` == `fixture.stream.txt` | [t] |
-| F2 | feat: lib/stream.jq | the `--unbuffered -rj` filter, verbatim | T2 green | [ ] |
-| T3 | test: request builder goldens | `tests/unit/request.bats` | 4 arg sets == `request/*.json`; `skills_json` == `skills.json` | [t] |
-| F3 | feat: lib/request.jq + lib/skills.jq | the `jq -n` body and the `$SKILLS` parser | T3 green | [ ] |
-| T4 | test: usage spec | `tests/unit/spec.bats` | `--help` lists `list`/`resume`; `usage explain` binds every flag; `resume [chat]` optional | [t] |
-| F4 | feat: subcommands in the spec | `ask-claude` `#USAGE` block only | T4 green, `just lint` | [ ] |
+| T2 | test: stream printer goldens | `tests/unit/stream.bats` | `jq -rj -f lib/stream.jq` == `fixture.stream.txt` | [x] |
+| F2 | feat: lib/stream.jq | the `--unbuffered -rj` filter, verbatim | T2 green | [x] |
+| T3 | test: request builder goldens | `tests/unit/request.bats` | 4 arg sets == `request/*.json`; `skills_json` == `skills.json` | [x] |
+| F3 | feat: lib/request.jq + lib/skills.jq | the `jq -n` body and the `$SKILLS` parser | T3 green | [x] |
+| T4 | test: usage spec | `tests/unit/spec.bats` | `--help` lists `list`/`resume`; `usage explain` binds every flag; `resume [chat]` optional | [x] |
+| F4 | feat: subcommands in the spec | `ask-claude` `#USAGE` block only | T4 green, `just lint` | [x] |
 
 jq file contract: each `lib/*.jq` is a complete program (`jq -f`), takes its
 inputs exactly the way claude.sh passed them (`--arg m`, `--argjson max`,

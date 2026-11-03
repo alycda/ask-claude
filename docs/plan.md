@@ -76,8 +76,8 @@ change, that is its own commit with the reason in the message.
 | F2 | feat: lib/stream.jq | the `--unbuffered -rj` filter, verbatim | T2 green | [ ] |
 | T3 | test: request builder goldens | `tests/unit/request.bats` | 4 arg sets == `request/*.json`; `skills_json` == `skills.json` | [t] |
 | F3 | feat: lib/request.jq + lib/skills.jq | the `jq -n` body and the `$SKILLS` parser | T3 green | [ ] |
-| T4 | test: usage spec | `tests/unit/spec.bats` | `--help` lists `list`/`resume`; `usage explain` binds every flag; `resume [chat]` optional | [t] |
-| F4 | feat: subcommands in the spec | `ask-claude` `#USAGE` block only | T4 green, `just lint` | [ ] |
+| T4 | test: usage spec | `tests/unit/spec.bats` | `--help` lists `list`/`resume`; `usage explain` binds every flag; `resume [chat]` optional | [x] |
+| F4 | feat: subcommands in the spec | `ask-claude` `#USAGE` block only | T4 green, `just lint` | [x] |
 
 jq file contract: each `lib/*.jq` is a complete program (`jq -f`), takes its
 inputs exactly the way claude.sh passed them (`--arg m`, `--argjson max`,

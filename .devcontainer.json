@@ -10,7 +10,10 @@
         "davidanson.vscode-markdownlint",
         "editorconfig.editorconfig",
         "hverlin.mise-vscode",
-        "jacobpfeifer.pfeifer-hurl"
+        "jacobpfeifer.pfeifer-hurl",
+        "jetmartin.bats",
+        "skellock.just",
+        "timonwong.shellcheck"
       ],
       "settings": {
         "mise.configureExtensionsAutomatically": false

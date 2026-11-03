@@ -1,0 +1,36 @@
+{
+  "model": "claude-opus-5-5",
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi"
+    }
+  ],
+  "fallbacks": "default",
+  "stream": true,
+  "cache_control": {
+    "type": "ephemeral"
+  },
+  "tools": [
+    {
+      "type": "code_execution_20260521",
+      "name": "code_execution"
+    }
+  ],
+  "container": {
+    "skills": [
+      {
+        "skill_id": "pptx",
+        "version": "latest",
+        "type": "anthropic"
+      },
+      {
+        "skill_id": "skill_abc",
+        "version": "skver_1",
+        "type": "custom"
+      }
+    ],
+    "id": "container_FIXTURE"
+  }
+}

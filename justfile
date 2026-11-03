@@ -48,3 +48,8 @@ skills:
         -H @<(printf 'x-api-key: %s\nanthropic-version: 2026-10-21\n' "$ANTHROPIC_API_KEY") |
         jq -r 'if .data then .data[] | [.id, (.display_title // "-"), (.latest_version // "-")] | @tsv
                else "just skills: \(.error.message // "unreadable response")\n" | halt_error end'
+
+# live OpenAI-style contracts; needs OPENAI_API_KEY and VENICE_API_KEY in .env
+[working-directory: 'tests/providers']
+test-providers:
+    hurl --test --secret openai_key="$OPENAI_API_KEY" --secret venice_key="$VENICE_API_KEY" openai-chat.hurl venice-chat.hurl

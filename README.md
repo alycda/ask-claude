@@ -66,6 +66,7 @@ update itself; rebuild without the cache to get a newer one.
 ```sh
 mise install                                  # jq and usage, pinned
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env    # every just recipe needs .env
+just --list                                   # the map
 ```
 
 ---
@@ -77,3 +78,4 @@ echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env    # every just recipe needs .env
 - [JQ](https://learnxinyminutes.com/jq/)
 - [Usage](https://usage.jdx.dev/)
 - [Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages)
+- [Justfile](https://github.com/casey/just)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # claude.sh - talk to Claude with nothing but curl + jq.
 #
-#   ./claude.sh "one question"           one shot, prints the answer
+#   ./claude.sh "one question"          one shot, prints the answer
 #   ./claude.sh                          chat loop; /new resets, /quit exits
 #   ./claude.sh -f notes.md "summarize"  file contents + prompt, one shot
 #   ./claude.sh --resume                 continue the most recent chat

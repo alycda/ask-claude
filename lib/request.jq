@@ -39,8 +39,9 @@
     stream: true,
     cache_control: {type: "ephemeral"}
 }
-# TODO: system ($sys) when $sys is not ""
-+ {}
+# system: the system prompt, only when one was given. When $sys is "" the
+# else branch adds {}, which adds nothing, so the key is left out.
++ (if $sys != "" then {system: $sys} else {} end)
 # TODO: output_config: {effort: $eff} when $eff is not ""
 + {}
 # TODO: when $skills is not "":

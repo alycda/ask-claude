@@ -10,6 +10,14 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.3 (micro) - 2026-11-05
+
+- `ask-claude agent budget <session> <cents>` changes a session's cap (`0`
+  removes it, for good), `agent archive <session>` archives an idle one,
+  `agent trace <session>` prints its page in the Console
+  (`ASK_CLAUDE_WORKSPACE` when the key is not in the Default workspace).
+  Nothing the spec declares is refused any more.
+
 ## 0.2.2 (micro) - 2026-11-05
 
 - `agent --vault <vlt_id>`, `--repo owner/name[@branch]` (with `GITHUB_TOKEN`)

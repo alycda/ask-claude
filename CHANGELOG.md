@@ -10,6 +10,14 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.2 (micro) - 2026-11-05
+
+- `agent --vault <vlt_id>`, `--repo owner/name[@branch]` (with `GITHUB_TOKEN`)
+  and `--memory <memstore_id>[:ro]` attach credentials, a repository and
+  memory stores to the session; the README says what to make in the Console
+  for each.
+- Still refused with exit 2: `agent budget`, `agent archive`, `agent trace`.
+
 ## 0.2.1 (micro) - 2026-11-05
 
 - `-f FILE` with `agent` uploads the file and the agent finds it at

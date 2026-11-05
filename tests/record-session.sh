@@ -11,6 +11,10 @@
 # <dir>/<name>.sse with every id replaced by a stable FIXTURE id. A session
 # that stops with requires_action is left for you to answer by hand; stream it
 # again with `ASK_CLAUDE_SESSION=<sesn> tests/record-session.sh <name>-2`.
+# ASK_CLAUDE_IDMAP=<file> keeps the id map across those runs: each run loads
+# it, extends it and writes it back, so the tool_use answered in stream 2 has
+# the same FIXTURE id it had in stream 1. The file holds real ids: keep it out
+# of the repo (it is created 0600).
 # Ids and the agent's name are the only things redacted: keep prompts free of
 # anything private. `tests/record-session.sh --redact` runs the redaction on
 # stdin alone (tests/unit/record-session.bats).
@@ -22,8 +26,20 @@ set -euo pipefail
 # "agent_name" matches the id pattern too, so a match followed by ": is left
 # alone (it is a key), and agent_name is replaced before ids are.
 redact() {
+  local idmap=${ASK_CLAUDE_IDMAP:-}
+  [ -z "$idmap" ] || (umask 077 && : >>"$idmap")
   sed -u 's/"agent_name":"[^"]*"/"agent_name":"fixture"/g' |
-    awk '
+    awk -v idmap="$idmap" '
+    # the map so far: one "real<TAB>fixture" per line; the counters resume
+    # from the highest number seen per prefix
+    BEGIN {
+      if (idmap != "") while ((getline l < idmap) > 0) {
+        split(l, f, "\t"); map[f[1]] = f[2]
+        split(f[2], q, "_FIXTURE"); if (q[2] + 0 > n[q[1]]) n[q[1]] = q[2] + 0
+      }
+      if (idmap != "") close(idmap)
+    }
+    END { if (idmap != "") { printf "" > idmap; for (k in map) print k "\t" map[k] > idmap } }
     { line = $0; out = ""
       while (match(line, /(sevt|sesn|agent|env|sthr|vlt|file|memstore)_[A-Za-z0-9]+/)) {
         id = substr(line, RSTART, RLENGTH)

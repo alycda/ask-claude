@@ -1,0 +1,2288 @@
+[
+ {
+  "coverage_id": ".claude%2Fskills%2Fsecurity-audit%23audit%20tooling::run-metadata.json%23out_of_scope_paths::.claude%2Fskills%2Fsecurity-audit::ATTACK-CLASSES.md%23Wildcard",
+  "canonical_refs": {
+   "surface": ".claude/skills/security-audit#audit tooling",
+   "boundary": "run-metadata.json#out_of_scope_paths",
+   "subsystem": ".claude/skills/security-audit",
+   "attack_class": "ATTACK-CLASSES.md#Wildcard"
+  },
+  "surface": ".claude/skills/security-audit#audit tooling",
+  "boundary": "run-metadata.json#out_of_scope_paths",
+  "subsystem": ".claude/skills/security-audit",
+  "attack_class": "ATTACK-CLASSES.md#Wildcard",
+  "starting_paths": [
+   ".claude/skills/security-audit/SKILL.md"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "out_of_scope",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "audit tooling added by ysstqwps for this run; not part of the reviewed product"
+  ]
+ },
+ {
+  "coverage_id": "ask-claude.sh%23--base-url::ask-claude.sh%23base-url%20scheme%20and%20loopback%20gate::ask-claude.sh%23transport::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#--base-url",
+   "boundary": "ask-claude.sh#base-url scheme and loopback gate",
+   "subsystem": "ask-claude.sh#transport",
+   "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+  },
+  "surface": "ask-claude.sh#--base-url",
+  "boundary": "ask-claude.sh#base-url scheme and loopback gate",
+  "subsystem": "ask-claude.sh#transport",
+  "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "starting_paths": [
+   "ask-claude.sh",
+   "tests/record-session.sh"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h4-secrets",
+  "reviewed_paths": [
+   "ask-claude.sh",
+   "tests/record-session.sh"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Any http:// --base-url reaches only a loopback host, so x-api-key never travels in clear over a network (ask-claude.sh:88-96). The same BASE_URL feeds every curl call: 251 (messages), 381/384 (ma_call), 401 (session stream), 668 (file upload), 698 (file download).",
+    "method": "source",
+    "result": "The gate is a shell glob on the raw string. The patterns http://localhost[:/]*, http://127.0.0.1[:/]* and http://\\[::1\\][:/]* accept a ':' after the loopback literal, and nothing after it is checked. curl reads 'localhost:' as RFC 3986 userinfo when an '@' follows, so http://localhost:@evil.host passes the gate, and the authority curl connects to is evil.host. No later check of the host exists. No curl call passes -L, and https://* to any host is accepted by design.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Bounded run of the real script: the gate must refuse every http URL whose effective host is not loopback.",
+    "method": "local",
+    "result": "The controls http://evil.invalid and http://localhost.evil.invalid exit 2 at the gate. http://localhost:@evil.invalid, http://127.0.0.1:@evil.invalid, http://[::1]:x@evil.invalid and http://localhost:8080@evil.invalid/ all pass the gate, and curl reports 'Could not resolve host: evil.invalid'. The TCP connect was rerouted to a loopback stub through a test-HOME curlrc. The stub received plaintext 'POST /v1/messages', 'Host: evil.invalid' and 'x-api-key: sk-ant-test-not-a-key'.",
+    "artifact": "agents/h4-secrets/artifacts/baseurl-gate-bypass.txt"
+   },
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "tests/record-session.sh"
+    ],
+    "invariant": "The sibling live fixture recorder keeps the key off argv and away from cleartext transport.",
+    "method": "source",
+    "result": "The key goes into a mktemp header file (mode 600, removed on EXIT) and reaches curl as -H @file, so it is not on argv. ASK_CLAUDE_BASE_URL (line 20) has no scheme gate at all, so http to any host is accepted. This is developer-only, user-set test tooling, recorded as hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v01",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Any http:// --base-url reaches only a loopback host, so x-api-key never travels in clear over a network (ask-claude.sh:88-97); BASE_URL feeds curl at 251, 381, 384, 401, 668, 698 with no other host check and no -L.",
+    "method": "source",
+    "result": "Confirmed by reading: line 94 is a raw-string case glob whose ':' branch admits userinfo; line 97 derives API unchanged; headers() at 349 emits x-api-key; transport() at 251-253 and ma_call/session_stream_open/file_upload/session_files reuse BASE_URL. No other validation of the host exists. Trace and evidence lines 89, 91, 94, 97, 249/251, 252, 349 are accurate.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v01",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Bounded run of the real script in the parent sandbox (--network none, empty env, read-only target): the gate must refuse every http URL whose effective host is not loopback.",
+    "method": "local",
+    "result": "Controls http://evil.invalid, http://localhost.evil.invalid, http://127.0.0.1.evil.invalid exit 2 at the gate. Payloads http://localhost:@evil.invalid, http://127.0.0.1:@evil.invalid, http://[::1]:x@evil.invalid, http://localhost:8080@evil.invalid/ pass the gate (curl: Could not resolve host: evil.invalid, rc=1). With HOME/.curlrc connect-to evil.invalid:80 -> 127.0.0.1:8099 and an independent perl listener, the listener captured 'POST /v1/messages HTTP/1.1', 'Host: evil.invalid', 'x-api-key: sk-ant-test-not-a-key' for two payloads. Environment: bash 5.2.21, curl 8.5.0; jq version not on the path to the sink.",
+    "artifact": "agents/v01/artifacts/out.txt"
+   },
+   {
+    "agent_id": "v01",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "The proposed fix accepts legitimate https and loopback http roots and refuses every userinfo form.",
+    "method": "local",
+    "result": "In the sandbox, the fixed gate accepted https://api.anthropic.com, http://localhost, http://localhost:8080, http://localhost:8080/, http://127.0.0.1:9/x, http://[::1]:1/ and refused all four payloads, http://localhost.evil.invalid, http://evil.invalid, https://u:p@host and http://localhost:80\\@evil.",
+    "artifact": "agents/v01/artifacts/fix-check.txt"
+   }
+  ],
+  "result_fingerprints": [
+   "ask-claude.sh:base-url-gate:loopback-userinfo-bypass"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h4-secrets",
+  "x_hardening": [
+   "No curl call passes -q, so ~/.curlrc is honoured. The sandbox run confirmed that a curlrc in HOME changes curl behaviour. A user curlrc containing 'location' would make curl follow redirects, and curl resends -H custom headers (x-api-key) to the redirect target, including https-to-http downgrades. Suggest making -q the first curl argument at ask-claude.sh:251, 381, 384, 401, 668 and 698.",
+   "ASK_CLAUDE_REQUEST_LOG logs request bodies in live mode, not only under ASK_CLAUDE_REPLAY, although the comment at ask-claude.sh:361-363 says it is for replay. The bodies include the MCP authorization_token and the GitHub repository authorization_token. tee -a and >> keep the mode of an existing file: a pre-existing 0644 log stayed 0644 with the token appended. Suggest logging only when ASK_CLAUDE_REPLAY is set, or redacting authorization_token fields, and refusing to append to a file not owned by the user or with group/other permissions.",
+   "tests/record-session.sh:20 uses ASK_CLAUDE_BASE_URL with no scheme or loopback gate, so a live recording sends the key over http to any host. Suggest copying the main script's (fixed) gate.",
+   "--base-url accepts any https host and sends ANTHROPIC_API_KEY to it, and the help text suggests a third-party host (Venice). The help text could warn that the Anthropic key, plus any MCP or GitHub tokens in the body, go to that host.",
+   "Long -f files (over 128 KiB on Linux, MAX_ARG_STRLEN) fail at jq --arg (ask-claude.sh:335) with E2BIG. This is a functional limit that the stdin-based fix for the argv finding also removes.",
+   "The sandbox jq is 1.7 while the target pins 1.8.2. The checks use only --arg, env.* and --slurpfile, which behave the same in both versions."
+  ],
+  "x_decisions": {
+   "ask-claude.sh:base-url-gate:loopback-userinfo-bypass": {
+    "verifier": "v01",
+    "decision": "confirmed"
+   }
+  }
+ },
+ {
+  "coverage_id": "ask-claude.sh%23--mcp::lib%2Frequest.jq%23mcp_servers%20authorization_token::lib%2Frequest.jq::AI-AND-LLM.md%23Sub-agent%20and%20MCP%20trust%20inheritance",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#--mcp",
+   "boundary": "lib/request.jq#mcp_servers authorization_token",
+   "subsystem": "lib/request.jq",
+   "attack_class": "AI-AND-LLM.md#Sub-agent and MCP trust inheritance"
+  },
+  "surface": "ask-claude.sh#--mcp",
+  "boundary": "lib/request.jq#mcp_servers authorization_token",
+  "subsystem": "lib/request.jq",
+  "attack_class": "AI-AND-LLM.md#Sub-agent and MCP trust inheritance",
+  "starting_paths": [
+   "ask-claude.sh",
+   "lib/request.jq"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Sub-agent and MCP trust inheritance",
+   "AI-AND-LLM.md#MCP server and tool identity confusion",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h4-secrets",
+  "reviewed_paths": [
+   "README.md",
+   "ask-claude.sh",
+   "lib/request.jq"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/request.jq"
+    ],
+    "invariant": "A credential meant for one MCP server is delegated only to that server (credential audience narrowing).",
+    "method": "source",
+    "result": "ask-claude.sh:101-103 checks only that each --mcp value starts with https://. At ask-claude.sh:276 the space-joined URL list goes to request.jq. At lib/request.jq:58-59 one env.ASK_CLAUDE_MCP_TOKEN is attached as authorization_token to every mcp_servers entry. No per-server token mapping exists, and nothing warns when the token is set and more than one server is given. The token is read from the environment, not from argv. The README (lines 18 and 33) documents the token as being 'for the --mcp servers', so the fan-out is documented but not scoped.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/request.jq"
+    ],
+    "invariant": "Bounded replay run with two --mcp servers and one token: inspect the request body.",
+    "method": "local",
+    "result": "The logged request body has mcp_servers equal to [{url:https://a.example/mcp, name:a-example, authorization_token:tok_FOR_SERVER_A_ONLY}, {url:https://b.example/mcp, name:b-example, authorization_token:tok_FOR_SERVER_A_ONLY}]. Server B is bound to server A's token.",
+    "artifact": "agents/h4-secrets/artifacts/mcp-token-and-request-log.txt"
+   },
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "lib/request.jq"
+    ],
+    "invariant": "MCP server and tool identity binding: two servers must not be able to claim one identity.",
+    "method": "source",
+    "result": "The name comes from host() (lib/request.jq:38): the host before the first '/' or ':', with any character outside [A-Za-z0-9_-] replaced by '-'. As a result, a-b.example and a.b.example collide, and so do two paths on one host. The mcp_toolset refers to its server by that name (line 66). Server-side routing and duplicate-name handling are done by the provider and are not observable locally. The URLs come only from the user, so no attacker can choose the colliding name, and no finding is recorded for this.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v10",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/request.jq",
+     "README.md"
+    ],
+    "invariant": "A credential meant for one MCP server is delegated only to that server (credential audience narrowing).",
+    "method": "source",
+    "result": "Trace lines verified: ask-claude.sh:101-103 is a scheme-only loop over usage_mcp; ask-claude.sh:276 passes --arg mcp \"${usage_mcp:-}\"; lib/request.jq:58-59 maps each word of $mcp to {type,url,name} plus authorization_token from env.ASK_CLAUDE_MCP_TOKEN; ask-claude.sh:251 is the curl call in transport(). No per-server token variable, mapping, or multi-server warning exists. README.md:18 says the token 'is sent as its authorization token' and README.md:33 says it is for 'the --mcp servers'. The hunter's second blocker (product intent) is dropped: it is not a boundary fact an owner can observe, and the documented fan-out does not narrow the audience. Not refuted by source.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v10",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/request.jq"
+    ],
+    "invariant": "Bounded replay with two --mcp servers and one token: inspect the logged request body.",
+    "method": "local",
+    "result": "Sandbox run (network none, dummy key) exited 0. Logged body: mcp_servers=[{url:https://private-a.example/mcp,name:private-a-example,authorization_token:dummy_token_for_private_A},{url:https://public-b.example/mcp,name:public-b-example,authorization_token:dummy_token_for_private_A}], tools=two mcp_toolset entries. Reproduces the hunter's observation independently.",
+    "artifact": "agents/v10/artifacts/mcp2-result.txt"
+   }
+  ],
+  "result_fingerprints": [
+   "lib/request.jq:mcp_servers:shared-authorization-token"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h4-secrets",
+  "x_hardening": [
+   "No curl call passes -q, so ~/.curlrc is honoured. The sandbox run confirmed that a curlrc in HOME changes curl behaviour. A user curlrc containing 'location' would make curl follow redirects, and curl resends -H custom headers (x-api-key) to the redirect target, including https-to-http downgrades. Suggest making -q the first curl argument at ask-claude.sh:251, 381, 384, 401, 668 and 698.",
+   "ASK_CLAUDE_REQUEST_LOG logs request bodies in live mode, not only under ASK_CLAUDE_REPLAY, although the comment at ask-claude.sh:361-363 says it is for replay. The bodies include the MCP authorization_token and the GitHub repository authorization_token. tee -a and >> keep the mode of an existing file: a pre-existing 0644 log stayed 0644 with the token appended. Suggest logging only when ASK_CLAUDE_REPLAY is set, or redacting authorization_token fields, and refusing to append to a file not owned by the user or with group/other permissions.",
+   "tests/record-session.sh:20 uses ASK_CLAUDE_BASE_URL with no scheme or loopback gate, so a live recording sends the key over http to any host. Suggest copying the main script's (fixed) gate.",
+   "--base-url accepts any https host and sends ANTHROPIC_API_KEY to it, and the help text suggests a third-party host (Venice). The help text could warn that the Anthropic key, plus any MCP or GitHub tokens in the body, go to that host.",
+   "Long -f files (over 128 KiB on Linux, MAX_ARG_STRLEN) fail at jq --arg (ask-claude.sh:335) with E2BIG. This is a functional limit that the stdin-based fix for the argv finding also removes.",
+   "The sandbox jq is 1.7 while the target pins 1.8.2. The checks use only --arg, env.* and --slurpfile, which behave the same in both versions."
+  ],
+  "x_decisions": {
+   "lib/request.jq:mcp_servers:shared-authorization-token": {
+    "verifier": "v10",
+    "decision": "needs_validation"
+   }
+  }
+ },
+ {
+  "coverage_id": "ask-claude.sh%23ASK_CLAUDE_REQUEST_LOG%20and%20jq%20argv::ask-claude.sh%23umask%20077%20and%20secrets-off-argv%20design::ask-claude.sh%23transport::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#ASK_CLAUDE_REQUEST_LOG and jq argv",
+   "boundary": "ask-claude.sh#umask 077 and secrets-off-argv design",
+   "subsystem": "ask-claude.sh#transport",
+   "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+  },
+  "surface": "ask-claude.sh#ASK_CLAUDE_REQUEST_LOG and jq argv",
+  "boundary": "ask-claude.sh#umask 077 and secrets-off-argv design",
+  "subsystem": "ask-claude.sh#transport",
+  "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "starting_paths": [
+   "ask-claude.sh",
+   "lib/request.jq",
+   "lib/session-create.jq"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h4-secrets",
+  "reviewed_paths": [
+   "ask-claude.sh",
+   "lib/request.jq",
+   "lib/session-create.jq"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-create.jq"
+    ],
+    "invariant": "The secrets-off-argv design (ask-claude.sh:240-241): the key, tokens and private request text never appear on a child process command line.",
+    "method": "source",
+    "result": "The API key reaches curl only through -H @<(headers) (printf is a builtin, and curl argv shows /dev/fd/N). Bodies reach curl on stdin. GITHUB_TOKEN and ASK_CLAUDE_MCP_TOKEN are read inside jq through env.*. However, the user text goes on jq argv: ask() at line 335 (--arg c, which carries -f file contents from lines 851-857 and every chat-loop line from line 224), session_create at line 569 (--arg prompt, the first agent chat line from line 648), and line 651 (--arg t, later agent chat lines).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-create.jq"
+    ],
+    "invariant": "Bounded run with jq and curl argv-recording shims: which canaries appear in child argv.",
+    "method": "local",
+    "result": "In jq argv, FILE-CONTENT-CANARY (the -f file contents, which were not on the script's own argv) appeared 1 time, CHAT-LINE-CANARY (typed on stdin) 1, AGENT-FIRST-LINE-CANARY 1 and AGENT-NEXT-LINE-CANARY 1. The API key, MCP token and GitHub token canaries appeared 0 times in jq argv and 0 times in curl argv. Live curl argv was '-sS -N --max-time 1800 http://127.0.0.1:9/v1/messages -H @/dev/fd/63 --data-binary @-'.",
+    "artifact": "agents/h4-secrets/artifacts/argv-exposure.txt"
+   },
+   {
+    "agent_id": "h4-secrets",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/request.jq",
+     "lib/session-create.jq"
+    ],
+    "invariant": "ASK_CLAUDE_REQUEST_LOG writes token-bearing bodies only for testing, and only to a private file.",
+    "method": "local",
+    "result": "The log is written in live mode as well as in replay: transport() at lines 243-244 and ma_call() at line 366 are not gated on ASK_CLAUDE_REPLAY, even though the comment at lines 361-363 says 'Replay: the body is logged'. With the network off, live runs logged tok_LIVE_MCP (authorization_token) and ghp_LIVE_GITHUB (github_repository authorization_token). A new log file is 600 because of umask 077. A pre-existing 0644 file stayed 0644 after tee -a appended the MCP token. The variable is user-set testing tooling, and no other principal was shown to read the file, so this is recorded as hardening, not a candidate.",
+    "artifact": "agents/h4-secrets/artifacts/mcp-token-and-request-log.txt"
+   },
+   {
+    "agent_id": "v02",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Every trace and evidence line exists and describes the stated operation; no source-visible control keeps user text off child argv.",
+    "method": "source",
+    "result": "Confirmed: 853 prefix=$(cat \"$usage_file\"), 857 ask \"$prefix$usage_prompt\", 335 jq --arg c \"$1\", 208 read -r line, 224 ask \"$line\", 648 session_create \"$line\", 569 --arg prompt \"$1\", 651 jq --arg t \"$line\". 240-241 states the secrets-off-argv design and 58-61 the privacy intent. No stdin/env channel is used for user text; tokens use env and the key uses -H @<(headers). In agent mode -f is uploaded via curl -F file=@path (line 668), so file contents are not on argv there. One-shot usage_prompt itself was already on the user's argv, so the new exposure is the -f prefix and loop lines.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v02",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-create.jq"
+    ],
+    "invariant": "Bounded sandbox run with jq/curl argv-recording shims: which canaries appear in child argv.",
+    "method": "local",
+    "result": "jq argv: FILE-CONTENT-CANARY-v02a 2 (two one-shot runs), CHAT-LINE-CANARY-v02b 1, AGENT-FIRST-CANARY-v02c 1, AGENT-NEXT-CANARY-v02d 1. API key, MCP token and GitHub token canaries: 0 in jq argv, 0 in curl argv. Live curl argv '-sS -N --max-time 1800 http://127.0.0.1:9/v1/messages -H @/dev/fd/63 --data-binary @-'. Image jq is 1.7 vs pinned 1.8.2; argv exposure is an exec property and not jq-version dependent.",
+    "artifact": "agents/v02/artifacts/argv-exposure-v02.txt"
+   }
+  ],
+  "result_fingerprints": [
+   "ask-claude.sh:jq-arg-private-text-on-argv"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h4-secrets",
+  "x_hardening": [
+   "No curl call passes -q, so ~/.curlrc is honoured. The sandbox run confirmed that a curlrc in HOME changes curl behaviour. A user curlrc containing 'location' would make curl follow redirects, and curl resends -H custom headers (x-api-key) to the redirect target, including https-to-http downgrades. Suggest making -q the first curl argument at ask-claude.sh:251, 381, 384, 401, 668 and 698.",
+   "ASK_CLAUDE_REQUEST_LOG logs request bodies in live mode, not only under ASK_CLAUDE_REPLAY, although the comment at ask-claude.sh:361-363 says it is for replay. The bodies include the MCP authorization_token and the GitHub repository authorization_token. tee -a and >> keep the mode of an existing file: a pre-existing 0644 log stayed 0644 with the token appended. Suggest logging only when ASK_CLAUDE_REPLAY is set, or redacting authorization_token fields, and refusing to append to a file not owned by the user or with group/other permissions.",
+   "tests/record-session.sh:20 uses ASK_CLAUDE_BASE_URL with no scheme or loopback gate, so a live recording sends the key over http to any host. Suggest copying the main script's (fixed) gate.",
+   "--base-url accepts any https host and sends ANTHROPIC_API_KEY to it, and the help text suggests a third-party host (Venice). The help text could warn that the Anthropic key, plus any MCP or GitHub tokens in the body, go to that host.",
+   "Long -f files (over 128 KiB on Linux, MAX_ARG_STRLEN) fail at jq --arg (ask-claude.sh:335) with E2BIG. This is a functional limit that the stdin-based fix for the argv finding also removes.",
+   "The sandbox jq is 1.7 while the target pins 1.8.2. The checks use only --arg, env.* and --slurpfile, which behave the same in both versions."
+  ],
+  "x_decisions": {
+   "ask-claude.sh:jq-arg-private-text-on-argv": {
+    "verifier": "v02",
+    "decision": "confirmed"
+   }
+  }
+ },
+ {
+  "coverage_id": "ask-claude.sh%23Messages%20--web%20--mcp%20-s%20-f%20tool%20composition::lib%2Frequest.jq%23tools%20web_search%20web_fetch%20mcp_toolset%20configuration::ask-claude.sh%23messages::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#Messages --web --mcp -s -f tool composition",
+   "boundary": "lib/request.jq#tools web_search web_fetch mcp_toolset configuration",
+   "subsystem": "ask-claude.sh#messages",
+   "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content"
+  },
+  "surface": "ask-claude.sh#Messages --web --mcp -s -f tool composition",
+  "boundary": "lib/request.jq#tools web_search web_fetch mcp_toolset configuration",
+  "subsystem": "ask-claude.sh#messages",
+  "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+  "starting_paths": [
+   "lib/request.jq",
+   "ask-claude.sh",
+   "README.md"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+   "AI-AND-LLM.md#Sensitive context extraction",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation"
+  ],
+  "x_critic_reason": "critic-w1: web_search/web_fetch without domain limits and unrestricted mcp_toolset carrying the user's token in one request (lib/request.jq:59,63-68), with -f contents in context and pause_turn auto-continue (ask-claude.sh:318); no unit checked client-side tool narrowing"
+ },
+ {
+  "coverage_id": "ask-claude.sh%23STATE%20state%20directory::ask-claude.sh%23state-dir%20mode%20and%20write-bit%20check::ask-claude.sh%23local-state::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#STATE state directory",
+   "boundary": "ask-claude.sh#state-dir mode and write-bit check",
+   "subsystem": "ask-claude.sh#local-state",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "ask-claude.sh#STATE state directory",
+  "boundary": "ask-claude.sh#state-dir mode and write-bit check",
+  "subsystem": "ask-claude.sh#local-state",
+  "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+  "starting_paths": [
+   "ask-claude.sh",
+   "docs/claude.sh"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h3-files",
+  "reviewed_paths": [
+   "ask-claude.sh",
+   "docs/claude.sh",
+   "lib/session-fold.jq"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h3-files",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "The state dir that holds history, the .stream.$$ log and the .always.$$ grant file must be a directory only the invoking user controls before any fixed name in it is trusted or written (ask-claude.sh:113-120).",
+    "method": "local",
+    "result": "The verbatim gate (lines 113-120) passes for a directory owned by uid 0, mode 755, while running as uid 1000: chmod 700 fails, the failure is discarded because there is no set -e and the && result is unchecked, and ls -ldnL | cut -c6,9 inspects only group/other write bits, never the owner and never parent directories. The run used a read-only rootfs dir, so chmod failed with EROFS instead of EPERM; both are discarded the same way.",
+    "artifact": "agents/h3-files/artifacts/statedir/out.txt"
+   },
+   {
+    "agent_id": "h3-files",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "A fixed-name file in $STATE must not grant authority unless the current process created it.",
+    "method": "source",
+    "result": "session_confirm (ask-claude.sh:434-437) returns allow when $STATE/.always.$$ exists, whatever its owner or creator. A second account that owns $STATE can pre-create .always.<N> for the whole PID range and .stream.<N> files (line 480/484) so that every tool confirmation of the victim's agent session is auto-allowed. This impact is source-only, because the sandbox has a single uid and cannot stage a second owner.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h3-files",
+    "reviewed_paths": [
+     "docs/claude.sh"
+    ],
+    "invariant": "Baseline comparison: does the predecessor bind the state-dir owner?",
+    "method": "source",
+    "result": "docs/claude.sh:47 and 111-112 use the same mkdir/chmod plus a write-bit-only check with no owner check, so the gap is inherited. Its STATE is fixed under $HOME, whereas ask-claude.sh:66 honours XDG_STATE_HOME, which widens where $STATE can resolve.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v08",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Trace lines and scopes match source.",
+    "method": "source",
+    "result": "Confirmed: 66 sets STATE from XDG_STATE_HOME/HOME; 54 is set -uo pipefail (no -e); 113 mkdir -p && chmod 700 with status unused; 118-120 test cut -c6,9 of ls -ldnL only; 434-437 return allow on existence of $STATE/.always.$$, before the no-TTY deny at 438-442; 447 creates the grant; 480/484 fixed .stream.$$ log. docs/claude.sh baseline shares the write-bit-only pattern (hunter's check; not re-derived here beyond calibration).",
+    "artifact": null
+   },
+   {
+    "agent_id": "v08",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "The state-dir gate must refuse a directory the invoking user does not own.",
+    "method": "local",
+    "result": "In the sandbox as uid 1000, the real script with XDG_STATE_HOME=/scratch/stD, where stD/ask-claude is a symlink to /usr/share (uid 0, mode 755), printed the chmod error and then proceeded past the gate to line 484 (session_turn). The gate did not die. Control: an own mode-777 dir was fixed by chmod 700 and proceeded normally. Note chmod failed with EROFS (read-only rootfs) rather than EPERM; both are discarded identically.",
+    "artifact": "agents/v08/artifacts/out2.txt"
+   },
+   {
+    "agent_id": "v08",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-fold.jq"
+    ],
+    "invariant": "A tool confirmation must not be allowed by a file the current run did not create.",
+    "method": "local",
+    "result": "Replay fixtures fx/1.sse (agent.tool_use bash, requires_action) and fx/2.sse (end_turn), stdin </dev/null, ASK_CLAUDE_CONFIRM unset. Control (fresh state dir): 'denied bash ... stdin is not a terminal' and the request log carried result deny. With .always.1..2000 pre-planted in a mode-700 state dir: 'ask-claude: allowed bash ({\"command\":\"echo pwned\"})' and the request log carried result allow. This shows a pre-existing grant overrides the no-TTY deny. Single uid, so cross-account ownership was not staged. Sandbox jq 1.7 vs pinned 1.8.2; the fold program ran without error and no version dependence is relevant.",
+    "artifact": "agents/v08/artifacts/out.txt"
+   }
+  ],
+  "result_fingerprints": [
+   "ask-claude.sh:state-dir/owner-and-parent-unchecked"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h3-files",
+  "x_hardening": [
+   "session_files: with --force and $name an existing directory, mv -- \"$name.part\" \"$name\" (703) moves the download into that directory instead of replacing it; use mv -T (GNU) or refuse non-regular targets.",
+   "session_files: TOCTOU between the -e check (693) and mv (703). A $name created during the download is silently clobbered; mv -n or an exclusive link-based rename would close it.",
+   "session_files: the API file id is interpolated into the URL path without -g or validation (698). This stays on the same host with no -L, so it is not SSRF; validating ^file_[A-Za-z0-9_-]+$ removes path-normalisation surprises.",
+   "State dir: .stream.$$ (480) and .always.$$ (447) are fixed, PID-predictable names created with : > (no O_EXCL). Safe only while the owner gap above is closed; a mktemp-based name would not depend on the gate."
+  ],
+  "x_decisions": {
+   "ask-claude.sh:state-dir/owner-and-parent-unchecked": {
+    "verifier": "v08",
+    "decision": "needs_validation"
+   }
+  }
+ },
+ {
+  "coverage_id": "ask-claude.sh%23agent%20--repo%20--vault%20--memory%20session%20resources::lib%2Fsession-create.jq%23resources%20credential%20and%20memory%20delegation::ask-claude.sh%23managed-agents::AI-AND-LLM.md%23Sub-agent%20and%20MCP%20trust%20inheritance",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#agent --repo --vault --memory session resources",
+   "boundary": "lib/session-create.jq#resources credential and memory delegation",
+   "subsystem": "ask-claude.sh#managed-agents",
+   "attack_class": "AI-AND-LLM.md#Sub-agent and MCP trust inheritance"
+  },
+  "surface": "ask-claude.sh#agent --repo --vault --memory session resources",
+  "boundary": "lib/session-create.jq#resources credential and memory delegation",
+  "subsystem": "ask-claude.sh#managed-agents",
+  "attack_class": "AI-AND-LLM.md#Sub-agent and MCP trust inheritance",
+  "starting_paths": [
+   "lib/session-create.jq",
+   "ask-claude.sh",
+   "README.md"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Sub-agent and MCP trust inheritance",
+   "AI-AND-LLM.md#Excessive agency and confused-deputy authority",
+   "AI-AND-LLM.md#Persistent memory poisoning",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation"
+  ],
+  "x_critic_reason": "critic-w1: GITHUB_TOKEN delegated unscoped (lib/session-create.jq:24-31), memory stores read-write by default (:32-34), vault_ids passed through (:41); no unit reviewed the delegated authority"
+ },
+ {
+  "coverage_id": "ask-claude.sh%23session_answer%20agent.tool_use%20asks::ask-claude.sh%23session_confirm%20.always%20grant%20file::ask-claude.sh%23managed-agents::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#session_answer agent.tool_use asks",
+   "boundary": "ask-claude.sh#session_confirm .always grant file",
+   "subsystem": "ask-claude.sh#managed-agents",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "ask-claude.sh#session_answer agent.tool_use asks",
+  "boundary": "ask-claude.sh#session_confirm .always grant file",
+  "subsystem": "ask-claude.sh#managed-agents",
+  "attack_class": "ATTACK-CLASSES.md#Business logic",
+  "starting_paths": [
+   "ask-claude.sh",
+   "lib/session-fold.jq"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Unbounded delegated action loops",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h1-confirm",
+  "reviewed_paths": [
+   "ask-claude.sh",
+   "lib/session-fold.jq"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h1-confirm",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "An 'always' answer at the confirmation prompt grants only the process that received it (comment ask-claude.sh:422-425); no later process may inherit it.",
+    "method": "source",
+    "result": "The grant is a file $STATE/.always.$$ created at ask-claude.sh:447 and tested only by existence at :434. Nothing removes it: session_cleanup (:556-561) deletes only the stream log, there is no EXIT trap, and no code clears a stale file at startup. Any later ask-claude process whose PID equals a past granting PID skips the prompt, and the grant check (:434) runs before the no-TTY deny (:438), so the stale grant also overrides the unattended default deny.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h1-confirm",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "A new process with no user answer must not send result=allow for an agent.tool_use confirmation.",
+    "method": "local",
+    "result": "Two separate sandbox containers (deterministic PID 12 for the script). Invocation A: user typed 'a' on a pty; .always.12 remained in the state dir after exit. Invocation B: new process, empty stdin (no answer typed), ASK_CLAUDE_CONFIRM unset: no prompt was printed and the client POSTed {\"type\":\"user.tool_confirmation\",\"tool_use_id\":\"sevt_T1\",\"result\":\"allow\"}.",
+    "artifact": "agents/h1-confirm/artifacts/grant-evidence.txt"
+   },
+   {
+    "agent_id": "h1-confirm",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-fold.jq"
+    ],
+    "invariant": "Confirmation rounds stop or remain user-gated; custom-tool rounds capped at 8.",
+    "method": "source",
+    "result": "rounds increments only when asks is empty (:528), so confirmation rounds are uncapped; each still needs a user answer unless ASK_CLAUDE_CONFIRM=allow or an always grant applies. Spend is the user's own and server-side budget (session-create.jq:37) is the cap. Recorded as hardening, not a finding.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v05",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-fold.jq"
+    ],
+    "invariant": "An 'always' grant must not outlive the process that received it, and a new process with no answer must not send result=allow.",
+    "method": "source",
+    "result": "Confirmed. The grant file is written at :447 and checked by existence at :434, before the no-TTY deny at :438. `rg '\\.always'` across the repository finds only those two lines. session_cleanup (:556-561) removes only the stream log and resets only the INT trap. The script has no EXIT trap. session_prereqs (:745-770), which runs before `agent` (:775) and `agent resume` (:819), clears nothing. $$ inside the session_confirm command substitution is the parent script's PID, so the key is per script process. The proposed fix in session_prereqs covers both entry forms and is not clobbered by `trap - INT`.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v05",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "A new process with no user answer must send result=deny for an agent.tool_use confirmation.",
+    "method": "local",
+    "result": "Violated. Container 1, process A under script(1), answer 'a': left .always.15. New container, process B, same launch shape (PID 15), empty stdin: no prompt, result=allow sent. Control with a fresh state dir: prompt shown, result=deny. Runs with a different PID: deny, which shows the grant is bound only by PID equality. No pty, stdin /dev/null, matching stale grant (PID 13): result=allow, overriding the unattended default deny. Run with sandbox-run.sh (no network, read-only target, dummy key, replay fixtures). The image has jq 1.7 instead of the pinned 1.8.2. This finding does not depend on the jq version, because it involves only shell file tests and the jq used to build the confirmation.",
+    "artifact": "agents/v05/artifacts/evidence/out.txt"
+   },
+   {
+    "agent_id": "v05",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "The harness used for the local check is retained for review.",
+    "method": "local",
+    "result": "The harness script shows phases A, B, C and D. Phase C as retained is the variant used in runs 6 and 7. Runs 4 and 5 used `bash /target/ask-claude.sh </dev/null` without script(1), as noted in out.txt.",
+    "artifact": "agents/v05/artifacts/evidence/run.sh"
+   }
+  ],
+  "result_fingerprints": [
+   "ask-claude.sh:session_confirm:always-grant-file-pid-reuse"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h1-confirm",
+  "x_hardening": [
+   "ask-claude.sh:446-448: 'always' grants every tool and every input for the process (across /new sessions); a grant scoped to the tool name would narrow it.",
+   "ask-claude.sh:439,443,463-464: tool .name is printed without the safe filter; apply safe (strip C0/C1, and consider bidi/zero-width) to name and input in all confirmation messages.",
+   "ask-claude.sh:528: confirmation rounds are uncapped; with ASK_CLAUDE_CONFIRM=allow or an always grant a session can loop tool calls bounded only by the server-side budget (--budget 0 removes it, session-create.jq:37)."
+  ],
+  "x_decisions": {
+   "ask-claude.sh:session_confirm:always-grant-file-pid-reuse": {
+    "verifier": "v05",
+    "decision": "confirmed"
+   }
+  }
+ },
+ {
+  "coverage_id": "ask-claude.sh%23session_answer%20agent.tool_use%20asks::ask-claude.sh%23session_confirm::ask-claude.sh%23managed-agents::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#session_answer agent.tool_use asks",
+   "boundary": "ask-claude.sh#session_confirm",
+   "subsystem": "ask-claude.sh#managed-agents",
+   "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding"
+  },
+  "surface": "ask-claude.sh#session_answer agent.tool_use asks",
+  "boundary": "ask-claude.sh#session_confirm",
+  "subsystem": "ask-claude.sh#managed-agents",
+  "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding",
+  "starting_paths": [
+   "ask-claude.sh",
+   "lib/session-fold.jq",
+   "lib/session.jq"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "AI-AND-LLM.md#Excessive agency and confused-deputy authority",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h1-confirm",
+  "reviewed_paths": [
+   "ask-claude.sh",
+   "lib/session-fold.jq",
+   "lib/session.jq"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h1-confirm",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-fold.jq"
+    ],
+    "invariant": "The confirmation answer binds to the exact tool_use event shown.",
+    "method": "source",
+    "result": "session-fold.jq:21 keeps only agent.tool_use events whose id is in the idle event_ids; session_answer (:460-465) answers each by tool_use_id with the same id/name/input row it displayed. Each turn's log is truncated (:484) so stale events from earlier streams are not re-asked; a requires_action with ids but no asks is interrupted (:520-524), not auto-answered. Id binding holds.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h1-confirm",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "The prompt shows the approved tool input faithfully.",
+    "method": "local",
+    "result": "Input {\"command\":\"echo safe\\nid\"} (a real newline: two shell commands) was rendered as allow bash {\"command\":\"echo safe\\\\nid\"}: (.input|tostring) JSON-escapes the newline and @tsv (:466) escapes the backslash again; read -r keeps it. Read as JSON, the shown value is a single command containing a literal backslash-n. The user answered y and allow was sent for sevt_D1.",
+    "artifact": "agents/h1-confirm/artifacts/disp-evidence.txt"
+   },
+   {
+    "agent_id": "h1-confirm",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session.jq"
+    ],
+    "invariant": "Control bytes in tool name/input cannot rewrite the confirmation prompt.",
+    "method": "source",
+    "result": "input passes through tostring, so C0 bytes are \\u-escaped; .name is passed raw except @tsv's \\t \\n \\r \\\\ escaping and is printed unsanitised at :439, :443, :463-464. Exploitability needs a model-chosen agent.tool_use name, which depends on API validation of built-in tool names (not observable locally); a malicious BASE_URL already controls tool execution server-side, so no boundary is crossed there. Recorded as hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v04",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-fold.jq",
+     "lib/session.jq"
+    ],
+    "invariant": "The prompt shows the approved tool input faithfully, and the answer binds to that tool_use_id.",
+    "method": "source",
+    "result": "Verified session-fold.jq:21 (asks from agent.tool_use in idle event_ids), ask-claude.sh:466 (tostring then @tsv), :460 (read -r, no unescape), :443 (prompt prints $2), :465 (answer bound to tool_use_id). session.jq:23 prints only the tool name during streaming, so the prompt is the sole input display. No decoding or alternate rendering on the path.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v04",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-fold.jq"
+    ],
+    "invariant": "The prompt shows the approved tool input faithfully.",
+    "method": "local",
+    "result": "Sandbox replay under script(1): real-newline input 'echo safe' NL 'id' prompted as allow bash {\"command\":\"echo safe\\\\nid\"}? and allow sent for sevt_V1; control literal-backslash-n input prompted as {\"command\":\"echo safe\\\\\\\\nid\"}. The first rendering equals the correct single encoding of the control input.",
+    "artifact": "agents/v04/artifacts/disp-repro.txt"
+   },
+   {
+    "agent_id": "v04",
+    "reviewed_paths": [
+     "lib/session-fold.jq"
+    ],
+    "invariant": "The proposed fix renders each input encoded once.",
+    "method": "local",
+    "result": "Per-ask jq -c rendering yields {\"command\":\"echo safe\\nid\"} for the newline input and {\"command\":\"echo safe\\\\nid\"} for the literal-backslash input.",
+    "artifact": "agents/v04/artifacts/fix-check.txt"
+   }
+  ],
+  "result_fingerprints": [
+   "ask-claude.sh:session_answer:tsv-double-escape-confirm-display"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h1-confirm",
+  "x_hardening": [
+   "ask-claude.sh:446-448: 'always' grants every tool and every input for the process (across /new sessions); a grant scoped to the tool name would narrow it.",
+   "ask-claude.sh:439,443,463-464: tool .name is printed without the safe filter; apply safe (strip C0/C1, and consider bidi/zero-width) to name and input in all confirmation messages.",
+   "ask-claude.sh:528: confirmation rounds are uncapped; with ASK_CLAUDE_CONFIRM=allow or an always grant a session can loop tool calls bounded only by the server-side budget (--budget 0 removes it, session-create.jq:37)."
+  ],
+  "x_decisions": {
+   "ask-claude.sh:session_answer:tsv-double-escape-confirm-display": {
+    "verifier": "v04",
+    "decision": "confirmed"
+   }
+  }
+ },
+ {
+  "coverage_id": "ask-claude.sh%23session_create%20API%20session%20id::ask-claude.sh%23session_remember%20sessions%20dir::ask-claude.sh%23managed-agents::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#session_create API session id",
+   "boundary": "ask-claude.sh#session_remember sessions dir",
+   "subsystem": "ask-claude.sh#managed-agents",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "ask-claude.sh#session_create API session id",
+  "boundary": "ask-claude.sh#session_remember sessions dir",
+  "subsystem": "ask-claude.sh#managed-agents",
+  "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+  "starting_paths": [
+   "ask-claude.sh"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h3-files",
+  "reviewed_paths": [
+   "ask-claude.sh"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h3-files",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "A session id from the API response must be validated as a single path component before it selects a file under $STATE/sessions.",
+    "method": "local",
+    "result": "End to end, bash ask-claude.sh agent hi was run against a loopback fixture (BASE_URL=http://127.0.0.1:8765, which the gate allows) that returned {\"id\":\"../../../../victim.txt\"}. curl normalised the stream URL to GET /victim.txt/events/stream, the fixture answered idle/end_turn, session_turn returned 0, and session_remember overwrote /scratch/victim.txt (HOME=/scratch, which is 4 levels above $STATE/sessions). Its content changed from 'precious user file' to agent=/environment=/created= lines. Exit 0, and the sessions dir stayed empty.",
+    "artifact": "agents/h3-files/artifacts/sid/out.txt"
+   },
+   {
+    "agent_id": "h3-files",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Variant sweep over the sinks that consume session ids from paths this unit owns.",
+    "method": "source",
+    "result": "The same unvalidated id reaches session_remember from session_loop (ask-claude.sh:648-649) as well as from one-shot (782-784). session_find (588-606) rejects '/' and glob characters in user input and returns only basenames of existing files, so resume, budget, archive (rm -f at 731) and trace do not take API-controlled ids. URL-path use of the id (401, 487 and others) is a same-host request that is peer-owned and was not investigated.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v07",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "A session id from the API response must be validated as a single path component before it selects a file under $STATE/sessions.",
+    "method": "local",
+    "result": "Reproduced in the v07 sandbox with an independently written perl fixture. Fixture on 127.0.0.1:8766, id ../../../../victim.txt, one-shot agent. Exit 0. Requests seen: POST /v1/sessions, then GET /victim.txt/events/stream (curl normalised the path because the call has no -g). /scratch/victim.txt was overwritten with agent=/environment=/created= lines, and the sessions dir stayed empty.",
+    "artifact": "agents/v07/artifacts/sid/out.txt"
+   },
+   {
+    "agent_id": "v07",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "The interactive session_loop path (648-649) reaches the same sink.",
+    "method": "local",
+    "result": "With stdin 'hi\\n/quit\\n' and id ../../../../victim2.txt, the run exited 0, overwrote /scratch/victim2.txt, and printed 'resume with: ask-claude agent resume ../../../../victim2.txt'.",
+    "artifact": "agents/v07/artifacts/sid/out-loop.txt"
+   },
+   {
+    "agent_id": "v07",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Every source-visible control on the path from 570 to 584.",
+    "method": "source",
+    "result": "Lines 91-96 admit https and loopback http. Lines 571-577 check only that the id is non-empty. No set -e. session_turn checks only stream content and stop reason. session_remember (582-585) uses $1 raw. The prefix filters at 182, 591 and 690 do not cover this value. In replay mode, ma_call returns the fixed id sesn_FIXTURE01, so the test suite cannot exercise this path.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "ask-claude.sh:session_remember/unvalidated-api-session-id-path"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h3-files",
+  "x_hardening": [
+   "session_files: with --force and $name an existing directory, mv -- \"$name.part\" \"$name\" (703) moves the download into that directory instead of replacing it; use mv -T (GNU) or refuse non-regular targets.",
+   "session_files: TOCTOU between the -e check (693) and mv (703). A $name created during the download is silently clobbered; mv -n or an exclusive link-based rename would close it.",
+   "session_files: the API file id is interpolated into the URL path without -g or validation (698). This stays on the same host with no -L, so it is not SSRF; validating ^file_[A-Za-z0-9_-]+$ removes path-normalisation surprises.",
+   "State dir: .stream.$$ (480) and .always.$$ (447) are fixed, PID-predictable names created with : > (no O_EXCL). Safe only while the owner gap above is closed; a mktemp-based name would not depend on the gate."
+  ],
+  "x_decisions": {
+   "ask-claude.sh:session_remember/unvalidated-api-session-id-path": {
+    "verifier": "v07",
+    "decision": "confirmed"
+   }
+  }
+ },
+ {
+  "coverage_id": "ask-claude.sh%23session_files%20Files%20API%20listing%20and%20content::ask-claude.sh%23session_files%20name%20filter%20and%20no-clobber::ask-claude.sh%23managed-agents::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#session_files Files API listing and content",
+   "boundary": "ask-claude.sh#session_files name filter and no-clobber",
+   "subsystem": "ask-claude.sh#managed-agents",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "ask-claude.sh#session_files Files API listing and content",
+  "boundary": "ask-claude.sh#session_files name filter and no-clobber",
+  "subsystem": "ask-claude.sh#managed-agents",
+  "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+  "starting_paths": [
+   "ask-claude.sh"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h3-files",
+  "reviewed_paths": [
+   "ask-claude.sh"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h3-files",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "The name filter (690) must keep downloads inside the cwd as a plain new file; the no-clobber check (693) must cover every path written.",
+    "method": "source",
+    "result": "The filter rejects '/', empty, leading '.' and leading '-', so a name cannot escape the cwd lexically. The name is user-typed and must equal an API-listed filename. The file id from the API goes into the URL path only on the same host, with no -L, so there is no cross-host SSRF. The no-clobber check tests only $name, while the write goes to $name.part through curl -o (698) or a shell redirect (697 replay), and both follow an existing symlink. mv (703) then renames the symlink itself onto $name.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h3-files",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "A pre-existing $name.part symlink must not redirect the downloaded bytes.",
+    "method": "local",
+    "result": "In replay mode (agent files sesn_FIXTURE01 report.txt), with report.txt.part pre-planted as a symlink to /scratch/dl/victim2.txt, the agent-supplied bytes 'AGENTDATA' were written into victim2.txt and report.txt became the symlink. Exit 0, and the message 'wrote report.txt (10 bytes)' was printed. The curl -o branch (698) was not executed (no network). curl -o opening without O_NOFOLLOW is the documented behaviour but is unverified here.",
+    "artifact": "agents/h3-files/artifacts/dl/out.txt"
+   },
+   {
+    "agent_id": "v06",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Every path that session_files writes must be covered by the no-clobber control and must not follow a pre-existing link.",
+    "method": "source",
+    "result": "Lines 690/693/697/698/703 match the trace. 693 tests -e $name only. 697 and 698 open $name.part non-exclusively. 703 renames the link itself. No other check (state-dir mode, umask 077, or the name filter) touches the cwd's existing entries. The base-url gate (91-96) allows http://127.0.0.1, which permits the offline live-branch test.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v06",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "A pre-existing $name.part symlink must not redirect the downloaded bytes on either branch.",
+    "method": "local",
+    "result": "Sandbox (network none plus loopback, ro target). Replay branch: victimA.txt overwritten with 'AGENTDATA', exit 0. Live curl branch via a loopback Perl server and usage_base_url=http://127.0.0.1:18080: victimB.txt overwritten with 'AGENTDATA-CURL', exit 0, and report.txt left as the symlink. Control with an existing plain report.txt: refused, exit 2.",
+    "artifact": "agents/v06/artifacts/t/out.txt"
+   },
+   {
+    "agent_id": "v06",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "The proposed fix must stop the redirect without moving trust.",
+    "method": "local",
+    "result": "The hunter's fix was applied to a scratch copy. A planted .part symlink was ignored (victim unchanged, new 0600 regular report.txt). With --force, a report.txt symlink was refused. Residual gap in the hunter's fix: with --force and report.txt a directory, mv moved the temp file into the directory and wc failed; the corrected code_changes refuse non-regular $name. The hunter's fix also left tmp undeclared as local.",
+    "artifact": "agents/v06/artifacts/t/fixout.txt"
+   }
+  ],
+  "result_fingerprints": [
+   "ask-claude.sh:session_files/part-file-symlink-follow"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h3-files",
+  "x_hardening": [
+   "session_files: with --force and $name an existing directory, mv -- \"$name.part\" \"$name\" (703) moves the download into that directory instead of replacing it; use mv -T (GNU) or refuse non-regular targets.",
+   "session_files: TOCTOU between the -e check (693) and mv (703). A $name created during the download is silently clobbered; mv -n or an exclusive link-based rename would close it.",
+   "session_files: the API file id is interpolated into the URL path without -g or validation (698). This stays on the same host with no -L, so it is not SSRF; validating ^file_[A-Za-z0-9_-]+$ removes path-normalisation surprises.",
+   "State dir: .stream.$$ (480) and .always.$$ (447) are fixed, PID-predictable names created with : > (no O_EXCL). Safe only while the owner gap above is closed; a mktemp-based name would not depend on the gate."
+  ],
+  "x_decisions": {
+   "ask-claude.sh:session_files/part-file-symlink-follow": {
+    "verifier": "v06",
+    "decision": "confirmed"
+   }
+  }
+ },
+ {
+  "coverage_id": "ask-claude.sh%23session_stream_read%20stream%20framing::ask-claude.sh%23sed%20substring%20stop%20versus%20jq%20fold%20of%20the%20same%20log::ask-claude.sh%23managed-agents::AI-AND-LLM.md%23Tool-schema%20and%20dispatcher%20disagreement",
+  "canonical_refs": {
+   "surface": "ask-claude.sh#session_stream_read stream framing",
+   "boundary": "ask-claude.sh#sed substring stop versus jq fold of the same log",
+   "subsystem": "ask-claude.sh#managed-agents",
+   "attack_class": "AI-AND-LLM.md#Tool-schema and dispatcher disagreement"
+  },
+  "surface": "ask-claude.sh#session_stream_read stream framing",
+  "boundary": "ask-claude.sh#sed substring stop versus jq fold of the same log",
+  "subsystem": "ask-claude.sh#managed-agents",
+  "attack_class": "AI-AND-LLM.md#Tool-schema and dispatcher disagreement",
+  "starting_paths": [
+   "ask-claude.sh",
+   "lib/session-fold.jq",
+   "lib/session.jq",
+   "tests/record-session.sh"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Tool-schema and dispatcher disagreement",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation"
+  ],
+  "x_critic_reason": "critic-final: session_stream_read (412-419) stops on a raw substring match of \"type\":\"session.status_idle\", which a model-chosen tool input object can contain; no unit compared this terminator with the structural fold (lib/session-fold.jq)"
+ },
+ {
+  "coverage_id": "justfile%23recipes%20.env%20and%20recipe%20arguments::justfile%23quote%28%29%20and%20.env%20sourcing::justfile::SUPPLY-CHAIN-AND-RELEASE.md%23Workflow%20command%20and%20expression%20confusion",
+  "canonical_refs": {
+   "surface": "justfile#recipes .env and recipe arguments",
+   "boundary": "justfile#quote() and .env sourcing",
+   "subsystem": "justfile",
+   "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Workflow command and expression confusion"
+  },
+  "surface": "justfile#recipes .env and recipe arguments",
+  "boundary": "justfile#quote() and .env sourcing",
+  "subsystem": "justfile",
+  "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Workflow command and expression confusion",
+  "starting_paths": [
+   "justfile",
+   ".gitignore",
+   ".env.example",
+   "mise.toml",
+   ".devcontainer.json"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Workflow command and expression confusion",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Mutable and unbound build inputs",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h5-release",
+  "reviewed_paths": [
+   ".devcontainer-lock.json",
+   ".devcontainer.json",
+   ".env.example",
+   ".gitignore",
+   "ask-claude.sh",
+   "justfile",
+   "mise.lock",
+   "mise.toml",
+   "tools/effver/effver.just"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h5-release",
+    "reviewed_paths": [
+     "justfile",
+     "tools/effver/effver.just"
+    ],
+    "invariant": "Recipe arguments that carry free text reach the recipe shell as one quoted word (quote()), as the sibling recipes unit-test, step, callers, blame, completions(shell) and check-effver do.",
+    "method": "source",
+    "result": "justfile:6-7 `ask question=\"\" *FLAGS:` renders `./ask-claude.sh {{FLAGS}} {{question}}` with no quote(); just substitutes the text verbatim into the line it hands to `sh -cu`, so shell metacharacters in a question the user quoted for their own shell ($(...), backticks, ;, |, >) are re-parsed and executed. completions `{{ flags }}` (24) and bump `{{ effort }}` (effver.just:6) are also unquoted, but those carry short fixed tokens, not free text. Local confirmation blocked: just is absent from the sandbox image and running just recipes on the host is prohibited.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h5-release",
+    "reviewed_paths": [
+     "justfile",
+     ".gitignore",
+     ".env.example"
+    ],
+    "invariant": ".env, which the live recipes source as shell code (justfile:48,58,108,118,127,139), is not a commit-controlled input.",
+    "method": "source",
+    "result": ".gitignore ignores .env and .env.* (only .env.example is tracked, and it is never sourced), so .env is written only by the local user: same principal, no finding. The skills/agents/environments recipes hit the hardcoded https://api.anthropic.com and print API strings raw (hardening note).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h5-release",
+    "reviewed_paths": [
+     "mise.toml",
+     "mise.lock",
+     ".devcontainer.json",
+     ".devcontainer-lock.json"
+    ],
+    "invariant": "Developer tooling inputs are pinned to immutable identities.",
+    "method": "source",
+    "result": "The devcontainer base image is pinned by digest; the mise feature tag `:1` is resolved to a sha256 in .devcontainer-lock.json; mise.toml sets lockfile=true and mise.lock pins per-platform sha256. Many mise.lock checksums carry checksum_source=\"mise-versions\" (fetched from a third-party index at lock time, not from the upstream release), and VS Code extensions are unpinned. No lower-trust writer reaches a trusted output through these in-repo: hardening only.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v09",
+    "reviewed_paths": [
+     "justfile",
+     "tools/effver/effver.just",
+     "ask-claude.sh",
+     "mise.toml"
+    ],
+    "invariant": "Free-text recipe arguments that originate from a lower-trust principal reach the recipe shell as one quoted word.",
+    "method": "source",
+    "result": "justfile:6-7 interpolates {{FLAGS}} {{question}} unquoted; no `set shell`/`set positional-arguments` exists in justfile or effver.just, so default `sh -cu` re-parses the text (mechanism confirmed from source; just 1.58.0 pinned at mise.toml:12; quote() documented in the just 1.58.0 binary's embedded changelog as 'Add quote(s) function for escaping strings'). The argument's only writer is the local full-authority user, so no trust boundary is crossed; ask-claude.sh:5 declares a single [prompt], so the split is also a functional bug. Not executed: just is absent from the sandbox image and running just recipes on the host is prohibited; execution was not needed because the verdict turns on the trust boundary, not on just's documented behavior.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "justfile:ask:unquoted-recipe-interpolation"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h5-release",
+  "x_hardening": [
+   "tools/effver/bump-effver:30-37 runs bash arithmetic on the working-copy VERSION without version_re. This is the same sink as the check-effver finding, but the writer has the same trust as the script being run. Add the same version_re guard and 10# arithmetic so a copy pulled into dotfiles is safe.",
+   "check-effver prints commit subjects (line 111) and raw VERSION/heading strings (lines 86, 90) to the terminal unsanitised, so escape sequences in commit content reach the developer's terminal. Strip C0/C1 before printing.",
+   "justfile skills/agents/environments recipes (61, 121, 130) print account-controlled names (display_title, agent and environment names) with jq -r @tsv. @tsv escapes tab, newline, CR and backslash but not ESC or other control characters. Apply a C0/C1 filter as ask-claude.sh `safe` does.",
+   "mise.lock records many checksums with checksum_source=\"mise-versions\", a third-party index rather than an upstream-published digest. The trust root is that index at lock time. Review a `mise lock` diff before committing it.",
+   "Unpinned VS Code extensions in .devcontainer.json (some, such as jjk.jjk, listed twice) install their latest versions at container build time."
+  ],
+  "x_decisions": {
+   "justfile:ask:unquoted-recipe-interpolation": {
+    "verifier": "v09",
+    "decision": "rejected"
+   }
+  }
+ },
+ {
+  "coverage_id": "lib%2Freassemble.jq%23assistant%20content%20blocks::ask-claude.sh%23call%20history%20append%20and%20resend::ask-claude.sh%23messages::AI-AND-LLM.md%23Prompt%20role%20and%20provenance%20confusion",
+  "canonical_refs": {
+   "surface": "lib/reassemble.jq#assistant content blocks",
+   "boundary": "ask-claude.sh#call history append and resend",
+   "subsystem": "ask-claude.sh#messages",
+   "attack_class": "AI-AND-LLM.md#Prompt role and provenance confusion"
+  },
+  "surface": "lib/reassemble.jq#assistant content blocks",
+  "boundary": "ask-claude.sh#call history append and resend",
+  "subsystem": "ask-claude.sh#messages",
+  "attack_class": "AI-AND-LLM.md#Prompt role and provenance confusion",
+  "starting_paths": [
+   "ask-claude.sh",
+   "lib/reassemble.jq",
+   "lib/request.jq"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Prompt role and provenance confusion",
+   "AI-AND-LLM.md#Persistent memory poisoning",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h6-wild",
+  "reviewed_paths": [
+   "ask-claude.sh",
+   "lib/reassemble.jq",
+   "lib/request.jq"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h6-wild",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/reassemble.jq",
+     "lib/request.jq"
+    ],
+    "invariant": "Content that the API or model returns is persisted only under role assistant and resent as typed content blocks inside messages; it cannot create a user, system or tool-result turn or change any other request field.",
+    "method": "source",
+    "result": "ask-claude.sh:311 pins the turn to {role:\"assistant\", content:.content}. lib/reassemble.jq:43-61 writes server data only into .blocks/.model/.usage/.container/.stop_*. lib/request.jq:47 nests the history under messages; system, tools, mcp_servers and container come only from local arguments and env (54-70). User turns come only from ask() at ask-claude.sh:335 via --arg. The history is typed JSON with no string concatenation. The only concatenation is the -f prefix and the prompt (850-857), and the user chooses both. Web, web_fetch and MCP results stay as typed *_tool_result blocks in the assistant turn, in the same chat. The container id (313-314) is per HIST, is reset on /new, and is sent only with -s. No deterministic trust decision on the Messages path reads history content. Messages-path server and MCP tools have no client confirmation, by design.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h6-wild",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/reassemble.jq"
+    ],
+    "invariant": "A forged role field or forged 'you:' text in an SSE content block does not change the stored or resent message roles.",
+    "method": "local",
+    "result": "In the sandbox, a chat loop of 2 turns ran with ASK_CLAUDE_REPLAY on a content_block_start that carries \"role\":\"user\" and text that contains '\\n\\nyou: ...'. The stored roles were user, assistant, user, assistant, and the 2nd request's messages roles were [user, assistant, user]. The extra block key 'role' was persisted and resent verbatim, because block fields are not allowlisted. /history rendered a forged 'you:' line, which is a display-only effect.",
+    "artifact": "agents/h6-wild/artifacts/u1/result.txt"
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h6-wild",
+  "x_hardening": [
+   "lib/reassemble.jq:43 copies content_block objects verbatim (any extra keys, e.g. a server-sent 'role'), and ask-claude.sh:311-312 persists and resends them. Allowlist block fields per type, or validate before persisting, so that one malformed reply cannot make every later turn of the chat fail with a 400.",
+   "show_history (ask-claude.sh:158-163) renders model text that contains '\\nyou: ...' the same as a real user turn, both in /history and on resume. Prefix continuation lines or mark turn boundaries unambiguously.",
+   "tests/record-session.sh:42 id regex (sevt|sesn|agent|env|sthr|vlt)_[A-Za-z0-9]+ matches the key 'agent_name', which defeats the agent_name sed on line 49. Anchor the regex to values (for example, after '\":\"'), run the agent_name sed before the awk, and add file_ to the redacted prefixes.",
+   "tests/record-session.sh:20 sends the API key to ASK_CLAUDE_BASE_URL without the https/loopback gate that ask-claude.sh:92-96 applies. Copy that gate.",
+   "ask-claude.sh:668 'curl -F file=@$1': curl interprets ';type=', ';headers=@' and ',' inside the path. Reject paths that contain ';' or ',', or quote the filename (file=@\"...\") after escaping. Unverified locally, because curl cannot run without the network.",
+   "ask-claude.sh:748-755 validates the glob-expanded --vault/--memory words while lib/session-create.jq gets the raw string. Run set -f, or split with read -a, so that the validated and the sent values are identical.",
+   ".devcontainer.json VS Code extensions are not pinned to versions."
+  ]
+ },
+ {
+  "coverage_id": "lib%2Fstream.jq%20lib%2Fsession.jq%20lib%2Fsession-history.jq%23API%20SSE%20and%20JSON%20text::ask-claude.sh%23safe%20terminal%20sanitiser::ask-claude.sh%23terminal-output::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "lib/stream.jq lib/session.jq lib/session-history.jq#API SSE and JSON text",
+   "boundary": "ask-claude.sh#safe terminal sanitiser",
+   "subsystem": "ask-claude.sh#terminal-output",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "lib/stream.jq lib/session.jq lib/session-history.jq#API SSE and JSON text",
+  "boundary": "ask-claude.sh#safe terminal sanitiser",
+  "subsystem": "ask-claude.sh#terminal-output",
+  "attack_class": "ATTACK-CLASSES.md#Injection",
+  "starting_paths": [
+   "ask-claude.sh",
+   "lib/stream.jq",
+   "lib/session.jq",
+   "lib/session-history.jq",
+   "lib/session-fold.jq"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Insecure output rendering",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h2-terminal",
+  "reviewed_paths": [
+   "ask-claude.sh",
+   "lib/session-fold.jq",
+   "lib/session-history.jq",
+   "lib/session.jq",
+   "lib/stream.jq"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h2-terminal",
+    "reviewed_paths": [
+     "lib/stream.jq",
+     "lib/session.jq",
+     "lib/session-history.jq"
+    ],
+    "invariant": "Every string the jq render programs print to the terminal passes through `safe`, which drops C0 except TAB/LF, DEL, and C1 (U+0080-U+009F); non-string values are JSON-encoded by jq -r, so their control characters stay escaped.",
+    "method": "local",
+    "result": "stream.jq, session.jq and session-history.jq apply `safe` to the whole output expression; ESC, BEL, CR and U+009B were removed from text_delta, tool name and agent.message text (T7). jq parse errors on malformed SSE lines do not echo the input (T6). These programs hold.",
+    "artifact": "agents/h2-terminal/artifacts/t/out.txt"
+   },
+   {
+    "agent_id": "h2-terminal",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "Shell-side jq calls that print API text (show_history 159, list_chats 171, call 299/316/317/327, api_error 354, session usage line 537, session_list 623, session_files 686, session_budget 721) use the SAFE prefix.",
+    "method": "source",
+    "result": "All listed sinks apply SAFE/safe. The Messages path (call) has no unsanitised API-derived sink: stop at 329 comes from 316, which applies safe.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h2-terminal",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-fold.jq"
+    ],
+    "invariant": "Managed Agents values that the shell prints (tool name/input in session_confirm and session_answer, stop_reason, event_ids, session id, raw stream bytes) are sanitised before they reach stderr or /dev/tty.",
+    "method": "local",
+    "result": "Violated. Raw ESC/BEL reached stderr at 439 and 463 (tool name and string input), 551 (stop_reason), 521 (event_ids), 503 (non-SSE stream bytes), 550 and 655 (session id). Line 443 prints the same name/input values via read -p to /dev/tty; it was checked from source only because the sandbox has no TTY.",
+    "artifact": "agents/h2-terminal/artifacts/t/out.txt"
+   },
+   {
+    "agent_id": "h2-terminal",
+    "reviewed_paths": [
+     "ask-claude.sh"
+    ],
+    "invariant": "jq's own error text does not echo API strings raw (DOLLARS tonumber on .usage.list_cost.amount).",
+    "method": "local",
+    "result": "jq 1.7 (sandbox) prints the string raw in the tonumber error (T4). Host jq 1.8.2, which the target pins, escapes it as JSON. Not a finding on the pinned version; recorded as hardening.",
+    "artifact": "agents/h2-terminal/artifacts/t/out.txt"
+   },
+   {
+    "agent_id": "v03",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session-fold.jq"
+    ],
+    "invariant": "Trace and evidence paths, lines and scopes match the source: 125 SAFE, 401 stream, 439/443/463/464 confirm, 466 @tsv, 503 head -c, 518/521 stop/event_ids, 537 safe usage line, 550/551, 571 session id, 584 session_remember, 655 resume hint; session-fold.jq 17-22 copies fields unmodified.",
+    "method": "source",
+    "result": "All verified. No SAFE prefix or shape check on 466, 518, 521, 571; 503 strips only newlines. 591 filters only '/' and glob characters, so an ESC-bearing session file name passes session_find.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v03",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "lib/session.jq",
+     "lib/session-fold.jq"
+    ],
+    "invariant": "Managed Agents values the shell prints (tool name/input, stop_reason, event_ids, session id, raw stream bytes) are sanitised before reaching stderr.",
+    "method": "local",
+    "result": "Violated. Independent sandboxed replay produced raw ESC/BEL on stderr at 463, 439, 551, 521, 503, 550 and 655; lib/session.jq and the 537 usage line stripped the same bytes in the same runs. A sessions/ file with ESC/BEL in its name was created via 584.",
+    "artifact": "agents/v03/artifacts/out.txt"
+   }
+  ],
+  "result_fingerprints": [
+   "ask-claude.sh:managed-agents-status-sinks-bypass-safe"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h2-terminal",
+  "x_hardening": [
+   "DOLLARS (ask-claude.sh:129) calls `tonumber` on the API's list_cost.amount at lines 537/623/721. Under jq 1.7 the error text echoes the string raw to stderr. jq 1.8.2, which the target pins, JSON-escapes it. Suggestion: validate with test(\"^[0-9]+(\\\\.[0-9]+)?$\") before tonumber.",
+   "`safe` strips only C0/DEL/C1 codepoints. Unicode format characters (bidi overrides U+202A-U+202E, isolates U+2066-U+2069, U+200B-U+200F) pass through and can visually reorder or hide model text. Suggestion: also drop the Cf category ranges.",
+   "`safe` filters C1 by Unicode codepoint; on a non-UTF-8 8-bit terminal locale, UTF-8 continuation bytes 0x80-0x9F could be read as C1 CSI. Niche; noted only.",
+   "The `safe` definition is duplicated four times (ask-claude.sh:125, lib/stream.jq:29, lib/session.jq:12, lib/session-history.jq:10). Suggestion: a shared lib/safe.jq included with `include`."
+  ],
+  "x_decisions": {
+   "ask-claude.sh:managed-agents-status-sinks-bypass-safe": {
+    "verifier": "v03",
+    "decision": "confirmed"
+   }
+  }
+ },
+ {
+  "coverage_id": "repository%23all%20in-scope%20files::repository%23basic%20exposure%20checklist::repository::ATTACK-CLASSES.md%23Obvious%20things",
+  "canonical_refs": {
+   "surface": "repository#all in-scope files",
+   "boundary": "repository#basic exposure checklist",
+   "subsystem": "repository",
+   "attack_class": "ATTACK-CLASSES.md#Obvious things"
+  },
+  "surface": "repository#all in-scope files",
+  "boundary": "repository#basic exposure checklist",
+  "subsystem": "repository",
+  "attack_class": "ATTACK-CLASSES.md#Obvious things",
+  "starting_paths": [
+   "ask-claude.sh",
+   "justfile",
+   ".gitignore",
+   ".env.example",
+   "tests/record-session.sh",
+   "docs/claude.sh"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h6-wild",
+  "reviewed_paths": [
+   ".devcontainer-lock.json",
+   ".devcontainer.json",
+   ".env.example",
+   ".gitignore",
+   "ask-claude.sh",
+   "docs/claude.sh",
+   "justfile",
+   "mise.toml",
+   "tests/record-session.sh"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h6-wild",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "justfile",
+     ".gitignore",
+     ".env.example",
+     "tests/record-session.sh",
+     "docs/claude.sh",
+     ".devcontainer.json",
+     ".devcontainer-lock.json",
+     "mise.toml"
+    ],
+    "invariant": "Basic exposure checklist: secrets in source or history, security TODOs, debug gating, committed secret files, .gitignore coverage, pinning, dynamic eval, TLS, and verbose errors.",
+    "method": "source",
+    "result": "Secrets: no real credentials in the tree. .env.example holds an empty ANTHROPIC_API_KEY=. A full-history scan (git log --all -p) for sk-ant-, ghp_, github_pat_ and xox* found only the dummies sk-ant-test-not-a-key (859 hits) and sk-ant-CANARY-0001 (8 hits, in plan text). No .env, *.pem, *.key or credential file is tracked now or in history. Security TODO/FIXME: none (2 TODO lines in docs/plans are roadmap). Debug seams: ASK_CLAUDE_REPLAY and ASK_CLAUDE_REQUEST_LOG are env-only, and the env is the same principal. REQUEST_LOG body logging is peer-owned. .gitignore covers .env, .env.* (except .env.example) and raw *.sse (except tests/fixtures/sse), so gitignored session recordings stay out of git. Pinning: mise.lock with lockfile=true and sha256 per platform, the devcontainer image pinned by digest, and the feature resolved by digest in .devcontainer-lock.json. VS Code extensions are unpinned (hardening). eval/exec: no eval or sh -c in ask-claude.sh, docs/claude.sh or tests/record-session.sh. The arithmetic on commit VERSION in tools/effver is peer-owned. The justfile .env sourcing and the ask recipe are peer-owned. CORS, cookies, open redirects and HTTP endpoints: not applicable (no server). TLS: ask-claude.sh:92-96 gates --base-url to https or http on loopback. tests/record-session.sh:20 takes ASK_CLAUDE_BASE_URL with no scheme gate (hardening). Errors: API error text is printed through safe, and the script prints no stack traces or internal paths beyond the user's own state path.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h6-wild",
+  "x_hardening": [
+   "lib/reassemble.jq:43 copies content_block objects verbatim (any extra keys, e.g. a server-sent 'role'), and ask-claude.sh:311-312 persists and resends them. Allowlist block fields per type, or validate before persisting, so that one malformed reply cannot make every later turn of the chat fail with a 400.",
+   "show_history (ask-claude.sh:158-163) renders model text that contains '\\nyou: ...' the same as a real user turn, both in /history and on resume. Prefix continuation lines or mark turn boundaries unambiguously.",
+   "tests/record-session.sh:42 id regex (sevt|sesn|agent|env|sthr|vlt)_[A-Za-z0-9]+ matches the key 'agent_name', which defeats the agent_name sed on line 49. Anchor the regex to values (for example, after '\":\"'), run the agent_name sed before the awk, and add file_ to the redacted prefixes.",
+   "tests/record-session.sh:20 sends the API key to ASK_CLAUDE_BASE_URL without the https/loopback gate that ask-claude.sh:92-96 applies. Copy that gate.",
+   "ask-claude.sh:668 'curl -F file=@$1': curl interprets ';type=', ';headers=@' and ',' inside the path. Reject paths that contain ';' or ',', or quote the filename (file=@\"...\") after escaping. Unverified locally, because curl cannot run without the network.",
+   "ask-claude.sh:748-755 validates the glob-expanded --vault/--memory words while lib/session-create.jq gets the raw string. Run set -f, or split with read -a, so that the validated and the sent values are identical.",
+   ".devcontainer.json VS Code extensions are not pinned to versions."
+  ]
+ },
+ {
+  "coverage_id": "repository%23all%20in-scope%20files::repository%23unassigned%20behaviour::repository::ATTACK-CLASSES.md%23Wildcard",
+  "canonical_refs": {
+   "surface": "repository#all in-scope files",
+   "boundary": "repository#unassigned behaviour",
+   "subsystem": "repository",
+   "attack_class": "ATTACK-CLASSES.md#Wildcard"
+  },
+  "surface": "repository#all in-scope files",
+  "boundary": "repository#unassigned behaviour",
+  "subsystem": "repository",
+  "attack_class": "ATTACK-CLASSES.md#Wildcard",
+  "starting_paths": [
+   "ask-claude.sh",
+   "docs/claude.sh",
+   "tests/record-session.sh",
+   "lib/skills.jq"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h6-wild",
+  "reviewed_paths": [
+   "ask-claude.sh",
+   "docs/claude.sh",
+   "lib/skills.jq",
+   "tests/record-session.sh"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h6-wild",
+    "reviewed_paths": [
+     "ask-claude.sh",
+     "docs/claude.sh",
+     "lib/skills.jq"
+    ],
+    "invariant": "Odd or half-finished paths (legacy script, skills parsing, vault/memory validation, file upload, agent trace, chat lookup, replay seams) do not let a lower-trust principal reach a sink the user did not choose.",
+    "method": "source",
+    "result": "lib/skills.jq: -s is split into JSON values by jq and cannot inject. session_prereqs (748-755) validates the glob-expanded words of --vault/--memory, but session-create.jq receives the raw unexpanded string. The check and the use can disagree, but both values are user-typed (hardening). file_upload (668) passes '-F file=@$1', and curl parses ';type=/;headers=' and ',' in that path after the -r check on the literal path. The path is user-chosen, and no remote input reaches it (hardening, not locally verified). agent trace (809) echoes ASK_CLAUDE_WORKSPACE from env, which is the same principal. find_chat and session_find reject '/' and glob characters. docs/claude.sh is mode 644 reference code: it accepts an arbitrary --resume path and HIST env, but both are user-supplied and the script is not an entry point. The API-controlled paths (session id, file id without -g, the .always grant, download names) are peer-owned and were not re-reviewed.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h6-wild",
+    "reviewed_paths": [
+     "tests/record-session.sh"
+    ],
+    "invariant": "The fixture recorder redacts the identifiers and the agent_name it claims to redact.",
+    "method": "local",
+    "result": "In the sandbox, the exact awk program (lines 41-48) and the sed (line 49) ran on a dummy event line. The id regex also matches the JSON key 'agent_name' and renames it to agent_FIXTURE01. As a result, the agent_name sed never matches and the agent name value stays in the output. file_ ids are not redacted. The output goes to tests/fixtures/sessions/<name>.sse. *.sse is gitignored there, and the committed goldens (fold/stream) do not carry agent_name, so no committed exposure was found. Recorded as hardening.",
+    "artifact": "agents/h6-wild/artifacts/u3/result.txt"
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h6-wild",
+  "x_hardening": [
+   "lib/reassemble.jq:43 copies content_block objects verbatim (any extra keys, e.g. a server-sent 'role'), and ask-claude.sh:311-312 persists and resends them. Allowlist block fields per type, or validate before persisting, so that one malformed reply cannot make every later turn of the chat fail with a 400.",
+   "show_history (ask-claude.sh:158-163) renders model text that contains '\\nyou: ...' the same as a real user turn, both in /history and on resume. Prefix continuation lines or mark turn boundaries unambiguously.",
+   "tests/record-session.sh:42 id regex (sevt|sesn|agent|env|sthr|vlt)_[A-Za-z0-9]+ matches the key 'agent_name', which defeats the agent_name sed on line 49. Anchor the regex to values (for example, after '\":\"'), run the agent_name sed before the awk, and add file_ to the redacted prefixes.",
+   "tests/record-session.sh:20 sends the API key to ASK_CLAUDE_BASE_URL without the https/loopback gate that ask-claude.sh:92-96 applies. Copy that gate.",
+   "ask-claude.sh:668 'curl -F file=@$1': curl interprets ';type=', ';headers=@' and ',' inside the path. Reject paths that contain ';' or ',', or quote the filename (file=@\"...\") after escaping. Unverified locally, because curl cannot run without the network.",
+   "ask-claude.sh:748-755 validates the glob-expanded --vault/--memory words while lib/session-create.jq gets the raw string. Run set -f, or split with read -a, so that the validated and the sent values are identical.",
+   ".devcontainer.json VS Code extensions are not pinned to versions."
+  ]
+ },
+ {
+  "coverage_id": "tools%2Feffver%2Fbump-effver%23VERSION%20and%20date%20argv::tools%2Feffver%2Fbump-effver%23version%20parse::tools%2Feffver::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "tools/effver/bump-effver#VERSION and date argv",
+   "boundary": "tools/effver/bump-effver#version parse",
+   "subsystem": "tools/effver",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "tools/effver/bump-effver#VERSION and date argv",
+  "boundary": "tools/effver/bump-effver#version parse",
+  "subsystem": "tools/effver",
+  "attack_class": "ATTACK-CLASSES.md#Injection",
+  "starting_paths": [
+   "tools/effver/bump-effver",
+   "tools/effver/effver.just"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Workflow command and expression confusion",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h5-release",
+  "reviewed_paths": [
+   "tools/effver/bump-effver",
+   "tools/effver/effver.just"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h5-release",
+    "reviewed_paths": [
+     "tools/effver/bump-effver",
+     "tools/effver/effver.just"
+    ],
+    "invariant": "VERSION is validated before bash arithmetic and before the effver.just:7 sed replacement.",
+    "method": "source",
+    "result": "bump-effver:30-37 reads VERSION from the working copy and evaluates $((x+1)), $((y+1)), $((z+1)) with no version_re check, so the same arithmetic-subscript injection proven for check-effver applies. But here VERSION comes from the checked-out working copy, whose writer can equally edit bump-effver, effver.just and justfile that the user is executing: same trust as the code being run, no boundary crossed. A merged hostile VERSION would also have failed check-effver's version_re on the current commit (check-effver:85). effver.just:7 interpolates $(cat VERSION) into a sed replacement only after bump-effver wrote a computed numeric version. `effort` is restricted by the case at bump-effver:15-21; `date` (argv 2) goes only into the awk -v heading text. Covered; hardening note filed.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h5-release",
+  "x_hardening": [
+   "tools/effver/bump-effver:30-37 runs bash arithmetic on the working-copy VERSION without version_re. This is the same sink as the check-effver finding, but the writer has the same trust as the script being run. Add the same version_re guard and 10# arithmetic so a copy pulled into dotfiles is safe.",
+   "check-effver prints commit subjects (line 111) and raw VERSION/heading strings (lines 86, 90) to the terminal unsanitised, so escape sequences in commit content reach the developer's terminal. Strip C0/C1 before printing.",
+   "justfile skills/agents/environments recipes (61, 121, 130) print account-controlled names (display_title, agent and environment names) with jq -r @tsv. @tsv escapes tab, newline, CR and backslash but not ESC or other control characters. Apply a C0/C1 filter as ask-claude.sh `safe` does.",
+   "mise.lock records many checksums with checksum_source=\"mise-versions\", a third-party index rather than an upstream-published digest. The trust root is that index at lock time. Review a `mise lock` diff before committing it.",
+   "Unpinned VS Code extensions in .devcontainer.json (some, such as jjk.jjk, listed twice) install their latest versions at container build time."
+  ]
+ },
+ {
+  "coverage_id": "tools%2Feffver%2Fcheck-effver%23commit%20subject%2C%20VERSION%20and%20CHANGELOG.md%20heading%20printed%20in%20problem%20reports::tools%2Feffver%2Fcheck-effver%23problem%20report%20output%20to%20the%20developer%20terminal::tools%2Feffver::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "tools/effver/check-effver#commit subject, VERSION and CHANGELOG.md heading printed in problem reports",
+   "boundary": "tools/effver/check-effver#problem report output to the developer terminal",
+   "subsystem": "tools/effver",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "tools/effver/check-effver#commit subject, VERSION and CHANGELOG.md heading printed in problem reports",
+  "boundary": "tools/effver/check-effver#problem report output to the developer terminal",
+  "subsystem": "tools/effver",
+  "attack_class": "ATTACK-CLASSES.md#Injection",
+  "starting_paths": [
+   "tools/effver/check-effver",
+   "tools/effver/effver.just"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Workflow command and expression confusion",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation"
+  ],
+  "x_critic_reason": "critic-final: check-effver prints commit-controlled subject (111), VERSION (86, 105) and CHANGELOG heading (90) raw to the terminal; no unit covers this output path"
+ },
+ {
+  "coverage_id": "tools%2Feffver%2Fcheck-effver%23parent%20commit%20VERSION::tools%2Feffver%2Fcheck-effver%23version_re::tools%2Feffver::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "tools/effver/check-effver#parent commit VERSION",
+   "boundary": "tools/effver/check-effver#version_re",
+   "subsystem": "tools/effver",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "tools/effver/check-effver#parent commit VERSION",
+  "boundary": "tools/effver/check-effver#version_re",
+  "subsystem": "tools/effver",
+  "attack_class": "ATTACK-CLASSES.md#Injection",
+  "starting_paths": [
+   "tools/effver/check-effver",
+   "tools/effver/effver.just",
+   "justfile"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Workflow command and expression confusion",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "no server, session, cookie or OAuth surface; the client only sends a static x-api-key"
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "no browser, DOM or webview; output goes to a terminal"
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "no IPC, socket, deep link or privileged helper; local state-dir files are covered by the ordinary Resource and file handling class"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "no native code in the target; bash, jq and curl are external toolchain"
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "no IaC, containers or IAM shipped as product; the devcontainer is developer tooling handled under the supply-chain units"
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "SSE parsing is covered by the Injection and terminal-output units; there is no broker, RPC server or webhook"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-user local state, no multi-tenant store"
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "no shared service; spend is the invoking user's own and is reviewed in the business-logic unit"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h5-release",
+  "reviewed_paths": [
+   "tools/effver/check-effver",
+   "tools/effver/effver.just"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h5-release",
+    "reviewed_paths": [
+     "tools/effver/check-effver"
+    ],
+    "invariant": "Every commit-tree VERSION that reaches bash arithmetic has matched version_re.",
+    "method": "source",
+    "result": "version_re (85) is applied only to the current commit's VERSION, and a mismatch only appends to problems[] without skipping later commits. The parent VERSION read at 71-75 goes into $old unvalidated, then bump \"$old\" \"$effort\" (103) evaluates $((y + 1)) / $((z + 1)) / $((x + 1)) (56-60). The bash arithmetic evaluator expands an array subscript in a variable's value, including $(...).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h5-release",
+    "reviewed_paths": [
+     "tools/effver/check-effver"
+    ],
+    "invariant": "Running check-effver over a commit range does not execute commands that commit content supplies.",
+    "method": "local",
+    "result": "Sandbox (bash 5.2.21, git 2.51.1, no network): fixture repo base(0.4.0) -> parent(VERSION `0.4.x[$(touch /scratch/PWNED_check_effver)]`) -> child(0.4.1, valid micro heading). `bash /target/tools/effver/check-effver main~2..main` reported the parent's bad VERSION, then created /scratch/PWNED_check_effver while it checked the child; exit 1. A first attempt with subscript base `a` aborted on `set -u` (a: unbound variable) before the subscript expanded, so the payload needs a set array name (x, y, z or BASH_VERSINFO).",
+    "artifact": "agents/h5-release/artifacts/poc-check-effver.out"
+   },
+   {
+    "agent_id": "v11",
+    "reviewed_paths": [
+     "tools/effver/check-effver",
+     "tools/effver/effver.just"
+    ],
+    "invariant": "Every commit-tree VERSION that reaches bash arithmetic in bump() has matched version_re.",
+    "method": "source",
+    "result": "Confirmed. version_re (line 85) is applied only to $version. The parent VERSION read at line 72 goes into $old (line 75) unvalidated and reaches bump at line 103 when the child has a valid VERSION and heading and a different version. bump() evaluates $((y + 1)), $((z + 1)) or $((x + 1)) (lines 56-60). No other validation, quoting or arithmetic guard is on the path. All trace and evidence lines match the described operations.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v11",
+    "reviewed_paths": [
+     "tools/effver/check-effver"
+    ],
+    "invariant": "Running check-effver over a commit range does not execute commands that commit content supplies.",
+    "method": "local",
+    "result": "Violated. Sandbox (bash 5.2.21, git 2.51.1, --network none): fixture base(0.4.0) -> parent(VERSION 0.4.x[$(touch /scratch/MARKER_v11)]) -> child(0.4.1 micro). The unmodified checker reported the parent VERSION, exited 1, and created the marker. The valid-parent control exited 0. A patched copy (bump validates its argument; a malformed parent is excluded) exited 1 with no marker.",
+    "artifact": "agents/v11/artifacts/poc-v11.out"
+   }
+  ],
+  "result_fingerprints": [
+   "tools/effver/check-effver:bump:parent-VERSION-arithmetic-injection"
+  ],
+  "unresolved": [],
+  "x_planned_hunter": "h5-release",
+  "x_hardening": [
+   "tools/effver/bump-effver:30-37 runs bash arithmetic on the working-copy VERSION without version_re. This is the same sink as the check-effver finding, but the writer has the same trust as the script being run. Add the same version_re guard and 10# arithmetic so a copy pulled into dotfiles is safe.",
+   "check-effver prints commit subjects (line 111) and raw VERSION/heading strings (lines 86, 90) to the terminal unsanitised, so escape sequences in commit content reach the developer's terminal. Strip C0/C1 before printing.",
+   "justfile skills/agents/environments recipes (61, 121, 130) print account-controlled names (display_title, agent and environment names) with jq -r @tsv. @tsv escapes tab, newline, CR and backslash but not ESC or other control characters. Apply a C0/C1 filter as ask-claude.sh `safe` does.",
+   "mise.lock records many checksums with checksum_source=\"mise-versions\", a third-party index rather than an upstream-published digest. The trust root is that index at lock time. Review a `mise lock` diff before committing it.",
+   "Unpinned VS Code extensions in .devcontainer.json (some, such as jjk.jjk, listed twice) install their latest versions at container build time."
+  ],
+  "x_decisions": {
+   "tools/effver/check-effver:bump:parent-VERSION-arithmetic-injection": {
+    "verifier": "v11",
+    "decision": "confirmed"
+   }
+  }
+ }
+]

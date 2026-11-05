@@ -132,25 +132,26 @@ check:
 [group('rust')]
 [working-directory: 'rust']
 build:
-    mise exec rust -- cargo build
+    cargo build
 
 # the Rust unit tests: every lib/*.jq twin against the same goldens
 [group('rust')]
 [working-directory: 'rust']
 rust-test:
-    mise exec rust -- cargo test
+    cargo test
 
 # fmt --check and clippy, the Rust side of `just lint`
 [group('rust')]
 [working-directory: 'rust']
 lint:
-    mise exec rust -- cargo fmt --check && mise exec rust -- cargo clippy -- -D warnings
+    cargo fmt --check
+    cargo clippy -- -D warnings
 
 # criterion benchmarks over the recorded fixtures (rust/target/criterion/report)
 [group('rust')]
 [working-directory: 'rust']
 bench:
-    mise exec rust -- cargo bench
+    cargo bench
 
 # the two binaries agree on their interface: usage diff of the bash spec and the Rust one
 [group('rust')]

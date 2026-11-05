@@ -10,6 +10,25 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.0 (macro) - 2026-11-05
+
+- `ask-claude agent "question"` runs a prompt as a Managed Agents session,
+  and `ask-claude agent` with no prompt a chat on one (`/new`, `/history`,
+  `/quit`); `agent list` and `agent resume <session>` work from the API, which
+  keeps the transcript. The reply streams, the usage line shows the session
+  id, tokens and cost at list price. Every session gets a budget (`--budget`,
+  100 cents unless told otherwise, `0` for none). A tool confirmation is
+  asked at the terminal and denied without one (`ASK_CLAUDE_CONFIRM`);
+  custom tools on the agent get an error result.
+- Declared but not built yet, and refused with exit 2: `-f` with `agent`,
+  `agent files`, `agent budget`, `agent archive`, `agent trace`.
+- Breaking: the word `agent` as a one-shot prompt now opens the command
+  (`ask-claude -- agent` keeps the old meaning).
+- To adopt: make an environment and an agent in the Console
+  (platform.claude.com), put their ids in `ASK_CLAUDE_ENVIRONMENT` and
+  `ASK_CLAUDE_AGENT` (`just environments`, `just agents`), and read the Agents
+  section of the README for what a session costs.
+
 ## 0.1.4 (micro) - 2026-11-05
 
 - The bash `ask-claude` now does everything `claude.sh` did (one shot,

@@ -33,12 +33,17 @@
 #   (thinking blocks, tool use, results) for the history file.
 # Bash + curl + jq only. Responses are parsed with jq, never grep.
 set -uo pipefail
+# History holds whole conversations, including -f file contents: every file
+# and directory this script creates is private to the user, whatever the
+# shell's umask (every turn rewrites the history through a new file, so a
+# looser umask would also undo a manual chmod).
+umask 077
 
 MODEL="${MODEL:-claude-opus-5-5}"
 MAX_TOKENS="${MAX_TOKENS:-16000}"
 API="https://api.anthropic.com/v1/messages"
 STATE="$HOME/.local/state/claude-curl"
-mkdir -p "$STATE"
+mkdir -p "$STATE" && chmod 700 "$STATE"
 
 key="${ANTHROPIC_API_KEY:-}"
 keyfile="$HOME/.config/anthropic/api_key"
@@ -78,17 +83,33 @@ case "${1:-}" in
     --list) list_chats; exit 0 ;;
     --resume)
         if [ -n "${2:-}" ]; then
-            if [ -f "$2" ]; then HIST="$2"; else HIST=$(ls -1 "$STATE"/"$2"*.json 2>/dev/null | head -1); fi
+            if [ -f "$2" ]; then HIST="$2"
+            else
+                # a chat name or prefix from --list: no path parts or glob characters
+                case "$2" in */*|*[*?[]*) echo "claude.sh: --resume takes a file, or a chat name from --list" >&2; exit 2 ;; esac
+                HIST=$(ls -1 "$STATE"/"$2"*.json 2>/dev/null | head -1)
+            fi
         else
             # newest chat that has turns; empty files from aborted starts are skipped
-            HIST=$(for f in $(ls -1t "$STATE"/*.json 2>/dev/null); do [ "$(jq length "$f")" -gt 0 ] && { echo "$f"; break; }; done)
+            HIST=$(ls -1t "$STATE"/*.json 2>/dev/null | while IFS= read -r f; do [ "$(jq length "$f")" -gt 0 ] && { echo "$f"; break; }; done)
         fi
         [ -n "$HIST" ] && [ -f "$HIST" ] || { echo "claude.sh: nothing to resume (see --list)" >&2; exit 2; }
         shift; [ $# -gt 0 ] && shift
         echo "resuming $HIST" >&2; show_history >&2 ;;
 esac
 
-HIST="${HIST:-$STATE/$(date +%Y%m%dT%H%M%S).json}"
+# new_chat: a fresh history path; the PID keeps two chats started in the
+# same second apart (they would otherwise share HIST and its temp files)
+new_chat() { echo "$STATE/$(date +%Y%m%dT%H%M%S)-$$.json"; }
+HIST="${HIST:-$(new_chat)}"
+
+# The script writes fixed names next to HIST ($HIST.tmp, .turn, .sse,
+# .container). In a directory other accounts can write, one of them could
+# plant those names as symlinks (redirecting the writes) or as files (reading
+# them, or feeding a container id). Refuse such a directory.
+case "$(ls -ldnL "$(dirname "$HIST")" | cut -c6,9)" in
+    *w*) echo "claude.sh: $(dirname "$HIST") is writable by other accounts; keep the history in a private directory" >&2; exit 2 ;;
+esac
 [ -s "$HIST" ] || echo '[]' > "$HIST"
 
 # skills_json: the container.skills array from $SKILLS ("" when unset).
@@ -230,7 +251,7 @@ while IFS= read -r -e -p "> " line; do
         "") continue ;;
         /quit|/exit) break ;;
         /history) show_history; continue ;;
-        /new) HIST="$STATE/$(date +%Y%m%dT%H%M%S).json"; echo '[]' > "$HIST"; echo "new chat: $HIST" >&2; continue ;;
+        /new) HIST=$(new_chat); echo '[]' > "$HIST"; echo "new chat: $HIST" >&2; continue ;;
     esac
     ask "$line"
     echo

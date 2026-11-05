@@ -10,6 +10,15 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.1.4 (micro) - 2026-11-05
+
+- The bash `ask-claude` now does everything `claude.sh` did (one shot,
+  chat loop, history, skills), with the same request shape and the same
+  goldens. Adopting needs no change from 0.1.3.
+- `--base-url` sets the API root for `-p anthropic` (https, or http on
+  localhost), for a stub or a proxy. `-p openai` stays refused in bash:
+  the OpenAI shape, Venice included, is the Rust port's.
+
 ## 0.1.3 (micro) - 2026-11-05
 
 - `-s pptx,skill_abc@skver_1` runs the turn with those skills in

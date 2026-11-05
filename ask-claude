@@ -23,7 +23,7 @@
 set -uo pipefail
 # The script ships as one file, so it carries its own copy of VERSION;
 # `just bump` rewrites this line and `just check-version-line` compares them.
-readonly ASK_CLAUDE_VERSION=0.1.3
+readonly ASK_CLAUDE_VERSION=0.1.4
 # History holds whole conversations, including -f file contents: every file
 # and directory this script creates is private to the user, whatever the
 # shell's umask.

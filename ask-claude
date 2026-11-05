@@ -32,7 +32,6 @@ umask 077
 # The jq programs live next to the script, in lib/ (docs/plan.md: one shape
 # for the goldens, the bash script and the Rust port).
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib"
-API="https://api.anthropic.com/v1/messages"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude"
 
 die() {
@@ -46,13 +45,25 @@ if [ "${usage_version:-}" = true ]; then
   exit 0
 fi
 
-# The spec already declares what docs/plan.md will build. Until a feature
-# exists it is refused here, before any key check, request or history file;
-# the commit that implements it deletes its line (and its test in
-# tests/unit/refuse.bats).
-not_implemented() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plan.md"; }
-[ "${usage_provider:-anthropic}" = anthropic ] || not_implemented "--provider $usage_provider" # F9
-[ -z "${usage_base_url:-}" ] || not_implemented "--base-url"                                   # F9
+# Providers. The bash version speaks the Messages API only; the OpenAI
+# chat-completions shape (OpenAI, Venice at its own base URL) is the Rust
+# port's (docs/plan.md, phase 3). Refused before any key check or request.
+case "${usage_provider:-anthropic}" in
+anthropic) ;;
+openai) die "--provider openai is not implemented in the bash version, see docs/plan.md" ;;
+*) die "unknown provider \"$usage_provider\" (anthropic|openai)" ;;
+esac
+
+# --base-url: the API root, https://api.anthropic.com unless given. Anything
+# but https goes to a loopback address only, so the key never travels in
+# clear over a network.
+BASE_URL="${usage_base_url:-https://api.anthropic.com}"
+case "$BASE_URL" in
+https://*) ;;
+http://localhost | http://localhost[:/]* | http://127.0.0.1 | http://127.0.0.1[:/]* | http://\[::1\] | http://\[::1\][:/]*) ;;
+*) die "--base-url must be https:// (or http:// on localhost), got: $BASE_URL" ;;
+esac
+API="${BASE_URL%/}/v1/messages"
 
 # The key is checked where a request can happen (one shot, chat loop), so
 # `list` works without one.

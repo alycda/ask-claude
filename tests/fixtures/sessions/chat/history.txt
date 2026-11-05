@@ -1,0 +1,4 @@
+you: Reply with the single word: pong
+
+agent: pong
+

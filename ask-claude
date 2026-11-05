@@ -78,7 +78,6 @@ fi
 # tests/unit/refuse.bats).
 not_built() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plans/2026-11-05-001-feat-managed-agents-sessions-plan.md"; }
 case "${usage_cmd:-}" in
-"agent files") not_built "$usage_cmd" ;;                                    # U8
 "agent budget" | "agent archive" | "agent trace") not_built "$usage_cmd" ;; # U10
 esac
 
@@ -472,7 +471,7 @@ session_turn() {
 # event; prints the new session id, or an API error and returns 1.
 session_create() {
   local body resp sesn err
-  body=$(jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" \
+  body=$(jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" --arg file "${session_file_id:-}" --arg file_name "$(basename "${usage_file:-}")" \
     --arg title "" --arg prompt "$1" -f "$LIB/session-create.jq")
   resp=$(ma_call POST /sessions "$body")
   sesn=$(jq -r '.id // empty' <<<"$resp" 2>/dev/null)
@@ -555,6 +554,59 @@ session_loop() {
   [ -z "$sesn" ] || echo "resume with: ask-claude agent resume $sesn" >&2
 }
 
+# file_upload <path>: POST /v1/files (multipart, no beta header: the Files
+# API is out of beta); prints the file id. Replay logs {"file": name}.
+file_upload() {
+  local resp id name
+  name=$(basename "$1")
+  if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
+    [ -z "${ASK_CLAUDE_REQUEST_LOG:-}" ] || jq -n -c --arg f "$name" '{file: $f}' >>"$ASK_CLAUDE_REQUEST_LOG"
+    echo file_FIXTURE01
+    return 0
+  fi
+  resp=$(curl -sS "$BASE_URL/v1/files" -H @<(printf 'x-api-key: %s\nanthropic-version: 2026-10-21\n' "$ANTHROPIC_API_KEY") -F "file=@$1")
+  id=$(jq -r '.id // empty' <<<"$resp" 2>/dev/null)
+  if [ -z "$id" ]; then
+    echo "ask-claude: upload failed: $(jq -r "$SAFE"'.error.message // "unreadable response" | safe' <<<"$resp" 2>/dev/null || echo "unreadable response")" >&2
+    return 1
+  fi
+  echo "$id"
+}
+
+# session_files <sesn> [name]...: the files a session holds (uploads and what
+# the agent wrote to /mnt/session/outputs), or download the named ones into
+# the current directory
+session_files() {
+  local sesn=$1 page name id size n
+  shift
+  if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
+    page=$(cat "$ASK_CLAUDE_REPLAY/files.json" 2>/dev/null || echo '{"data":[]}')
+  else
+    page=$(curl -sS "$BASE_URL/v1/files?scope_id=$sesn" -H @<(ma_headers))
+  fi
+  if [ $# -eq 0 ]; then
+    jq -r "$SAFE"'.data[]? | [.filename, (.size_bytes | tostring), .id] | @tsv | safe' <<<"$page" | column -t -s $'\t'
+    return 0
+  fi
+  for name in "$@"; do
+    case "$name" in */* | "" | .*) die "files takes names from \`ask-claude agent files $sesn\`, not paths" ;; esac
+    n=$(jq -r --arg n "$name" '[.data[]? | select(.filename == $n)] | length' <<<"$page")
+    [ "$n" -gt 0 ] || die "the session has no file named $name"
+    id=$(jq -r --arg n "$name" 'last(.data[]? | select(.filename == $n)) | .id' <<<"$page")
+    if [ -e "$name" ] && [ "${usage_force:-}" != true ]; then
+      die "$name exists here; --force overwrites it"
+    fi
+    if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
+      cat "$ASK_CLAUDE_REPLAY/files/$name" >"$name.part"
+    else
+      curl -sS "$BASE_URL/v1/files/$id/content" -H @<(ma_headers) -o "$name.part"
+    fi
+    mv "$name.part" "$name"
+    size=$(wc -c <"$name")
+    echo "ask-claude: wrote $name ($size bytes)" >&2
+  done
+}
+
 # session_prereqs: what every agent form needs before a request can happen
 session_prereqs() {
   [ -n "${usage_agent:-}" ] || die "no agent id: --agent or ASK_CLAUDE_AGENT (the Console, Agents)"
@@ -566,13 +618,15 @@ session_prereqs() {
   ask | allow | deny) ;;
   *) die "ASK_CLAUDE_CONFIRM must be ask, allow or deny, got: $ASK_CLAUDE_CONFIRM" ;;
   esac
-  [ -z "${usage_file:-}" ] || not_built "-f with agent" # U8
+  [ -z "${usage_file:-}" ] || [ -r "$usage_file" ] || die "cannot read $usage_file"
   need_key
 }
 
 case "${usage_cmd:-}" in
 agent)
   session_prereqs
+  session_file_id=""
+  if [ -n "${usage_file:-}" ]; then session_file_id=$(file_upload "$usage_file") || exit 1; fi
   if [ -z "${usage_prompt:-}" ]; then
     session_loop
     exit 0
@@ -584,6 +638,12 @@ agent)
   fi
   rm -f "$SESSIONS/$sesn"
   exit 1
+  ;;
+"agent files")
+  need_key
+  # shellcheck disable=SC2086  # usage_name is the space-joined list usage builds
+  session_files "$usage_session" ${usage_name:-}
+  exit 0
   ;;
 "agent list")
   need_key

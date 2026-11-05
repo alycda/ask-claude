@@ -169,3 +169,15 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ "$status" -eq 0 ]
     [ "$output" = "https://platform.claude.com/workspaces/default/sessions/sesn_FIXTURE01" ]
 }
+
+@test "agent: a session id that is not one is refused before it names a file" {
+    mkdir -p "$TMP/fx"
+    printf 'precious\n' >"$TMP/victim.txt"
+    # sessions/ is three levels below $TMP: state/ask-claude/sessions
+    printf '{"id":"../../../victim.txt","status":"running"}\n' >"$TMP/fx/create.json"
+    printf 'data: {"type":"session.status_idle","stop_reason":{"type":"end_turn"}}\n\n' >"$TMP/fx/1.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/fx" "$BIN" agent "ping"
+    [ "$status" -eq 1 ]
+    grep -q 'session id is not one' <<<"$stderr"
+    [ "$(cat "$TMP/victim.txt")" = precious ]
+}

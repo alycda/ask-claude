@@ -371,7 +371,7 @@ ma_call() {
   [ -z "${ASK_CLAUDE_REQUEST_LOG:-}" ] || [ -z "$body" ] || printf '%s\n' "$body" >>"$ASK_CLAUDE_REQUEST_LOG"
   if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
     case "$method $path" in
-    "POST /sessions") echo '{"id":"sesn_FIXTURE01","status":"running"}' ;;
+    "POST /sessions") cat "$ASK_CLAUDE_REPLAY/create.json" 2>/dev/null || echo '{"id":"sesn_FIXTURE01","status":"running"}' ;;
     "POST /sessions/"*"/archive") cat "$ASK_CLAUDE_REPLAY/archive.json" 2>/dev/null || echo '{"id":"sesn_FIXTURE01","status":"terminated","archived_at":"2026-11-05T00:00:00Z"}' ;;
     "POST /sessions/"*"/events") cat "$ASK_CLAUDE_REPLAY/events-post.json" 2>/dev/null || echo '{}' ;;
     "POST /sessions/"*) cat "$ASK_CLAUDE_REPLAY/update.json" 2>/dev/null || jq -c '{id: "sesn_FIXTURE01"} + .' <<<"$body" ;;
@@ -580,11 +580,22 @@ session_create() {
     echo "ask-claude: API error: $err" >&2
     return 1
   fi
+  # the id names a file under sessions/ and goes into URL paths and the
+  # terminal, so it must be an id and nothing else ("../x" would write
+  # outside sessions/)
+  if ! session_id_ok "$sesn"; then
+    echo "ask-claude: API error: the session id is not one (sesn_ and letters, digits, _ or -)" >&2
+    return 1
+  fi
   echo "$sesn"
 }
 
+# session_id_ok <id>: the shape of a session id the API hands out
+session_id_ok() { [[ $1 =~ ^sesn_[A-Za-z0-9_-]{1,128}$ ]]; }
+
 # session_remember <sesn>: the state file `list` and `resume` read
 session_remember() {
+  session_id_ok "$1" || return 1
   mkdir -p "$SESSIONS"
   printf 'agent=%s\nenvironment=%s\ncreated=%s\n' "$usage_agent" "$usage_environment" "$(date +%Y%m%dT%H%M%S)" >"$SESSIONS/$1"
 }

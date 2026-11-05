@@ -50,8 +50,6 @@ reduce .[] as $e (
             elif $e.delta.type=="input_json_delta" then .blocks[$i].partial += $e.delta.partial_json
             else . end
     elif $e.type == "content_block_stop" then
-        # TODO: if the block has "partial", parse it: "" -> {}, else fromjson,
-        #       store as .input, and del(.partial)
         ($e.index|tostring) as $i
           | if (.blocks[$i] | has("partial")) then
                 .blocks[$i].input = (if .blocks[$i].partial=="" then {} else (.blocks[$i].partial|fromjson) end)
@@ -61,7 +59,9 @@ reduce .[] as $e (
         # TODO: .stop_reason, .stop_details from $e.delta;
         #       .usage = (.usage + ($e.usage // {}));
         #       .container from $e.delta.container when present
-        .
+        .stop_reason=$e.delta.stop_reason | .stop_details=$e.delta.stop_details
+          | .usage=(.usage + ($e.usage // {}))
+          | (if ($e.delta.container? // null) != null then .container=$e.delta.container else . end)
     elif $e.type == "error" then
         # TODO: .error = $e.error
         .

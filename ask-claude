@@ -374,18 +374,56 @@ session_stream() {
 }
 
 # session_answer <fold>: the events that answer what the session waits on.
-# A tool confirmation is denied unless someone at a terminal allows it (U6);
-# a custom tool call gets an error result, since nothing runs here yet.
+# A tool confirmation is asked at the terminal (y / n / a for the rest of
+# this process) and denied when there is none; ASK_CLAUDE_CONFIRM=allow|deny
+# answers without asking. A custom tool call gets an error result, since
+# nothing runs here yet.
+session_always=""
+session_tty=""      # set per answer round, outside the loop that redirects stdin
+session_confirm() { # <name> <input>: allow | deny
+  local answer
+  case "${ASK_CLAUDE_CONFIRM:-ask}" in
+  allow)
+    echo allow
+    return
+    ;;
+  deny)
+    echo deny
+    return
+    ;;
+  esac
+  [ -n "$session_always" ] && {
+    echo allow
+    return
+  }
+  if [ -z "$session_tty" ] || [ ! -r /dev/tty ]; then
+    echo "ask-claude: denied $1 ($2): stdin is not a terminal (ASK_CLAUDE_CONFIRM=allow to allow unattended)" >&2
+    echo deny
+    return
+  fi
+  IFS= read -r -p "allow $1 $2? [y/N/a(lways)] " answer </dev/tty || answer=""
+  case "$answer" in
+  y | Y | yes) echo allow ;;
+  a | A | always)
+    session_always=1
+    echo allow
+    ;;
+  *) echo deny ;;
+  esac
+}
 session_answer() {
-  local fold=$1
+  local fold=$1 answers="[]" id name input result
+  if [ -t 0 ]; then session_tty=1; else session_tty=""; fi
   while IFS=$'\t' read -r id name input; do
     [ -n "$id" ] || continue
-    echo "ask-claude: denied $name ($input): a tool confirmation needs a terminal" >&2
+    result=$(session_confirm "$name" "$input")
+    [ "$result" = allow ] && echo "ask-claude: allowed $name ($input)" >&2
+    [ "$result" = deny ] && [ -n "${ASK_CLAUDE_CONFIRM:-}" ] && echo "ask-claude: denied $name ($input): ASK_CLAUDE_CONFIRM=$ASK_CLAUDE_CONFIRM" >&2
+    answers=$(jq -c --arg id "$id" --arg r "$result" '. + [{type: "user.tool_confirmation", tool_use_id: $id, result: $r}]' <<<"$answers")
   done < <(jq -r '.asks[] | [.id, .name, (.input | tostring)] | @tsv' <<<"$fold")
-  jq -c --arg msg "Tool unavailable: ask-claude $ASK_CLAUDE_VERSION runs no local tools (see docs/plan.md). Do not call it again; answer the user without it." '
-    {events: ([.asks[] | {type: "user.tool_confirmation", tool_use_id: .id, result: "deny"}]
-             + [.custom[] | {type: "user.custom_tool_result", custom_tool_use_id: .id,
-                             content: [{type: "text", text: $msg}], is_error: true}])}' <<<"$fold"
+  jq -c --argjson a "$answers" --arg msg "Tool unavailable: ask-claude $ASK_CLAUDE_VERSION runs no local tools (see docs/plan.md). Do not call it again; answer the user without it." '
+    {events: ($a + [.custom[] | {type: "user.custom_tool_result", custom_tool_use_id: .id,
+                                 content: [{type: "text", text: $msg}], is_error: true}])}' <<<"$fold"
 }
 
 # session_turn <sesn> [events]: one user turn, however many streams it takes.
@@ -523,6 +561,10 @@ session_prereqs() {
   [ -n "${usage_environment:-}" ] || die "no environment id: --environment or ASK_CLAUDE_ENVIRONMENT (the Console, Environments)"
   case "${usage_budget:-}" in
   "" | *[!0-9]*) die "--budget must be whole cents, 0 for none, got: ${usage_budget:-}" ;;
+  esac
+  case "${ASK_CLAUDE_CONFIRM:-ask}" in
+  ask | allow | deny) ;;
+  *) die "ASK_CLAUDE_CONFIRM must be ask, allow or deny, got: $ASK_CLAUDE_CONFIRM" ;;
   esac
   [ -z "${usage_file:-}" ] || not_built "-f with agent" # U8
   need_key

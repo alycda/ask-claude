@@ -70,8 +70,8 @@ change, that is its own commit with the reason in the message.
 | # | Commit | Files | Validation | Status |
 | --- | --- | --- | --- | --- |
 | T0 | test: harness | `mise.toml` (+bats), `justfile` (`test-unit`, `test-live`), `tests/fixtures/**`, `tests/unit/helpers.bash` | `just test-unit` runs, 0 tests | [t] |
-| T1 | test: reassembler goldens | `tests/unit/reassemble.bats` | `jq -s -f lib/reassemble.jq fixture` == `fixture.message.json`, 3 fixtures | [t] |
-| F1 | feat: lib/reassemble.jq | the `jq -s` program from `call()`, verbatim | T1 green | [ ] |
+| T1 | test: reassembler goldens | `tests/unit/reassemble.bats` | `jq -s -f lib/reassemble.jq fixture` == `fixture.message.json`, 3 fixtures | [x] |
+| F1 | feat: lib/reassemble.jq | the `jq -s` program from `call()`, verbatim | T1 green | [x] |
 | T2 | test: stream printer goldens | `tests/unit/stream.bats` | `jq -rj -f lib/stream.jq` == `fixture.stream.txt` | [t] |
 | F2 | feat: lib/stream.jq | the `--unbuffered -rj` filter, verbatim | T2 green | [ ] |
 | T3 | test: request builder goldens | `tests/unit/request.bats` | 4 arg sets == `request/*.json`; `skills_json` == `skills.json` | [t] |

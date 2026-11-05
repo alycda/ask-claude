@@ -62,10 +62,10 @@ reduce .[] as $e (
     elif $e.type == "error" then
         .error=$e.error
     else
-        .end)
+        .
     end
 )
 # FINISH: .blocks (object keyed "0","1",...) -> .content (array in index order),
 # then drop .blocks. The oracle does:
 #   .content = (.blocks | to_entries | sort_by(.key|tonumber) | map(.value)) | del(.blocks)
-| .content = (.blocks | to_entries | sort_by(.key|tonumber) | map(.value)) | del(.blocks)')
+| .content = (.blocks | to_entries | sort_by(.key|tonumber) | map(.value)) | del(.blocks)

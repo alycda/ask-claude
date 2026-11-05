@@ -1,16 +1,25 @@
 : connected
 
-data: {"type":"user.message","id":"sevt_FIXTURE01","content":[{"type":"text","text":"Reply with the single word: pong"}]}
+event: message
+data: {"agent_name":"fixture","id":"sevt_FIXTURE01","processed_at":"2026-11-06T09:24:01.756253Z","session_thread_id":"sthr_FIXTURE01","type":"session.thread_status_running"}
 
-data: {"type":"session.status_running","id":"sevt_FIXTURE02"}
+event: message
+data: {"content":[{"text":"Reply with the single word: pong","type":"text"}],"id":"sevt_FIXTURE02","processed_at":"2026-11-06T09:24:01.831942Z","type":"user.message"}
 
-data: {"type":"span.model_request_start","id":"sevt_FIXTURE03"}
+event: message
+data: {"id":"sevt_FIXTURE03","processed_at":"2026-11-06T09:24:01.831943Z","type":"span.model_request_start"}
 
-data: {"type":"agent.message","id":"sevt_FIXTURE04","content":[{"type":"text","text":"pong"}]}
+event: message
+data: {"content":[{"text":"pong","type":"text"}],"id":"sevt_FIXTURE04","processed_at":"2026-11-06T09:24:02.832622Z","type":"agent.message"}
 
-data: {"type":"span.model_request_end","id":"sevt_FIXTURE05"}
+event: message
+data: {"id":"sevt_FIXTURE05","is_error":false,"model_request_start_id":"sevt_FIXTURE03","model_usage":{"cache_creation_input_tokens":4311,"cache_read_input_tokens":0,"input_tokens":4,"output_tokens":4,"speed":"standard"},"processed_at":"2026-11-06T09:24:02.832623Z","type":"span.model_request_end"}
 
-data: {"type":"session.usage","id":"sevt_FIXTURE06","usage":{"input_tokens":4,"output_tokens":4,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":4311,"ephemeral_1h_input_tokens":0},"list_cost":{"amount":"0","currency":"USD"},"active_seconds":1.075}}
+event: message
+data: {"agent_name":"fixture","id":"sevt_FIXTURE06","processed_at":"2026-11-06T09:24:02.951240Z","session_thread_id":"sthr_FIXTURE01","stop_details":null,"stop_reason":{"type":"end_turn"},"type":"session.thread_status_idle"}
 
-data: {"type":"session.status_idle","id":"sevt_FIXTURE07","stop_reason":{"type":"budget_reached"}}
+event: message
+data: {"budget":{"max_list_cost":{"amount":"10","currency":"USD"},"type":"limit"},"id":"sevt_FIXTURE07","processed_at":"2026-11-06T09:24:02.951241Z","type":"session.usage","usage":{"active_seconds":1.251,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":4311},"cache_read_input_tokens":0,"input_tokens":4,"list_cost":{"amount":"0","currency":"USD"},"output_tokens":4,"server_tool_use":{"web_fetch_requests":0,"web_search_requests":0}}}
 
+event: message
+data: {"id":"sevt_FIXTURE08","processed_at":"2026-11-06T09:24:02.951242Z","stop_details":null,"stop_reason":{"type":"budget_reached"},"type":"session.status_idle"}

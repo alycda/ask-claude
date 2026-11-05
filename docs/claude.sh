@@ -41,8 +41,16 @@ STATE="$HOME/.local/state/claude-curl"
 mkdir -p "$STATE"
 
 key="${ANTHROPIC_API_KEY:-}"
-if [ -z "$key" ] && [ -r "$HOME/.config/anthropic/api_key" ]; then
-    key=$(tr -d '[:space:]' < "$HOME/.config/anthropic/api_key")
+keyfile="$HOME/.config/anthropic/api_key"
+if [ -z "$key" ] && [ -r "$keyfile" ]; then
+    # Like ssh with a private key: refuse a key file that other accounts can
+    # read or write, or that another account owns (-L follows a symlink).
+    case "$(ls -lnL "$keyfile" | cut -c5-10)" in
+        *[rw]*) echo "claude.sh: $keyfile is readable or writable by others; chmod 600 it" >&2; exit 2 ;;
+    esac
+    [ "$(ls -lnL "$keyfile" | awk '{print $3}')" = "$(id -u)" ] \
+        || { echo "claude.sh: $keyfile is not owned by you" >&2; exit 2; }
+    key=$(tr -d '[:space:]' < "$keyfile")
 fi
 [ -n "$key" ] || { echo "claude.sh: no key. export ANTHROPIC_API_KEY or write ~/.config/anthropic/api_key (chmod 600)" >&2; exit 2; }
 command -v jq >/dev/null || { echo "claude.sh: jq not found" >&2; exit 2; }
@@ -119,12 +127,14 @@ call() {
     : > "$log"
     # Stream: tee the raw SSE to $log, strip "data: " with builtins (one jq
     # process for the whole stream, not one per token), print text live.
-    curl -sS -N --max-time 1800 "$API" \
-        -H "content-type: application/json" \
-        -H "x-api-key: $key" \
-        -H "anthropic-version: 2026-10-21" \
-        -H "anthropic-beta: $betas" \
-        --data-binary "$body" \
+    # Neither the key nor the body goes on curl's command line, which other
+    # local accounts can read (ps, /proc/<pid>/cmdline) for the whole reply:
+    # the headers come from a pipe (-H @file) and the body from stdin
+    # (--data-binary @-). printf is a shell builtin, so no process ever has
+    # them as arguments, and a long chat no longer hits the argv size limit.
+    printf '%s' "$body" | curl -sS -N --max-time 1800 "$API" \
+        -H @<(printf 'content-type: application/json\nx-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: %s\n' "$key" "$betas") \
+        --data-binary @- \
     | tee "$log" \
     | while IFS= read -r l; do case "$l" in "data: "*) printf '%s\n' "${l#data: }" ;; esac; done \
     | jq --unbuffered -rj "$SAFE"'(

@@ -1,6 +1,3 @@
-set dotenv-load
-set dotenv-required
-
 help:
     ./ask-claude --help
 
@@ -14,7 +11,12 @@ unit-test unit:
 step name:
     bats --filter-tags step:{{ name }} tests/unit/*-steps.bats
 
-# live Anthropic contracts; one cheap call each
+# live Anthropic contracts; one cheap call each. Only this recipe reads .env, and
+# the key reaches hurl through a secrets file on a pipe, not on its command line.
 [working-directory: 'tests']
 test:
-    hurl --test --variable base_url=https://api.anthropic.com --secret api_key="$ANTHROPIC_API_KEY" .
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; . "{{ justfile_directory() }}/.env"; set +a
+    hurl --test --variable base_url=https://api.anthropic.com \
+        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") .

@@ -65,7 +65,7 @@ update itself; rebuild without the cache to get a newer one.
 
 ```sh
 mise install                                  # jq and usage, pinned
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env    # every just recipe needs .env
+(umask 077; echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env)   # mode 600; only just test reads it
 just --list                                   # the map
 ```
 

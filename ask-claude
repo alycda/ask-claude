@@ -73,14 +73,6 @@ if [ "${usage_version:-}" = true ]; then
   exit 0
 fi
 
-# agent: declared for docs/plans/2026-11-05-001; refused until each piece is
-# built. The commit that builds one deletes its line (and its test in
-# tests/unit/refuse.bats).
-not_built() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plans/2026-11-05-001-feat-managed-agents-sessions-plan.md"; }
-case "${usage_cmd:-}" in
-"agent budget" | "agent archive" | "agent trace") not_built "$usage_cmd" ;; # U10
-esac
-
 # Providers. The bash version speaks the Messages API only; the OpenAI
 # chat-completions shape (OpenAI, Venice at its own base URL) is the Rust
 # port's (docs/plan.md, phase 3). Refused before any key check or request.
@@ -347,6 +339,9 @@ ma_call() {
   if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
     case "$method $path" in
     "POST /sessions") echo '{"id":"sesn_FIXTURE01","status":"running"}' ;;
+    "POST /sessions/"*"/archive") cat "$ASK_CLAUDE_REPLAY/archive.json" 2>/dev/null || echo '{"id":"sesn_FIXTURE01","status":"terminated","archived_at":"2026-11-05T00:00:00Z"}' ;;
+    "POST /sessions/"*"/events") echo '{}' ;;
+    "POST /sessions/"*) cat "$ASK_CLAUDE_REPLAY/update.json" 2>/dev/null || jq -c '{id: "sesn_FIXTURE01"} + .' <<<"$body" ;;
     "GET /sessions/"*"/events"*) cat "$ASK_CLAUDE_REPLAY/events.json" 2>/dev/null || echo '{"data":[]}' ;;
     "GET /sessions"*) cat "$ASK_CLAUDE_REPLAY/sessions.json" 2>/dev/null || echo '{"data":[]}' ;;
     *) echo '{}' ;;
@@ -608,6 +603,41 @@ session_files() {
   done
 }
 
+# session_budget <sesn> <cents>: change the cap; 0 removes it, which cannot
+# be undone (the API says so). A cap below what is spent is refused by the
+# API with its own message.
+session_budget() {
+  local body resp
+  case "$2" in
+  "" | *[!0-9]*) die "budget takes whole cents, 0 to remove the cap, got: $2" ;;
+  esac
+  need_key
+  if [ "$2" = 0 ]; then body='{"budget":null}'; else body=$(jq -n -c --arg c "$2" '{budget: {type: "limit", max_list_cost: {amount: $c, currency: "USD"}}}'); fi
+  resp=$(ma_call POST "/sessions/$1" "$body")
+  session_api_error "$resp" && return 1
+  jq -r "$SAFE"'"budget: " + (if .budget == null then "none" else ("$" + ((.budget.max_list_cost.amount | tonumber) / 100 | tostring | if test("\\.") then (. + "00" | capture("(?<d>[0-9]+\\.[0-9]{2})").d) else . + ".00" end)) end) | safe' <<<"$resp"
+}
+
+# session_archive <sesn>: archive an idle session (the API refuses a running
+# one) and forget it here
+session_archive() {
+  local resp
+  need_key
+  resp=$(ma_call POST "/sessions/$1/archive")
+  session_api_error "$resp" && return 1
+  rm -f "$SESSIONS/$1"
+  echo "archived $1"
+}
+
+# session_api_error <response>: print an API error and succeed if there is one
+session_api_error() {
+  local err
+  err=$(jq -r "$SAFE"'.error.message // empty | safe' <<<"$1" 2>/dev/null)
+  [ -n "$err" ] || return 1
+  echo "ask-claude: API error: $err" >&2
+  return 0
+}
+
 # session_prereqs: what every agent form needs before a request can happen
 session_prereqs() {
   # resources: checked before any request, the API's own checks come after
@@ -658,6 +688,21 @@ agent)
   need_key
   # shellcheck disable=SC2086  # usage_name is the space-joined list usage builds
   session_files "$usage_session" ${usage_name:-}
+  exit 0
+  ;;
+"agent budget")
+  sesn=$(session_find "$usage_session") || exit 2
+  session_budget "$sesn" "$usage_cents" || exit 1
+  exit 0
+  ;;
+"agent archive")
+  sesn=$(session_find "$usage_session") || exit 2
+  session_archive "$sesn" || exit 1
+  exit 0
+  ;;
+"agent trace")
+  sesn=$(session_find "$usage_session") || exit 2
+  echo "https://platform.claude.com/workspaces/${ASK_CLAUDE_WORKSPACE:-default}/sessions/$sesn"
   exit 0
   ;;
 "agent list")

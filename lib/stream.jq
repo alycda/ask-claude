@@ -27,9 +27,7 @@ if .type == "content_block_start" then
                  "(result rc=\(.content_block.content.return_code // "?")) "
              else "" end)
 elif .type == "content_block_delta" and .delta.type == "text_delta" then
-    # TODO: the text itself. Other deltas (thinking, signature, tool input)
-    #       fall through to the else branch and print nothing.
-    ""
+    .delta.text
 elif .type == "message_stop" then
     # TODO: the final newline
     ""

@@ -22,10 +22,23 @@
 #     + (if $sys != "" then {...} else {} end)
 #     + ...
 
-# TODO BASE, in this key order: model ($m), max_tokens ($max), messages
-#      ($msgs[0]), fallbacks ("default"), stream (true),
-#      cache_control ({type: "ephemeral"})
-{}
+# BASE: every request has these six keys, in this order. Each value is either
+# one of the variables or a constant:
+#   model          $m           the model id (--arg m)
+#   max_tokens     $max         a number, because --argjson parsed it
+#   messages       $msgs[0]     the whole chat history. --slurpfile wraps the
+#                               file in an array, so [0] unwraps it
+#   fallbacks      "default"    let the API retry a refusal on another model
+#   stream         true         always SSE (lib/stream.jq prints it)
+#   cache_control  {type: "ephemeral"}   cache the growing conversation
+{
+    model: $m,
+    max_tokens: $max,
+    messages: $msgs[0],
+    fallbacks: "default",
+    stream: true,
+    cache_control: {type: "ephemeral"}
+}
 # TODO: system ($sys) when $sys is not ""
 + {}
 # TODO: output_config: {effort: $eff} when $eff is not ""

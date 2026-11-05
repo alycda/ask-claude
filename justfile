@@ -3,6 +3,9 @@ import 'tools/effver/effver.just'
 help:
     ./ask-claude --help
 
+ask question="" *FLAGS:
+    ./ask-claude {{FLAGS}} {{ quote(question) }}
+
 # offline: bats over recorded fixtures (tests/unit), no key needed
 unit-tests:
     bats tests/unit

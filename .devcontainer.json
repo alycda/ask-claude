@@ -1,8 +1,11 @@
 {
   "name": "ask-claude",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04@sha256:d94c97dd9cacf183d0a6fd12a8e87b526e9e928307674ae9c94139139c0c6eae",
   "features": {
-    "ghcr.io/devcontainers-extra/features/mise:1": {}
+    "ghcr.io/devcontainers-extra/features/mise:1": {
+      // the mise that runs `mise install` below; mise.lock then pins every tool
+      "version": "2026.10.25"
+    }
   },
   "customizations": {
     "vscode": {
@@ -25,6 +28,8 @@
   "containerEnv": {
     "MISE_DISABLE_UPDATE_WARNING": "true"
   },
-  "remoteEnv": {},
+  "remoteEnv": {
+    "PATH": "/home/vscode/.local/share/mise/shims:${containerEnv:PATH}"
+  },
   "postCreateCommand": "mise install"
 }

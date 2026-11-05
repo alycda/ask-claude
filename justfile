@@ -6,10 +6,10 @@ unit-tests:
     bats tests/unit
 
 unit-test unit:
-    bats tests/unit/{{unit}}.bats
+    bats tests/unit/{{ quote(unit) }}.bats
 
 step name:
-    bats --filter-tags step:{{ name }} tests/unit/*-steps.bats
+    bats --filter-tags {{ quote("step:" + name) }} tests/unit/*-steps.bats
 
 # live Anthropic contracts; one cheap call each. Only this recipe reads .env, and
 # the key reaches hurl through a secrets file on a pipe, not on its command line.

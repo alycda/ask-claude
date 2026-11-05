@@ -10,6 +10,14 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.1.2 (micro) - 2026-11-05
+
+- `ask-claude` with no prompt opens a chat: each line is a turn, `/new`
+  starts another chat, `/history` prints this one, `/quit` exits and
+  prints the command to resume it. A multi-line paste is one turn under
+  bash 5.1 or newer (macOS `/bin/bash` 3.2 sends on the first newline).
+- Still refused with exit 2: `-s`, `-p openai`, `--base-url`.
+
 ## 0.1.1 (micro) - 2026-11-05
 
 - `ask-claude list` shows the chats on disk, newest first, and

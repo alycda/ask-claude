@@ -240,7 +240,7 @@ transport() {
       cat "$ASK_CLAUDE_REPLAY"
     else
       curl -sS -N --max-time 1800 "$API" \
-        -H @<(printf 'content-type: application/json\nx-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: %s\n' "$ANTHROPIC_API_KEY" "$betas") \
+        -H @<(headers "$betas") \
         --data-binary @-
     fi
 }
@@ -269,7 +269,7 @@ call() {
     # tee the raw SSE to $log, strip "data: " with builtins, print text live
     printf '%s\n' "$body" | transport |
       tee "$log" |
-      while IFS= read -r l; do case "$l" in "data: "*) printf '%s\n' "${l#data: }" ;; esac done |
+      sse_data |
       jq --unbuffered -rj -f "$LIB/stream.jq"
     [ -s "$log" ] || {
       rm -f "$log"
@@ -279,8 +279,9 @@ call() {
     }
     if ! grep -q '^data: ' "$log"; then
       # not SSE: an HTTP error body
-      err=$(jq -r "$SAFE"'.error.message // "unreadable response" | safe' "$log" 2>/dev/null || echo "unreadable response")
-    elif ! resp=$(sed -n 's/^data: //p' "$log" | jq -s -f "$LIB/reassemble.jq"); then
+      err=$(api_error "$(cat "$log")")
+      [ -n "$err" ] || err="unreadable response"
+    elif ! resp=$(sse_data <"$log" | jq -s -f "$LIB/reassemble.jq"); then
       # a reply jq cannot fold is an error, not an empty turn that vanishes
       err="the reply could not be parsed"
     else
@@ -558,7 +559,8 @@ session_create() {
   resp=$(ma_call POST /sessions "$body")
   sesn=$(jq -r '.id // empty' <<<"$resp" 2>/dev/null)
   if [ -z "$sesn" ]; then
-    err=$(jq -r "$SAFE"'.error.message // "unreadable response" | safe' <<<"$resp" 2>/dev/null || echo "unreadable response")
+    err=$(api_error "$resp")
+    [ -n "$err" ] || err="unreadable response"
     echo "ask-claude: API error: $err" >&2
     return 1
   fi
@@ -655,7 +657,7 @@ file_upload() {
   resp=$(curl -sS "$BASE_URL/v1/files" -H @<(printf 'x-api-key: %s\nanthropic-version: 2026-10-21\n' "$ANTHROPIC_API_KEY") -F "file=@$1")
   id=$(jq -r '.id // empty' <<<"$resp" 2>/dev/null)
   if [ -z "$id" ]; then
-    echo "ask-claude: upload failed: $(jq -r "$SAFE"'.error.message // "unreadable response" | safe' <<<"$resp" 2>/dev/null || echo "unreadable response")" >&2
+    echo "ask-claude: upload failed: $(api_error "$resp")" >&2
     return 1
   fi
   echo "$id"

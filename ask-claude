@@ -51,7 +51,6 @@ fi
 # the commit that implements it deletes its line (and its test in
 # tests/unit/refuse.bats).
 not_implemented() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plan.md"; }
-[ -z "${usage_skills:-}" ] || not_implemented "--skills"                                       # F8
 [ "${usage_provider:-anthropic}" = anthropic ] || not_implemented "--provider $usage_provider" # F9
 [ -z "${usage_base_url:-}" ] || not_implemented "--base-url"                                   # F9
 
@@ -92,6 +91,16 @@ new_chat() {
 
 # rollback_to <n>: keep the first n turns of the history (n >= 0)
 rollback_to() { jq --argjson n "$(($1 < 0 ? 0 : $1))" '.[:$n]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"; }
+
+# skills_json: the container.skills array from -s ("" when not given), one
+# typed entry per <skill_id>[@<version>] (lib/skills.jq)
+skills_json() {
+  [ -n "${usage_skills:-}" ] || {
+    echo ""
+    return
+  }
+  printf '%s' "$usage_skills" | tr ',' '\n' | jq -R -s -c -f "$LIB/skills.jq"
+}
 
 # show_history [file]: the chat as "you:" / "claude:" text (thinking blocks skipped)
 show_history() {
@@ -198,13 +207,20 @@ transport() {
 # with the history rolled back to before this ask. A pause_turn (server tool
 # still working) is continued automatically, up to 8 rounds.
 call() {
-  local body resp err stop rounds=0 n0 log t0
+  local body resp err stop rounds=0 n0 log t0 skills cid
   n0=$(jq length "$HIST")
+  # Skills run in Anthropic's code-execution sandbox, so -s also adds the
+  # code_execution tool and its beta; the container id comes back in the
+  # reply and is kept in $HIST.container so files persist across turns.
+  skills=$(skills_json)
   betas="server-side-fallback-2026-07-01"
+  [ -n "$skills" ] && betas="$betas,code-execution-2025-08-25"
   while :; do
+    cid=""
+    [ -n "$skills" ] && [ -s "$HIST.container" ] && cid=$(cat "$HIST.container")
     body=$(jq -n -c --arg m "$usage_model" --argjson max "$usage_max_tokens" \
       --arg sys "${usage_system:-}" --arg eff "${usage_effort:-}" \
-      --arg skills "" --arg cid "" --slurpfile msgs "$HIST" -f "$LIB/request.jq")
+      --arg skills "$skills" --arg cid "$cid" --slurpfile msgs "$HIST" -f "$LIB/request.jq")
     log="$HIST.sse" t0=$SECONDS
     : >"$log"
     # tee the raw SSE to $log, strip "data: " with builtins, print text live
@@ -230,12 +246,17 @@ call() {
     if [ -n "$err" ]; then
       rm -f "$log"
       echo "ask-claude: API error: $err" >&2
+      # a container the API no longer accepts (expired, deleted) would fail
+      # every later turn of this chat: forget it, the next turn starts a new one
+      [ -n "$cid" ] && case "$err" in *[Cc]ontainer*) rm -f "$HIST.container" ;; esac
       rollback_to $((n0 - 1))
       return 1
     fi
     # keep the full content array (thinking blocks included) for the next turn
     printf '%s' "$resp" | jq '{role:"assistant", content:.content}' >"$HIST.turn"
     jq --slurpfile t "$HIST.turn" '. + $t' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST" && rm -f "$HIST.turn"
+    printf '%s' "$resp" | jq -r '.container.id // empty' >"$HIST.container.tmp"
+    if [ -s "$HIST.container.tmp" ]; then mv "$HIST.container.tmp" "$HIST.container"; else rm -f "$HIST.container.tmp"; fi
     rm -f "$log"
     stop=$(printf '%s' "$resp" | jq -r "$SAFE"'.stop_reason | safe')
     printf '%s' "$resp" | jq -r --argjson s $((SECONDS - t0)) "$SAFE"'"[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens) \($s)s]" | safe' >&2

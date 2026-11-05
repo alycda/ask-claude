@@ -14,11 +14,6 @@ refused() { # args...
     [ -z "$(ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null)" ]
 }
 
-@test "refuse: -s/--skills" {
-    refused -s pptx "hi"
-    grep -q '^ask-claude: --skills is not implemented' <<<"$stderr"
-}
-
 @test "refuse: -p/--provider other than anthropic" {
     refused -p openai "hi"
     grep -q '^ask-claude: --provider openai is not implemented' <<<"$stderr"
@@ -38,7 +33,7 @@ refused() { # args...
 }
 
 @test "refuse: the version in the message is the script's own" {
-    refused -s pptx "hi"
+    refused --base-url https://api.venice.ai/api/v1 "hi"
     v="$(sed -n 's/^readonly ASK_CLAUDE_VERSION=//p' "$BIN")"
     [ -n "$v" ]
     grep -q "not implemented in ask-claude $v," <<<"$stderr"

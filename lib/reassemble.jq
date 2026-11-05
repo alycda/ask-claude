@@ -56,15 +56,12 @@ reduce .[] as $e (
                 | del(.blocks[$i].partial)
             else . end
     elif $e.type == "message_delta" then
-        # TODO: .stop_reason, .stop_details from $e.delta;
-        #       .usage = (.usage + ($e.usage // {}));
-        #       .container from $e.delta.container when present
         .stop_reason=$e.delta.stop_reason | .stop_details=$e.delta.stop_details
           | .usage=(.usage + ($e.usage // {}))
           | (if ($e.delta.container? // null) != null then .container=$e.delta.container else . end)
     elif $e.type == "error" then
         # TODO: .error = $e.error
-        .
+        .error=$e.error
     else
         .
     end

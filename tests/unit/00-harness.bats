@@ -15,10 +15,14 @@ load helpers
     command -v bats
 }
 
-# Session fixtures (docs/plans/2026-11-05-001): recorded with
-# tests/record-session.sh, one file per stream, ids redacted. budget.sse and
-# error.sse are hand-derived from text.sse (a budget_reached and a
-# session.error cannot be forced cheaply). Every stream ends in an idle or a
+# Session fixtures (docs/plans/2026-11-05-001): one file per stream, ids in
+# the FIXTURE form tests/record-session.sh writes. The first recordings were
+# never committed (the .gitignore exception covered sse/ only) and are lost;
+# the files here are reconstructed by hand from the goldens they produced
+# (.stream.txt, .fold.json), byte for byte, with a live stream's framing.
+# They do not prove the live wire format: re-record with
+# tests/record-session.sh when that matters. budget.sse and error.sse were
+# hand-derived from text.sse from the start. Every stream ends in an idle or a
 # termination, because that is where ask-claude stops reading.
 sessions() { sed -n 's/^data: //p' "$FIX/sessions/$1.sse"; }
 

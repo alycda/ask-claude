@@ -1,0 +1,12 @@
+: connected
+
+data: {"type":"user.custom_tool_result","id":"sevt_FIXTURE12","custom_tool_use_id":"sevt_FIXTURE09","is_error":true}
+
+data: {"type":"session.status_running","id":"sevt_FIXTURE13"}
+
+data: {"type":"agent.message","id":"sevt_FIXTURE14","content":[{"type":"text","text":"I couldn't get Paris's current weather: the weather tool is unavailable."}]}
+
+data: {"type":"session.usage","id":"sevt_FIXTURE15","usage":{"input_tokens":8,"output_tokens":269,"cache_read_input_tokens":8862,"cache_creation":{"ephemeral_5m_input_tokens":4729,"ephemeral_1h_input_tokens":0},"list_cost":{"amount":"0","currency":"USD"},"active_seconds":3.236}}
+
+data: {"type":"session.status_idle","id":"sevt_FIXTURE16","stop_reason":{"type":"end_turn"}}
+

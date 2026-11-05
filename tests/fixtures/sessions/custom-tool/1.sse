@@ -1,0 +1,12 @@
+: connected
+
+data: {"type":"user.message","id":"sevt_FIXTURE01","content":[{"type":"text","text":"What is the weather in Paris?"}]}
+
+data: {"type":"session.status_running","id":"sevt_FIXTURE02"}
+
+data: {"type":"agent.custom_tool_use","id":"sevt_FIXTURE03","name":"get_weather","input":{"city":"Paris"}}
+
+data: {"type":"session.usage","id":"sevt_FIXTURE04","usage":{"input_tokens":4,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":4386,"ephemeral_1h_input_tokens":0},"list_cost":{"amount":"0","currency":"USD"},"active_seconds":0.955}}
+
+data: {"type":"session.status_idle","id":"sevt_FIXTURE05","stop_reason":{"type":"requires_action","event_ids":["sevt_FIXTURE03"]}}
+

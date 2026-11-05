@@ -1,0 +1,18 @@
+: connected
+
+data: {"type":"user.tool_confirmation","id":"sevt_FIXTURE08","tool_use_id":"sevt_FIXTURE04","result":"allow"}
+
+data: {"type":"session.status_running","id":"sevt_FIXTURE09"}
+
+data: {"type":"agent.tool_result","id":"sevt_FIXTURE10","tool_use_id":"sevt_FIXTURE04","content":[{"type":"text","text":"pong\n"}],"is_error":false}
+
+data: {"type":"span.model_request_start","id":"sevt_FIXTURE11"}
+
+data: {"type":"agent.message","id":"sevt_FIXTURE12","content":[{"type":"text","text":"pong"}]}
+
+data: {"type":"span.model_request_end","id":"sevt_FIXTURE13"}
+
+data: {"type":"session.usage","id":"sevt_FIXTURE14","usage":{"input_tokens":6,"output_tokens":53,"cache_read_input_tokens":8511,"cache_creation":{"ephemeral_5m_input_tokens":196,"ephemeral_1h_input_tokens":0},"list_cost":{"amount":"0","currency":"USD"},"active_seconds":2.265}}
+
+data: {"type":"session.status_idle","id":"sevt_FIXTURE15","stop_reason":{"type":"end_turn"}}
+

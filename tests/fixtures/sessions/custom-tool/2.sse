@@ -1,0 +1,14 @@
+: connected
+
+data: {"type":"user.custom_tool_result","id":"sevt_FIXTURE06","custom_tool_use_id":"sevt_FIXTURE03","is_error":true}
+
+data: {"type":"session.status_running","id":"sevt_FIXTURE07"}
+
+data: {"type":"agent.thinking","id":"sevt_FIXTURE08"}
+
+data: {"type":"agent.custom_tool_use","id":"sevt_FIXTURE09","name":"get_weather","input":{"city":"Paris"}}
+
+data: {"type":"session.usage","id":"sevt_FIXTURE10","usage":{"input_tokens":6,"output_tokens":242,"cache_read_input_tokens":4386,"cache_creation":{"ephemeral_5m_input_tokens":4476,"ephemeral_1h_input_tokens":0},"list_cost":{"amount":"0","currency":"USD"},"active_seconds":2.394}}
+
+data: {"type":"session.status_idle","id":"sevt_FIXTURE11","stop_reason":{"type":"requires_action","event_ids":["sevt_FIXTURE09"]}}
+

@@ -1,0 +1,16 @@
+: connected
+
+data: {"type":"user.message","id":"sevt_FIXTURE01","content":[{"type":"text","text":"Run echo pong with bash, then reply with its output only."}]}
+
+data: {"type":"session.status_running","id":"sevt_FIXTURE02"}
+
+data: {"type":"span.model_request_start","id":"sevt_FIXTURE03"}
+
+data: {"type":"agent.tool_use","id":"sevt_FIXTURE04","name":"bash","input":{"command":"echo pong"}}
+
+data: {"type":"span.model_request_end","id":"sevt_FIXTURE05"}
+
+data: {"type":"session.usage","id":"sevt_FIXTURE06","usage":{"input_tokens":4,"output_tokens":49,"cache_read_input_tokens":4187,"cache_creation":{"ephemeral_5m_input_tokens":137,"ephemeral_1h_input_tokens":0},"list_cost":{"amount":"0","currency":"USD"},"active_seconds":0.924}}
+
+data: {"type":"session.status_idle","id":"sevt_FIXTURE07","stop_reason":{"type":"requires_action","event_ids":["sevt_FIXTURE04"]}}
+

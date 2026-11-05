@@ -1,18 +1,31 @@
 : connected
 
-data: {"type":"user.tool_confirmation","id":"sevt_FIXTURE08","tool_use_id":"sevt_FIXTURE04","result":"allow"}
+event: message
+data: {"id":"sevt_FIXTURE09","processed_at":"2026-11-06T09:26:54.047929Z","result":"allow","tool_use_id":"sevt_FIXTURE04","type":"user.tool_confirmation"}
 
-data: {"type":"session.status_running","id":"sevt_FIXTURE09"}
+event: message
+data: {"id":"sevt_FIXTURE10","processed_at":"2026-11-06T09:26:54.111617Z","type":"session.status_running"}
 
-data: {"type":"agent.tool_result","id":"sevt_FIXTURE10","tool_use_id":"sevt_FIXTURE04","content":[{"type":"text","text":"pong\n"}],"is_error":false}
+event: message
+data: {"agent_name":"fixture","id":"sevt_FIXTURE11","processed_at":"2026-11-06T09:26:54.111618Z","session_thread_id":"sthr_FIXTURE01","type":"session.thread_status_running"}
 
-data: {"type":"span.model_request_start","id":"sevt_FIXTURE11"}
+event: message
+data: {"content":[{"text":"pong\n","type":"text"}],"id":"sevt_FIXTURE12","is_error":false,"processed_at":"2026-11-06T09:26:54.659009Z","tool_use_id":"sevt_FIXTURE04","type":"agent.tool_result"}
 
-data: {"type":"agent.message","id":"sevt_FIXTURE12","content":[{"type":"text","text":"pong"}]}
+event: message
+data: {"id":"sevt_FIXTURE13","processed_at":"2026-11-06T09:26:54.730870Z","type":"span.model_request_start"}
 
-data: {"type":"span.model_request_end","id":"sevt_FIXTURE13"}
+event: message
+data: {"content":[{"text":"pong","type":"text"}],"id":"sevt_FIXTURE14","processed_at":"2026-11-06T09:26:55.175325Z","type":"agent.message"}
 
-data: {"type":"session.usage","id":"sevt_FIXTURE14","usage":{"input_tokens":6,"output_tokens":53,"cache_read_input_tokens":8511,"cache_creation":{"ephemeral_5m_input_tokens":196,"ephemeral_1h_input_tokens":0},"list_cost":{"amount":"0","currency":"USD"},"active_seconds":2.265}}
+event: message
+data: {"id":"sevt_FIXTURE15","is_error":false,"model_request_start_id":"sevt_FIXTURE13","model_usage":{"cache_creation_input_tokens":59,"cache_read_input_tokens":4319,"input_tokens":2,"output_tokens":4,"speed":"standard"},"processed_at":"2026-11-06T09:26:55.175326Z","type":"span.model_request_end"}
 
-data: {"type":"session.status_idle","id":"sevt_FIXTURE15","stop_reason":{"type":"end_turn"}}
+event: message
+data: {"agent_name":"fixture","id":"sevt_FIXTURE16","processed_at":"2026-11-06T09:26:55.286750Z","session_thread_id":"sthr_FIXTURE01","stop_details":null,"stop_reason":{"type":"end_turn"},"type":"session.thread_status_idle"}
 
+event: message
+data: {"budget":{"max_list_cost":{"amount":"10","currency":"USD"},"type":"limit"},"id":"sevt_FIXTURE17","processed_at":"2026-11-06T09:26:55.286751Z","type":"session.usage","usage":{"active_seconds":2.222,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":191},"cache_read_input_tokens":8506,"input_tokens":6,"list_cost":{"amount":"0","currency":"USD"},"output_tokens":53,"server_tool_use":{"web_fetch_requests":0,"web_search_requests":0}}}
+
+event: message
+data: {"id":"sevt_FIXTURE18","processed_at":"2026-11-06T09:26:55.286752Z","stop_details":null,"stop_reason":{"type":"end_turn"},"type":"session.status_idle"}

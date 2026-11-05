@@ -20,5 +20,147 @@
 # shellcheck disable=SC2154  # usage_* vars are set by the usage runtime
 
 set -uo pipefail
+# History holds whole conversations, including -f file contents: every file
+# and directory this script creates is private to the user, whatever the
+# shell's umask.
+umask 077
 
-echo "hello, world"
+# The jq programs live next to the script, in lib/ (docs/plan.md: one shape
+# for the goldens, the bash script and the Rust port).
+LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib"
+API="https://api.anthropic.com/v1/messages"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude"
+
+die() {
+  echo "ask-claude: $*" >&2
+  exit 2
+}
+
+[ -n "${ANTHROPIC_API_KEY:-}" ] || die "no key: export ANTHROPIC_API_KEY"
+command -v jq >/dev/null || die "jq not found"
+case "$usage_max_tokens" in
+"" | *[!0-9]* | 0*) die "--max-tokens must be a positive integer, got: $usage_max_tokens" ;;
+esac
+
+mkdir -p "$STATE" && chmod 700 "$STATE"
+# The script writes fixed names next to HIST (.tmp, .turn, .sse, .container).
+# In a directory other accounts can write, one of them could plant those
+# names as symlinks or files. Refuse such a directory.
+# shellcheck disable=SC2012  # ls -ldnL is portable to macOS; the path is ours, not user input
+case "$(ls -ldnL "$STATE" | cut -c6,9)" in
+*w*) die "$STATE is writable by other accounts; keep the history in a private directory" ;;
+esac
+
+# SAFE: prefix for every jq program that prints text to the terminal (the
+# live printer has its own copy in lib/stream.jq). Replies and error messages
+# may carry control characters; jq -r decodes \u001b etc. into raw bytes.
+SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode else . end; '
+
+# A fresh history path; the PID keeps two chats started in the same second
+# apart.
+new_chat() { echo "$STATE/$(date +%Y%m%dT%H%M%S)-$$.json"; }
+
+# rollback_to <n>: keep the first n turns of the history (n >= 0)
+rollback_to() { jq --argjson n "$(($1 < 0 ? 0 : $1))" '.[:$n]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"; }
+
+# transport: the request body on stdin, the raw SSE on stdout.
+# ASK_CLAUDE_REPLAY=<file.sse> replays a recording instead of calling curl;
+# ASK_CLAUDE_REQUEST_LOG=<file> appends each body that would have been sent.
+# Neither the key nor the body goes on curl's command line, which other local
+# accounts can read: the headers come from a pipe and the body from stdin.
+transport() {
+  if [ -n "${ASK_CLAUDE_REQUEST_LOG:-}" ]; then
+    tee -a "$ASK_CLAUDE_REQUEST_LOG"
+  else
+    cat
+  fi |
+    if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
+      cat "$ASK_CLAUDE_REPLAY"
+    else
+      curl -sS -N --max-time 1800 "$API" \
+        -H @<(printf 'content-type: application/json\nx-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: %s\n' "$ANTHROPIC_API_KEY" "$betas") \
+        --data-binary @-
+    fi
+}
+
+# call: send the whole history as-is and append the reply. Prints the text
+# blocks as they arrive, the usage line on stderr; returns 1 on API error
+# with the history rolled back to before this ask. A pause_turn (server tool
+# still working) is continued automatically, up to 8 rounds.
+call() {
+  local body resp err stop rounds=0 n0 log t0
+  n0=$(jq length "$HIST")
+  betas="server-side-fallback-2026-07-01"
+  while :; do
+    body=$(jq -n -c --arg m "$usage_model" --argjson max "$usage_max_tokens" \
+      --arg sys "${usage_system:-}" --arg eff "${usage_effort:-}" \
+      --arg skills "" --arg cid "" --slurpfile msgs "$HIST" -f "$LIB/request.jq")
+    log="$HIST.sse" t0=$SECONDS
+    : >"$log"
+    # tee the raw SSE to $log, strip "data: " with builtins, print text live
+    printf '%s\n' "$body" | transport |
+      tee "$log" |
+      while IFS= read -r l; do case "$l" in "data: "*) printf '%s\n' "${l#data: }" ;; esac done |
+      jq --unbuffered -rj -f "$LIB/stream.jq"
+    [ -s "$log" ] || {
+      rm -f "$log"
+      echo "ask-claude: no response (curl failed or timed out)" >&2
+      rollback_to $((n0 - 1))
+      return 1
+    }
+    if ! grep -q '^data: ' "$log"; then
+      # not SSE: an HTTP error body
+      err=$(jq -r "$SAFE"'.error.message // "unreadable response" | safe' "$log" 2>/dev/null || echo "unreadable response")
+    elif ! resp=$(sed -n 's/^data: //p' "$log" | jq -s -f "$LIB/reassemble.jq"); then
+      # a reply jq cannot fold is an error, not an empty turn that vanishes
+      err="the reply could not be parsed"
+    else
+      err=$(printf '%s' "$resp" | jq -r "$SAFE"'.error.message // empty | safe')
+    fi
+    if [ -n "$err" ]; then
+      rm -f "$log"
+      echo "ask-claude: API error: $err" >&2
+      rollback_to $((n0 - 1))
+      return 1
+    fi
+    # keep the full content array (thinking blocks included) for the next turn
+    printf '%s' "$resp" | jq '{role:"assistant", content:.content}' >"$HIST.turn"
+    jq --slurpfile t "$HIST.turn" '. + $t' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST" && rm -f "$HIST.turn"
+    rm -f "$log"
+    stop=$(printf '%s' "$resp" | jq -r "$SAFE"'.stop_reason | safe')
+    printf '%s' "$resp" | jq -r --argjson s $((SECONDS - t0)) "$SAFE"'"[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens) \($s)s]" | safe' >&2
+    if [ "$stop" = "pause_turn" ] && [ $rounds -lt 8 ]; then
+      rounds=$((rounds + 1))
+      echo "[pause_turn: continuing, round $rounds]" >&2
+      continue
+    fi
+    break
+  done
+  case "$stop" in
+  end_turn) ;;
+  refusal) echo "[stopped: refusal $(printf '%s' "$resp" | jq -r "$SAFE"'.stop_details.category // "" | safe')]" >&2 ;;
+  max_tokens) echo "[stopped: max_tokens reached, raise --max-tokens]" >&2 ;;
+  *) echo "[stopped: $stop]" >&2 ;;
+  esac
+}
+
+# ask <text>: append a user turn, then call
+ask() {
+  jq --arg c "$1" '. + [{"role":"user","content":$c}]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"
+  call
+}
+
+# one shot: optional -f FILE, then the prompt
+[ -n "${usage_prompt:-}" ] || die "a prompt is required"
+prefix=""
+if [ -n "${usage_file:-}" ]; then
+  [ -r "$usage_file" ] || die "cannot read $usage_file"
+  prefix="$(cat "$usage_file")"$'\n\n'
+fi
+HIST="$(new_chat)"
+echo '[]' >"$HIST"
+ask "$prefix$usage_prompt"
+rc=$?
+# an empty chat leaves no file
+[ "$(jq length "$HIST")" -gt 0 ] || rm -f "$HIST"
+exit $rc

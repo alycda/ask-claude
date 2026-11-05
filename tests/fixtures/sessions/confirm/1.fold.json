@@ -1,0 +1,25 @@
+{
+  "stop_reason": "requires_action",
+  "event_ids": [
+    "sevt_FIXTURE04"
+  ],
+  "asks": [
+    {
+      "id": "sevt_FIXTURE04",
+      "name": "bash",
+      "input": {
+        "command": "echo pong"
+      }
+    }
+  ],
+  "custom": [],
+  "usage": {
+    "input_tokens": 4,
+    "output_tokens": 49,
+    "cache_read": 4187,
+    "cache_write": 137,
+    "list_cost": "0",
+    "active_seconds": 0.924
+  },
+  "error": null
+}

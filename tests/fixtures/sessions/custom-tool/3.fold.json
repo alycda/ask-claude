@@ -1,0 +1,15 @@
+{
+  "stop_reason": "end_turn",
+  "event_ids": [],
+  "asks": [],
+  "custom": [],
+  "usage": {
+    "input_tokens": 8,
+    "output_tokens": 269,
+    "cache_read": 8862,
+    "cache_write": 4729,
+    "list_cost": "0",
+    "active_seconds": 3.236
+  },
+  "error": null
+}

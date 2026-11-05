@@ -19,8 +19,19 @@
 #   "\(expr)"          string interpolation
 #   $x // "?"          "?" when $x is null or missing
 #   a and b            both conditions
+#
+# Everything printed goes through `safe`: the reply is model- and
+# server-controlled, and jq -r turns JSON escapes such as \u001b back into raw
+# bytes. `safe` keeps tab and newline and drops every other C0/C1 control
+# character (ESC, BEL, CR, DEL, CSI U+009B ...), so the reply cannot drive the
+# terminal: no title or clipboard writes, no erased or forged lines.
 
-if .type == "content_block_start" then
+def safe:
+    if type == "string" then
+        explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode
+    else . end;
+
+(if .type == "content_block_start" then
     (if .content_block.type=="thinking" then "(thinking) "
              elif .content_block.type=="server_tool_use" then "(running code) "
              elif .content_block.type=="bash_code_execution_tool_result" then
@@ -32,4 +43,4 @@ elif .type == "message_stop" then
     "\n"
 else
     ""
-end
+end) | safe

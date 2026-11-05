@@ -47,16 +47,23 @@ fi
 [ -n "$key" ] || { echo "claude.sh: no key. export ANTHROPIC_API_KEY or write ~/.config/anthropic/api_key (chmod 600)" >&2; exit 2; }
 command -v jq >/dev/null || { echo "claude.sh: jq not found" >&2; exit 2; }
 
+# SAFE: prefix for every jq program that prints text to the terminal. Replies,
+# error messages and stored chats (including -f file contents) may carry
+# control characters; jq -r decodes \u001b etc. into raw bytes. `safe` keeps
+# tab and newline and drops every other C0/C1 control character, so printed
+# text cannot set the title, write the clipboard, or erase and forge lines.
+SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode else . end; '
+
 # show_history [file]: the chat as "you:" / "claude:" text (thinking blocks skipped)
 show_history() {
-    jq -r '.[] | (if .role=="user" then "you" else "claude" end) as $who
+    jq -r "$SAFE"'.[] | (if .role=="user" then "you" else "claude" end) as $who
         | (if (.content|type)=="string" then .content
            else [.content[] | select(.type=="text") | .text] | join("\n") end) as $t
-        | "\($who): \($t)\n"' "${1:-$HIST}"
+        | "\($who): \($t)\n" | safe' "${1:-$HIST}"
 }
 
 list_chats() { ls -1t "$STATE"/*.json 2>/dev/null | while read -r f; do
-        printf '%s  %s turns  %s\n' "$(basename "$f" .json)" "$(jq length "$f")" "$(jq -r 'first(.[]|select(.role=="user"))|.content|if type=="string" then .[:60] else "" end' "$f")"
+        printf '%s  %s turns  %s\n' "$(basename "$f" .json)" "$(jq length "$f")" "$(jq -r "$SAFE"'first(.[]|select(.role=="user"))|.content|if type=="string" then .[:60] else "" end | safe' "$f")"
     done; }
 
 case "${1:-}" in
@@ -120,7 +127,7 @@ call() {
         --data-binary "$body" \
     | tee "$log" \
     | while IFS= read -r l; do case "$l" in "data: "*) printf '%s\n' "${l#data: }" ;; esac; done \
-    | jq --unbuffered -rj '
+    | jq --unbuffered -rj "$SAFE"'(
         if .type=="content_block_start" then
             (if .content_block.type=="thinking" then "(thinking) "
              elif .content_block.type=="server_tool_use" then "(running code) "
@@ -129,11 +136,11 @@ call() {
              else "" end)
         elif .type=="content_block_delta" and .delta.type=="text_delta" then .delta.text
         elif .type=="message_stop" then "\n"
-        else "" end'
+        else "" end) | safe'
     [ -s "$log" ] || { rm -f "$log"; echo "claude.sh: no response (curl failed or timed out)" >&2; return 1; }
     if ! grep -q '^data: ' "$log"; then
         # not SSE: an HTTP error body
-        err=$(jq -r '.error.message // "unreadable response"' "$log" 2>/dev/null || echo "unreadable response")
+        err=$(jq -r "$SAFE"'.error.message // "unreadable response" | safe' "$log" 2>/dev/null || echo "unreadable response")
     else
         # reassemble the message from the event stream
         resp=$(sed -n 's/^data: //p' "$log" | jq -s '
@@ -161,7 +168,7 @@ call() {
               elif $e.type=="error" then .error=$e.error
               else . end)
             | .content = (.blocks | to_entries | sort_by(.key|tonumber) | map(.value)) | del(.blocks)')
-        err=$(printf '%s' "$resp" | jq -r '.error.message // empty')
+        err=$(printf '%s' "$resp" | jq -r "$SAFE"'.error.message // empty | safe')
     fi
     if [ -n "$err" ]; then
         rm -f "$log"
@@ -176,14 +183,14 @@ call() {
     printf '%s' "$resp" | jq -r '.container.id // empty' > "$HIST.container.tmp"
     [ -s "$HIST.container.tmp" ] && mv "$HIST.container.tmp" "$HIST.container" || rm -f "$HIST.container.tmp"
     rm -f "$log"
-    stop=$(printf '%s' "$resp" | jq -r '.stop_reason')
-    printf '%s' "$resp" | jq -r --argjson s $((SECONDS - t0)) '"[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens) \($s)s]"' >&2
+    stop=$(printf '%s' "$resp" | jq -r "$SAFE"'.stop_reason | safe')
+    printf '%s' "$resp" | jq -r --argjson s $((SECONDS - t0)) "$SAFE"'"[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens) \($s)s]" | safe' >&2
     if [ "$stop" = "pause_turn" ] && [ $rounds -lt 8 ]; then rounds=$((rounds+1)); echo "[pause_turn: continuing, round $rounds]" >&2; continue; fi
     break
     done
     case "$stop" in
         end_turn) ;;
-        refusal)    echo "[stopped: refusal $(printf '%s' "$resp" | jq -r '.stop_details.category // ""')]" >&2 ;;
+        refusal)    echo "[stopped: refusal $(printf '%s' "$resp" | jq -r "$SAFE"'.stop_details.category // "" | safe')]" >&2 ;;
         max_tokens) echo "[stopped: max_tokens reached, raise MAX_TOKENS]" >&2 ;;
         *)          echo "[stopped: $stop]" >&2 ;;
     esac

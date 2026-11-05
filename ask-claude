@@ -472,6 +472,7 @@ session_turn() {
 session_create() {
   local body resp sesn err
   body=$(jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" --arg file "${session_file_id:-}" --arg file_name "$(basename "${usage_file:-}")" \
+    --arg vaults "${usage_vault:-}" --arg repo "${usage_repo:-}" --arg memories "${usage_memory:-}" \
     --arg title "" --arg prompt "$1" -f "$LIB/session-create.jq")
   resp=$(ma_call POST /sessions "$body")
   sesn=$(jq -r '.id // empty' <<<"$resp" 2>/dev/null)
@@ -609,6 +610,20 @@ session_files() {
 
 # session_prereqs: what every agent form needs before a request can happen
 session_prereqs() {
+  # resources: checked before any request, the API's own checks come after
+  local v n=0
+  for v in ${usage_vault:-}; do
+    [[ $v == vlt_* ]] || die "--vault takes vault ids (vlt_...), got: $v"
+  done
+  for v in ${usage_memory:-}; do
+    [[ ${v%%:*} == memstore_* ]] || die "--memory takes memory store ids (memstore_...), with :ro for read-only, got: $v"
+    n=$((n + 1))
+  done
+  [ "$n" -le 8 ] || die "--memory: a session takes at most 8 memory stores, got $n"
+  if [ -n "${usage_repo:-}" ]; then
+    [[ $usage_repo =~ ^(https://github\.com/)?[^/@]+/[^/@]+(@.+)?$ ]] || die "--repo takes owner/name[@branch] or a https://github.com URL, got: $usage_repo"
+    [ -n "${GITHUB_TOKEN:-}" ] || die "--repo needs GITHUB_TOKEN in the environment (a token that can read $usage_repo)"
+  fi
   [ -n "${usage_agent:-}" ] || die "no agent id: --agent or ASK_CLAUDE_AGENT (the Console, Agents)"
   [ -n "${usage_environment:-}" ] || die "no environment id: --environment or ASK_CLAUDE_ENVIRONMENT (the Console, Environments)"
   case "${usage_budget:-}" in

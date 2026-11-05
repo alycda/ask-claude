@@ -65,6 +65,16 @@ tool its policy marks *ask*, ask-claude asks you (`y`, `n`, `a` for the rest
 of the run) and denies when there is no terminal. A custom tool on the
 agent is answered with an error: nothing runs on this machine yet.
 
+What else a session can carry, each made once in the Console:
+
+- `--vault <vlt_id>` (repeatable): credentials for MCP servers the agent
+  declares, or secrets substituted into the agent's outbound requests. The
+  environment's `allowed_hosts` must include the credential's host.
+- `--repo owner/name[@branch]`: a GitHub repository mounted at
+  `/workspace/<name>`, read with `GITHUB_TOKEN` from the environment.
+- `--memory <memstore_id>[:ro]` (repeatable, up to 8): memory stores mounted
+  under `/mnt/memory/`, `:ro` for read-only.
+
 A session can be read in the Console under Sessions. Sessions started here
 are listed in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/sessions/`.
 

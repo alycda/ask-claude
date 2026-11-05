@@ -3,6 +3,17 @@ import 'tools/effver/effver.just'
 help:
     ./ask-claude --help
 
+agents-help:
+    ./ask-claude agent --help
+
+[group('rust')]
+_help: build
+    rust/target/debug/ask-claude --help
+
+[group('rust')]
+_agent-help: build
+    rust/target/debug/ask-claude agent --help
+
 ask question="" *FLAGS:
     ./ask-claude {{FLAGS}} {{ quote(question) }}
 
@@ -106,3 +117,39 @@ test-openai:
     set -a; . "{{ justfile_directory() }}/.env"; set +a
     hurl --test --variable base_url="$OPENAI_BASE_URL" --variable model="${OPENAI_MODEL:-gemini-4-argon}" \
         --secrets-file <(printf 'api_key=%s\n' "$OPENAI_API_KEY") openai-compatible.hurl
+
+# ---- the Rust port (docs/plan.md phase 4; rust/) ------------------------
+# cargo comes from mise's rust; the recipes run it through `mise exec` until
+# the shims know the version (`mise use -g rust@1.99.1`).
+
+# build the Rust binary (debug)
+[group('rust')]
+build:
+    cd rust && mise exec rust -- cargo build
+
+# the Rust unit tests: every lib/*.jq twin against the same goldens
+[group('rust')]
+rust-test:
+    cd rust && mise exec rust -- cargo test
+
+# fmt --check and clippy, the Rust side of `just lint`
+[group('rust')]
+lint:
+    cd rust && mise exec rust -- cargo fmt --check && mise exec rust -- cargo clippy -- -D warnings
+
+# criterion benchmarks over the recorded fixtures (rust/target/criterion/report)
+[group('rust')]
+bench:
+    cd rust && mise exec rust -- cargo bench
+
+# the two binaries agree on their interface: usage diff of the bash spec and the Rust one
+[group('rust')]
+parity: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    usage diff ask-claude <(rust/target/debug/ask-claude --usage-spec)
+
+# the bats suite against the Rust binary (R5 onwards; bash stays the oracle until R8)
+[group('rust')]
+test-rust: build
+    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats tests/unit

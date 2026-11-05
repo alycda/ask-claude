@@ -16,8 +16,8 @@ ask-claude --help                   every flag
 costs $10 per 1,000, a fetch nothing beyond tokens). `--mcp <https url>`
 (repeatable) lets it call an MCP server through the MCP connector;
 `ASK_CLAUDE_MCP_TOKEN` is sent as its authorization token. Both work with
-`-s`, in the one-shot and in the chat; the stream shows `(web_search) `,
-`(web_fetch) ` and `(mcp <server>) ` while the model uses them.
+`-s`, in the one-shot and in the chat; the stream shows `(web_search)`,
+`(web_fetch)` and `(mcp <server>)` while the model uses them.
 
 In the chat loop, `/new` starts a fresh chat, `/history` prints the current
 one, and `/quit` exits and prints the command to resume it.
@@ -47,7 +47,7 @@ An empty chat leaves no file.
 session: an Anthropic-run sandbox with network, packages, web tools and
 MCP servers, as the agent you made allows. The API keeps the transcript.
 
-```
+```sh
 ask-claude agent "one question"          one shot in a new session
 ask-claude agent                         chat; /new, /history, /quit
 ask-claude agent list                    sessions on the account, newest first
@@ -65,7 +65,7 @@ trust it). `just environments` and `just agents` print their ids. Put them in
 `.env` or pass `--environment` and `--agent`:
 
 | Variable | Use |
-|---|---|
+| --- | --- |
 | `ASK_CLAUDE_AGENT` | the agent id, `--agent` overrides |
 | `ASK_CLAUDE_ENVIRONMENT` | the environment id, `--environment` overrides |
 | `ASK_CLAUDE_CONFIRM` | `ask` (default), `allow`, or `deny` for tool confirmations |

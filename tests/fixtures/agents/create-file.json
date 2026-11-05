@@ -1,0 +1,32 @@
+{
+  "agent": {
+    "type": "agent",
+    "id": "agent_FIXTURE"
+  },
+  "environment_id": "env_FIXTURE",
+  "budget": {
+    "type": "limit",
+    "max_list_cost": {
+      "amount": "100",
+      "currency": "USD"
+    }
+  },
+  "resources": [
+    {
+      "type": "file",
+      "file_id": "file_FIXTURE01",
+      "mount_path": "/mnt/session/uploads/notes.md"
+    }
+  ],
+  "initial_events": [
+    {
+      "type": "user.message",
+      "content": [
+        {
+          "type": "text",
+          "text": "summarize"
+        }
+      ]
+    }
+  ]
+}

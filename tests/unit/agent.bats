@@ -94,10 +94,3 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     grep -q 'weather tool is unavailable' <<<"$output"
 }
 
-@test "agent: -f is refused until the Files API lands" {
-    printf 'x\n' > "$TMP/n.md"
-    run --separate-stderr replay text.sse -f "$TMP/n.md" "ping"
-    [ "$status" -eq 2 ]
-    grep -q 'not implemented' <<<"$stderr"
-    [ ! -e "$TMP/requests.jsonl" ]
-}

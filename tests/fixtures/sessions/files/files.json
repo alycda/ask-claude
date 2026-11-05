@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "id": "file_FIXTURE01",
+      "filename": "notes.txt",
+      "size_bytes": 17,
+      "mime_type": "text/plain",
+      "created_at": "2026-11-05T18:07:46.458743Z"
+    },
+    {
+      "id": "file_FIXTURE02",
+      "filename": "result.txt",
+      "size_bytes": 4,
+      "mime_type": "text/plain",
+      "created_at": "2026-11-05T18:07:58.206408Z"
+    }
+  ]
+}

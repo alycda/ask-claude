@@ -1,0 +1,50 @@
+{
+  "agent": {
+    "type": "agent",
+    "id": "agent_FIXTURE"
+  },
+  "environment_id": "env_FIXTURE",
+  "budget": {
+    "type": "limit",
+    "max_list_cost": {
+      "amount": "100",
+      "currency": "USD"
+    }
+  },
+  "vault_ids": [
+    "vlt_FIXTURE01",
+    "vlt_FIXTURE02"
+  ],
+  "resources": [
+    {
+      "type": "github_repository",
+      "url": "https://github.com/owner/name",
+      "mount_path": "/workspace/name",
+      "authorization_token": "ghp_FIXTURE",
+      "checkout": {
+        "type": "branch",
+        "name": "main"
+      }
+    },
+    {
+      "type": "memory_store",
+      "memory_store_id": "memstore_FIXTURE01"
+    },
+    {
+      "type": "memory_store",
+      "memory_store_id": "memstore_FIXTURE02",
+      "access": "read_only"
+    }
+  ],
+  "initial_events": [
+    {
+      "type": "user.message",
+      "content": [
+        {
+          "type": "text",
+          "text": "ping"
+        }
+      ]
+    }
+  ]
+}

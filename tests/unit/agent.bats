@@ -94,3 +94,42 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     grep -q 'weather tool is unavailable' <<<"$output"
 }
 
+
+# vaults, a repository and memory stores (docs/plans/2026-11-05-001 U9)
+
+@test "resources: --vault, --repo and --memory reach the create body" {
+    GITHUB_TOKEN=ghp_FIXTURE replay text.sse --vault vlt_FIXTURE01 --vault vlt_FIXTURE02 --repo owner/name@main --memory memstore_FIXTURE01 --memory memstore_FIXTURE02:ro "ping" >/dev/null 2>&1
+    request 1 | jq -S . > "$TMP/got.json"
+    jq -S . "$FIX/agents/create-resources.json" > "$TMP/want.json"
+    assert_golden "$TMP/want.json" "$TMP/got.json"
+}
+
+@test "resources: a full GitHub URL and no branch work too" {
+    GITHUB_TOKEN=ghp_FIXTURE replay text.sse --repo https://github.com/owner/name "ping" >/dev/null 2>&1
+    request 1 | jq -e '.resources[0].url=="https://github.com/owner/name" and .resources[0].mount_path=="/workspace/name" and (.resources[0]|has("checkout")|not)'
+}
+
+@test "resources: --repo without GITHUB_TOKEN exits 2 before any request" {
+    run --separate-stderr env -u GITHUB_TOKEN ASK_CLAUDE_REPLAY="$FIX/sessions/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" agent --repo owner/name "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'GITHUB_TOKEN' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "resources: more than 8 memory stores, or a bad id, exits 2 before any request" {
+    run --separate-stderr replay text.sse --memory memstore_a --memory memstore_b --memory memstore_c --memory memstore_d --memory memstore_e --memory memstore_f --memory memstore_g --memory memstore_h --memory memstore_i "ping"
+    [ "$status" -eq 2 ]
+    grep -q '8' <<<"$stderr"
+    run --separate-stderr replay text.sse --memory nope "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'memstore_' <<<"$stderr"
+    run --separate-stderr replay text.sse --vault nope "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'vlt_' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "resources: the token never goes on a command line" {
+    ! grep -qE -- '--arg(json)? +token' "$BIN"
+    grep -q 'env.GITHUB_TOKEN' "$ROOT/lib/session-create.jq"
+}

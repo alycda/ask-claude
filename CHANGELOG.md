@@ -10,6 +10,14 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.4 (micro) - 2026-11-05
+
+- `--web` lets the model search and fetch the web; `--mcp <https url>` lets it
+  call an MCP server (`ASK_CLAUDE_MCP_TOKEN` for its auth). Both work with
+  `-s`, in a one shot and in the chat, and the stream shows what is being
+  used. A web search costs $10 per 1,000; everything else is tokens.
+- Adopting needs no change from 0.2.3.
+
 ## 0.2.3 (micro) - 2026-11-05
 
 - `ask-claude agent budget <session> <cents>` changes a session's cap (`0`

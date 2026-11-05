@@ -427,7 +427,9 @@ session_stream_read() {
 # session_confirm <name> <input>: allow | deny. A tool confirmation is asked
 # at the terminal (y / n / a for the rest of this process) and denied when
 # there is none; ASK_CLAUDE_CONFIRM=allow|deny answers without asking. The
-# "always" answer is kept in a file, because this runs in a subshell.
+# "always" answer is kept in a file, because this runs in a subshell; the
+# file is $ALWAYS, which session_prereqs clears and removes on exit.
+ALWAYS=""
 session_confirm() {
   local answer
   case "${ASK_CLAUDE_CONFIRM:-ask}" in
@@ -436,7 +438,7 @@ session_confirm() {
     return
     ;;
   esac
-  if [ -e "$STATE/.always.$$" ]; then
+  if [ -n "$ALWAYS" ] && [ -e "$ALWAYS" ]; then
     echo allow
     return
   fi
@@ -449,7 +451,7 @@ session_confirm() {
   case "$answer" in
   y | Y | yes) echo allow ;;
   a | A | always)
-    : >"$STATE/.always.$$"
+    [ -z "$ALWAYS" ] || : >"$ALWAYS"
     echo allow
     ;;
   *) echo deny ;;
@@ -793,6 +795,13 @@ session_prereqs() {
   esac
   [ -z "${usage_file:-}" ] || [ -r "$usage_file" ] || die "cannot read $usage_file"
   need_key
+  # An "always" answer lasts for this process only. The file is keyed by the
+  # PID, and PIDs are reused (deterministically, in a container that starts
+  # the same way each time): a file left by an earlier process with this PID,
+  # killed before its EXIT trap ran, must not answer for this one.
+  ALWAYS="$STATE/.always.$$"
+  rm -f "$ALWAYS"
+  trap 'rm -f "$ALWAYS"' EXIT
 }
 
 case "${usage_cmd:-}" in

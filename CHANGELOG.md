@@ -10,6 +10,15 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.1.1 (micro) - 2026-11-05
+
+- `ask-claude list` shows the chats on disk, newest first, and
+  `ask-claude resume [chat]` continues one by name or prefix (the newest
+  with turns when omitted), printing it first. One-shot replies were
+  already saved; now they can be picked up. `list` needs no key.
+- Request flags (`-m`, `-e`, `-S`, `--max-tokens`) also apply to `resume`.
+- Still refused with exit 2: the chat loop, `-s`, `-p openai`, `--base-url`.
+
 ## 0.1.0 (macro) - 2026-11-05
 
 - First version: one-shot. `ask-claude "question"` streams the reply,

@@ -32,7 +32,7 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
 
 @test "spec: resume takes an optional chat name" {
     run explain resume
-    grep -qE '^command\s+resume' <<<"$output"
+    grep -qE '^command\s+(ask-claude\s+)?resume' <<<"$output"
     ! grep -q 'refused' <<<"$output"
     run explain resume 20260101T000000
     grep -qE '^\s+arg\s+\[chat\]\s+20260101T000000' <<<"$output"
@@ -40,7 +40,7 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
 
 @test "spec: list takes no argument" {
     run explain list
-    grep -qE '^command\s+list' <<<"$output"
+    grep -qE '^command\s+(ask-claude\s+)?list' <<<"$output"
     run explain list extra
     grep -q 'refused' <<<"$output"
 }

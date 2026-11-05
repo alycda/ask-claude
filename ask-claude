@@ -2,7 +2,7 @@
 #USAGE about "chat loop; /new resets, /quit exits"
 #USAGE unknown_flags "error"
 #USAGE arg "[prompt]" help="one shot, prints the response"
-#USAGE flag "-m --model <model>" help="haiku, sonnet, opus, fable, or a full model id" default="claude-opus-5-5" global=#true
+#USAGE flag "-m --model <model>" help="a full model id (see https://platform.claude.com/docs/en/api/cli/models/list)" default="claude-opus-5-5" global=#true
 #USAGE flag "-e --effort <effort>" help="how hard the model thinks" default="medium" global=#true {
 #USAGE   choices "low" "medium" "high" "xhigh" "max"
 #USAGE }

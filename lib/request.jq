@@ -42,8 +42,7 @@
 # system: the system prompt, only when one was given. When $sys is "" the
 # else branch adds {}, which adds nothing, so the key is left out.
 + (if $sys != "" then {system: $sys} else {} end)
-# TODO: output_config: {effort: $eff} when $eff is not ""
-+ {}
++ (if $eff != "" then {output_config: {effort: $eff}} else {} end)
 # TODO: when $skills is not "":
 #       tools: [{type: "code_execution_20260521", name: "code_execution"}]
 #       container: {skills: ($skills | fromjson)}, plus id: $cid when $cid is not ""

@@ -1,11 +1,12 @@
 # Streaming chat completions, OpenAI shape. One file for every provider that
-# speaks it; the provider is three variables:
+# speaks it; the provider is three variables, which `just test-openai` takes
+# from .env the way ask-claude's -p openai --base-url does:
 #
-#   base_url   https://api.openai.com/v1      https://api.venice.ai/api/v1
-#   api_key    OPENAI_API_KEY                 VENICE_API_KEY
-#   model      gpt-4.1-mini                   zai-org-glm-5-1
+#   base_url   OPENAI_BASE_URL   https://api.openai.com/v1   https://api.venice.ai/api/v1
+#   api_key    OPENAI_API_KEY    an OpenAI key               a Venice key
+#   model      OPENAI_MODEL      gpt-4.1-mini                gemini-4-argon (the default)
 #
-#   just test-providers
+#   just test-openai
 #
 POST {{base_url}}/chat/completions
 Authorization: Bearer {{api_key}}

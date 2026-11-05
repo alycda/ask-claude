@@ -72,6 +72,10 @@ just --list                                   # the map
 `just skills` lists the custom skill ids on the account, for `-s`.
 `just completions zsh --install` (or bash, fish) installs tab completion for
 the spec, and says what to add to the shell's rc file.
+`just test` makes one cheap live call per Anthropic contract, and
+`just test-openai` does the same for an OpenAI-compatible API
+(`OPENAI_BASE_URL`, `OPENAI_API_KEY` and optionally `OPENAI_MODEL` in
+`.env`; Venice is just a base URL).
 
 ---
 

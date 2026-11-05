@@ -101,7 +101,7 @@ so the goldens stay valid and the Rust port has one shape to match.
 
 | # | Commit | Validation | Status |
 | --- | --- | --- | --- |
-| T9 | test: provider contracts | `tests/providers/openai-compatible.hurl`, run once per provider by `just test-providers` with `base_url`, `api_key`, `model` variables: `POST /chat/completions`, `stream: true`, `chat.completion.chunk`, `finish_reason: stop`, `data: [DONE]`; needs `OPENAI_API_KEY` / `VENICE_API_KEY`, never run by `just test` | [t] |
+| T9 | test: provider contracts | `tests/providers/openai-compatible.hurl`, run by `just test-openai` with `base_url`, `api_key`, `model` from `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`: `POST /chat/completions`, `stream: true`, `chat.completion.chunk`, `finish_reason: stop`, `data: [DONE]`; one provider per run (Venice is a base URL, not a provider), never run by `just test` | [t] |
 | F9 | feat: `--provider` in the spec | `flag "-p --provider <provider>" default="anthropic"`; bash rejects anything else with exit 2 and the message "not implemented in the bash version, see docs/plan.md" | T9 unchanged, spec test extended |
 
 Venice is OpenAI-compatible at `https://api.venice.ai/api/v1` (Bearer auth;
@@ -110,10 +110,10 @@ its only extension, `store` and `user` are accepted and ignored). OpenAI chat
 streaming: `data:` lines carrying `chat.completion.chunk` objects, terminated
 by `data: [DONE]`. One reassembler covers both; it is written once, in Rust.
 
-| provider | base_url | key | default model |
+| `-p openai` against | `OPENAI_BASE_URL` | `OPENAI_API_KEY` | `OPENAI_MODEL` |
 |---|---|---|---|
-| openai | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-4.1-mini` |
-| venice | `https://api.venice.ai/api/v1` | `VENICE_API_KEY` | `zai-org-glm-5-1` |
+| OpenAI | `https://api.openai.com/v1` | an OpenAI key | `gpt-4.1-mini` |
+| Venice | `https://api.venice.ai/api/v1` | a Venice key | `gemini-4-argon` |
 
 ## Phase 4: Rust port
 

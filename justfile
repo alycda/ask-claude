@@ -27,8 +27,9 @@ unit-test unit:
 step name:
     bats --filter-tags {{ quote("step:" + name) }} tests/unit/*-steps.bats
 
-# live Anthropic contracts; one cheap call each. Only this recipe reads .env, and
-# the key reaches hurl through a secrets file on a pipe, not on its command line.
+# live Anthropic contracts; one cheap call each. Only the live recipes (this one and
+# test-openai) read .env, and the key reaches hurl through a secrets file on a
+# pipe, not on its command line.
 [working-directory: 'tests']
 test:
     #!/usr/bin/env bash
@@ -49,8 +50,13 @@ skills:
         jq -r 'if .data then .data[] | [.id, (.display_title // "-"), (.latest_version // "-")] | @tsv
                else "just skills: \(.error.message // "unreadable response")\n" | halt_error end'
 
-# live OpenAI-compatible contract, once per provider; needs OPENAI_API_KEY and VENICE_API_KEY in .env
+# live OpenAI-compatible contract, one call. Reads .env like `test`: OPENAI_BASE_URL
+# is the API root (e.g. https://api.venice.ai/api/v1), OPENAI_API_KEY the key,
+# OPENAI_MODEL the model (default gemini-4-argon); the key goes to hurl on a pipe.
 [working-directory: 'tests/providers']
-test-providers:
-    hurl --test --variable base_url=https://api.openai.com/v1    --variable model=gpt-4.1-mini    --secret api_key="$OPENAI_API_KEY" openai-compatible.hurl
-    hurl --test --variable base_url=https://api.venice.ai/api/v1 --variable model=zai-org-glm-5-1 --secret api_key="$VENICE_API_KEY" openai-compatible.hurl
+test-openai:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; . "{{ justfile_directory() }}/.env"; set +a
+    hurl --test --variable base_url="$OPENAI_BASE_URL" --variable model="${OPENAI_MODEL:-gemini-4-argon}" \
+        --secrets-file <(printf 'api_key=%s\n' "$OPENAI_API_KEY") openai-compatible.hurl

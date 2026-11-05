@@ -20,6 +20,8 @@
 # shellcheck disable=SC2154  # usage_* vars are set by the usage runtime
 
 set -uo pipefail
+# The script ships as one file, so it carries its own version.
+readonly ASK_CLAUDE_VERSION=0.1.0
 # History holds whole conversations, including -f file contents: every file
 # and directory this script creates is private to the user, whatever the
 # shell's umask.
@@ -35,6 +37,17 @@ die() {
   echo "ask-claude: $*" >&2
   exit 2
 }
+
+# The spec already declares what docs/plan.md will build. Until a feature
+# exists it is refused here, before any key check, request or history file;
+# the commit that implements it deletes its line (and its test in
+# tests/unit/refuse.bats).
+not_implemented() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plan.md"; }
+[ -z "${usage_cmd:-}" ] || not_implemented "$usage_cmd"                                        # F6: list, resume
+[ -n "${usage_prompt:-}" ] || not_implemented "the chat loop"                                  # F7
+[ -z "${usage_skills:-}" ] || not_implemented "--skills"                                       # F8
+[ "${usage_provider:-anthropic}" = anthropic ] || not_implemented "--provider $usage_provider" # F9
+[ -z "${usage_base_url:-}" ] || not_implemented "--base-url"                                   # F9
 
 [ -n "${ANTHROPIC_API_KEY:-}" ] || die "no key: export ANTHROPIC_API_KEY"
 command -v jq >/dev/null || die "jq not found"
@@ -151,7 +164,6 @@ ask() {
 }
 
 # one shot: optional -f FILE, then the prompt
-[ -n "${usage_prompt:-}" ] || die "a prompt is required"
 prefix=""
 if [ -n "${usage_file:-}" ]; then
   [ -r "$usage_file" ] || die "cannot read $usage_file"

@@ -78,8 +78,6 @@ fi
 # tests/unit/refuse.bats).
 not_built() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plans/2026-11-05-001-feat-managed-agents-sessions-plan.md"; }
 case "${usage_cmd:-}" in
-agent) [ -n "${usage_prompt:-}" ] || not_built "agent (the chat)" ;;        # U5
-"agent list" | "agent resume") not_built "$usage_cmd" ;;                    # U5
 "agent files") not_built "$usage_cmd" ;;                                    # U8
 "agent budget" | "agent archive" | "agent trace") not_built "$usage_cmd" ;; # U10
 esac
@@ -350,6 +348,8 @@ ma_call() {
   if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
     case "$method $path" in
     "POST /sessions") echo '{"id":"sesn_FIXTURE01","status":"running"}' ;;
+    "GET /sessions/"*"/events"*) cat "$ASK_CLAUDE_REPLAY/events.json" 2>/dev/null || echo '{"data":[]}' ;;
+    "GET /sessions"*) cat "$ASK_CLAUDE_REPLAY/sessions.json" 2>/dev/null || echo '{"data":[]}' ;;
     *) echo '{}' ;;
     esac
     return 0
@@ -452,6 +452,71 @@ session_remember() {
   printf 'agent=%s\nenvironment=%s\ncreated=%s\n' "$usage_agent" "$usage_environment" "$(date +%Y%m%dT%H%M%S)" >"$SESSIONS/$1"
 }
 
+# session_find <id-or-prefix>: a session id, from sessions/ by prefix, or the
+# id itself when it looks like one; exit 2 otherwise
+session_find() {
+  local f n=0 found=""
+  case "$1" in */* | *[*?[]*) die "resume takes a session id or a prefix from \`ask-claude agent list\`" ;; esac
+  for f in "$SESSIONS/$1"* "$SESSIONS/sesn_$1"*; do
+    [ -f "$f" ] || continue
+    found="${f##*/}"
+    n=$((n + 1))
+  done
+  if [ "$n" -gt 1 ]; then
+    die "\"$1\" matches $n sessions, see \`ask-claude agent list\`"
+  elif [ "$n" -eq 1 ]; then
+    echo "$found"
+  elif [[ $1 == sesn_* ]]; then
+    echo "$1"
+  else
+    die "nothing to resume: \"$1\" is not a session id, nor a prefix of one started here"
+  fi
+}
+
+# session_history <sesn>: the session's messages so far, from the API
+session_history() {
+  ma_call GET "/sessions/$1/events?types[]=user.message&types[]=agent.message" | jq -r -f "$LIB/session-history.jq"
+}
+
+# session_list: the API's sessions, newest first
+session_list() {
+  ma_call GET "/sessions?order=desc&limit=50" | jq -r "$SAFE"'.data[]? | [.id, .status,
+    ("$" + ((.usage.list_cost.amount // "0" | tonumber) / 100 | tostring | if test("\\.") then (. + "00" | capture("(?<d>[0-9]+\\.[0-9]{2})").d) else . + ".00" end)),
+    (.title // "")] | join("  ") | safe'
+}
+
+# session_loop [sesn]: one turn per line until /quit. With no session yet,
+# the first line creates one (so quitting first leaves nothing); /new drops
+# the current one and the next line creates another; /history prints the
+# session so far.
+session_loop() {
+  local sesn=${1:-} line
+  echo "ask-claude: agent $usage_agent  (/new starts another session, /quit exits)" >&2
+  while IFS= read -r -e -p "> " line; do
+    case "$line" in
+    "") continue ;;
+    /quit | /exit) break ;;
+    /history)
+      [ -n "$sesn" ] && session_history "$sesn"
+      continue
+      ;;
+    /new)
+      sesn=""
+      echo "new session on the next line" >&2
+      continue
+      ;;
+    esac
+    if [ -z "$sesn" ]; then
+      sesn=$(session_create "$line") || continue
+      session_turn "$sesn" && session_remember "$sesn"
+    else
+      session_turn "$sesn" "$(jq -n -c --arg t "$line" '{events: [{type: "user.message", content: [{type: "text", text: $t}]}]}')"
+    fi
+    echo
+  done
+  [ -z "$sesn" ] || echo "resume with: ask-claude agent resume $sesn" >&2
+}
+
 # session_prereqs: what every agent form needs before a request can happen
 session_prereqs() {
   [ -n "${usage_agent:-}" ] || die "no agent id: --agent or ASK_CLAUDE_AGENT (the Console, Agents)"
@@ -466,6 +531,10 @@ session_prereqs() {
 case "${usage_cmd:-}" in
 agent)
   session_prereqs
+  if [ -z "${usage_prompt:-}" ]; then
+    session_loop
+    exit 0
+  fi
   sesn=$(session_create "$usage_prompt") || exit 1
   if session_turn "$sesn"; then
     session_remember "$sesn"
@@ -473,6 +542,19 @@ agent)
   fi
   rm -f "$SESSIONS/$sesn"
   exit 1
+  ;;
+"agent list")
+  need_key
+  session_list
+  exit 0
+  ;;
+"agent resume")
+  sesn=$(session_find "$usage_session") || exit 2
+  session_prereqs
+  echo "resuming $sesn" >&2
+  session_history "$sesn" >&2
+  session_loop "$sesn"
+  exit 0
   ;;
 list)
   list_chats

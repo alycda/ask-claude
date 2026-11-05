@@ -11,8 +11,34 @@
 # <dir>/<name>.sse with every id replaced by a stable FIXTURE id. A session
 # that stops with requires_action is left for you to answer by hand; stream it
 # again with `ASK_CLAUDE_SESSION=<sesn> tests/record-session.sh <name>-2`.
-# The ids are the only thing redacted: keep prompts free of anything private.
+# Ids and the agent's name are the only things redacted: keep prompts free of
+# anything private. `tests/record-session.sh --redact` runs the redaction on
+# stdin alone (tests/unit/record-session.bats).
 set -euo pipefail
+
+# redact: every id value becomes a stable <prefix>_FIXTURE<nn> (the same id
+# the same replacement, numbered per prefix in order of first sight), and the
+# agent's name becomes "fixture". Only values are ids: a key such as
+# "agent_name" matches the id pattern too, so a match followed by ": is left
+# alone (it is a key), and agent_name is replaced before ids are.
+redact() {
+  sed -u 's/"agent_name":"[^"]*"/"agent_name":"fixture"/g' |
+    awk '
+    { line = $0; out = ""
+      while (match(line, /(sevt|sesn|agent|env|sthr|vlt|file|memstore)_[A-Za-z0-9]+/)) {
+        id = substr(line, RSTART, RLENGTH)
+        if (substr(line, RSTART + RLENGTH, 2) == "\":") { out = out substr(line, 1, RSTART + RLENGTH - 1); line = substr(line, RSTART + RLENGTH); continue }
+        if (!(id in map)) { split(id, p, "_"); n[p[1]]++; map[id] = p[1] "_FIXTURE" sprintf("%02d", n[p[1]]) }
+        out = out substr(line, 1, RSTART - 1) map[id]
+        line = substr(line, RSTART + RLENGTH)
+      }
+      print out line }'
+}
+if [ "${1:-}" = --redact ]; then
+  redact
+  exit 0
+fi
+
 name="${1:?name}"
 prompt="${2:-}"
 dir="${3:-$(dirname "$0")/fixtures/sessions}"
@@ -37,14 +63,5 @@ fi
 # sed quits at the first idle, which closes the pipe and ends curl (exit 23)
 curl -sS -N --max-time 120 "$api/sessions/$sesn/events/stream" -H @"$headers" |
   sed -u '/"type":"session.status_idle"/q' |
-  awk '
-    { line = $0; out = ""
-      while (match(line, /(sevt|sesn|agent|env|sthr|vlt)_[A-Za-z0-9]+/)) {
-        id = substr(line, RSTART, RLENGTH)
-        if (!(id in map)) { split(id, p, "_"); n[p[1]]++; map[id] = p[1] "_FIXTURE" sprintf("%02d", n[p[1]]) }
-        out = out substr(line, 1, RSTART - 1) map[id]
-        line = substr(line, RSTART + RLENGTH)
-      }
-      print out line }' |
-  sed 's/"agent_name":"[^"]*"/"agent_name":"fixture"/' >"$dir/$name.sse" || true
+  redact >"$dir/$name.sse" || true
 echo "wrote $dir/$name.sse ($(grep -c '^data:' "$dir/$name.sse") events); stop: $(grep -o '"stop_reason":{[^}]*}' "$dir/$name.sse" | tail -1)" >&2

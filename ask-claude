@@ -694,7 +694,7 @@ file_upload() {
 # the agent wrote to /mnt/session/outputs), or download the named ones into
 # the current directory
 session_files() {
-  local sesn=$1 page name id size
+  local sesn=$1 page name id size tmp
   shift
   page=$(ma_call GET "/files?scope_id=$sesn")
   session_api_error "$page" && return 1
@@ -706,17 +706,26 @@ session_files() {
     case "$name" in */* | "" | .* | -*) die "files takes names from \`ask-claude agent files $sesn\`, not paths" ;; esac
     id=$(jq -r --arg n "$name" 'last(.data[]? | select(.filename == $n)) | .id // empty' <<<"$page")
     [ -n "$id" ] || die "the session has no file named $name"
+    # --force replaces a file, never a link or a directory (mv would follow
+    # the one and move into the other)
+    if [ -L "$name" ] || { [ -e "$name" ] && [ ! -f "$name" ]; }; then
+      die "$name exists here and is not a regular file; not overwriting it"
+    fi
     if [ -e "$name" ] && [ "${usage_force:-}" != true ]; then
       die "$name exists here; --force overwrites it"
     fi
+    # The bytes go to a temp file this process creates (mktemp: O_EXCL), so
+    # nothing already in the directory, such as a planted symlink, can
+    # redirect them; then one rename puts the file in place.
+    tmp=$(mktemp "./.$name.XXXXXX") || die "cannot create a temporary file in $PWD"
     if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
-      cat "$ASK_CLAUDE_REPLAY/files/$name" >"$name.part"
-    elif ! curl -sS --fail --max-time 600 "$BASE_URL/v1/files/$id/content" -H @<(ma_headers) -o "$name.part"; then
-      rm -f "$name.part"
+      cat "$ASK_CLAUDE_REPLAY/files/$name" >"$tmp"
+    elif ! curl -sS --fail --max-time 600 "$BASE_URL/v1/files/$id/content" -H @<(ma_headers) -o "$tmp"; then
+      rm -f "$tmp"
       echo "ask-claude: download of $name failed" >&2
       return 1
     fi
-    mv -- "$name.part" "$name"
+    mv -f -- "$tmp" "$name"
     size=$(wc -c <"$name")
     echo "ask-claude: wrote $name ($size bytes)" >&2
   done

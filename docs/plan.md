@@ -134,19 +134,22 @@ transport at R7.
 
 ## Phase 4: Rust port
 
-Crate `ask-claude` in `rust/` (own line, merged when it reaches parity).
+Crate `ask-claude` in `rust/` (own line, merged when it reaches parity). The
+scaffold, the tests and the benchmarks exist (2026-11-05); Alyssa writes the
+Rust, one unit per commit, each turning its `r<N>_*` tests green: `just
+rust-test`, `just rust-lint`, `just parity`, then `just test-rust` from R5.
 
 | # | Commit | Validation | Status |
 | --- | --- | --- | --- |
-| R0 | chore: cargo scaffold, clap + clap_usage 5 | `cargo run -- --usage-spec` prints a spec; `usage diff ask-claude.usage.kdl <(cargo run -q -- --usage-spec)` reports no interface change (the bash spec is exported with `usage generate` first) | [ ] |
-| R1 | feat: SSE event types (serde) | deserialize every line of every `sse/*.sse` fixture without `#[serde(other)]` swallowing anything | [ ] |
-| R2 | feat: reassembler | `Message::from_events(fixture) == fixture.message.json` (serde_json::Value equality) | [ ] |
-| R3 | feat: request builder | `Request::new(args).to_json() == request/*.json` | [ ] |
-| R4 | feat: stream printer | same bytes as `*.stream.txt` | [ ] |
-| R5 | feat: transport trait, replay impl | the bats suite runs unchanged against the Rust binary via `ASK_CLAUDE_BIN` | [ ] |
-| R6 | feat: history, list, resume, chat loop, event log lines | same bats files, same `XDG_STATE_HOME` seam; the event log (`docs/plans/2026-11-07-001-feat-request-event-log-plan.md`) is `tests/unit/events.bats`, the same line shape as `lib/event.jq`'s goldens | [ ] |
-| R7 | feat: `Provider` trait with two impls: `Anthropic` and `OpenAiCompatible { base_url }`; openai and venice are rows in a table, not types | `tests/providers/openai-compatible.hurl` green for both rows; a recorded OpenAI-shape fixture gets its own goldens then | [ ] |
-| R8 | chore: `just test-rust` runs the bats suite against both binaries | both green; bash stays the oracle until R8 is merged | [ ] |
+| R0 | chore: cargo scaffold, clap + clap_usage 5 | `rust/`: `src/cli.rs` mirrors the `#USAGE` block, `--usage-spec` prints it through `clap_usage::spec` (env annotations added by hand); `just parity` runs `usage diff ask-claude.sh <(ask-claude --usage-spec)`: 0 breaking. `src/lib.rs` is the shape with `todo!()` bodies; `rust/tests/goldens.rs` and `rust/tests/cli.rs` the red tests; `rust/benches/goldens.rs` the criterion benchmarks | [x] |
+| R1 | feat: SSE event types (serde) | `sse::parse` on every data line of every `sse/*.sse` and `sessions/**.sse` fixture, `kind()` equal to the JSON type (`r1_*`; green with the placeholder `Event`, which the port may make an enum) | [t] |
+| R2 | feat: reassembler | `reassemble::message(events) == *.message.json` as `serde_json::Value`, tool inputs parsed and `partial` gone (`r2_*`) | [t] |
+| R3 | feat: request builder | `request::body(args) == request/*.json` for plain, system-effort, skills, container, web, mcp, everything; `request::skills` (`r3_*`) | [t] |
+| R4 | feat: stream printer | `stream::line` concatenated == `*.stream.txt` bytes; `stream::safe` (`r4_*`) | [t] |
+| R5 | feat: transport trait, replay impl | `transport::Transport` with `ASK_CLAUDE_REPLAY` (a file, or a directory of turns) and `ASK_CLAUDE_REQUEST_LOG`; `r5_one_shot_through_replay_prints_pong`, then `just test-rust` (the bats suite with `ASK_CLAUDE_BIN` at the Rust binary) | [t] |
+| R6 | feat: history, list, resume, chat loop, sessions, event log lines | the same bats files, same `XDG_STATE_HOME` seam; `session::{line, fold, create_body, history}` against the U1 goldens (`r6_*`); the event log (`docs/plans/2026-11-07-001-feat-request-event-log-plan.md`) is `tests/unit/events.bats`, the same line shape as `lib/event.jq`'s goldens | [t] |
+| R7 | feat: `Provider` trait: `Anthropic`, `OpenAiCompatible { base_url }`, and the `Sessions` transport (one stream per turn, events sent after the stream opens) | `tests/providers/openai-compatible.hurl` green; `tests/agents/*.hurl` green; `--web` and `--mcp` through `request::body` | [ ] |
+| R8 | chore: `just test-rust` green, `just rust-bench` recorded | both binaries green on the whole suite; `just parity` 0 breaking; the three live hurl sets green; bash stays the oracle until R8 is merged | [ ] |
 
 Parity gate before replacing the bash binary: every bats test green on both,
 `usage diff` empty, the three live hurl files green.

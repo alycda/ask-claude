@@ -33,13 +33,4 @@ refused() { # args...
     [ "$output" = "pong" ]
 }
 
-# agent (docs/plans/2026-11-05-001): declared in the spec, refused until each
-# piece is built; the feat commit that builds one deletes its line here.
 
-@test "refuse: agent and its subcommands, with the version and the plan" {
-    for args in "agent budget sesn_x 5" "agent archive sesn_x" "agent trace sesn_x"; do
-        # shellcheck disable=SC2086
-        refused $args
-        grep -qE "^ask-claude: ${args%% *}.* is not implemented in ask-claude [0-9.]+, see docs/plans/2026-11-05-001" <<<"$stderr"
-    done
-}

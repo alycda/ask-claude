@@ -1,0 +1,1 @@
+{"type":"error","error":{"type":"invalid_request_error","message":"Session sesn_FIXTURE01 cannot be archived while its status is \"running\". Only pending or idle sessions may be archived."},"request_id":"req_FIXTURE"}

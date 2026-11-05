@@ -33,6 +33,41 @@ One JSON array of turns per chat, named by its start time
 beside it in `<name>.json.container`, so the next turn reuses the container.
 An empty chat leaves no file.
 
+## Agents
+
+`ask-claude agent` runs a prompt, or a chat, as a [Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview)
+session: an Anthropic-run sandbox with network, packages, web tools and
+MCP servers, as the agent you made allows. The API keeps the transcript.
+
+```
+ask-claude agent "one question"          one shot in a new session
+ask-claude agent                         chat; /new, /history, /quit
+ask-claude agent list                    sessions on the account, newest first
+ask-claude agent resume <sesn|prefix>    continue one
+```
+
+Once, in the Console (platform.claude.com): an **environment** (start with
+limited networking, add `allowed_hosts` for what the job needs) and an
+**agent** (model, system prompt, which tools; set bash to *ask* unless you
+trust it). `just environments` and `just agents` print their ids. Put them in
+`.env` or pass `--environment` and `--agent`:
+
+| Variable | Use |
+|---|---|
+| `ASK_CLAUDE_AGENT` | the agent id, `--agent` overrides |
+| `ASK_CLAUDE_ENVIRONMENT` | the environment id, `--environment` overrides |
+| `ASK_CLAUDE_CONFIRM` | `ask` (default), `allow`, or `deny` for tool confirmations |
+
+Every session gets a budget, 100 cents at list price unless `--budget` says
+otherwise (`0` for none). Session time bills at $0.08 per active hour on top
+of tokens; the usage line shows cost so far. When the agent wants to run a
+tool its policy marks *ask*, ask-claude asks you (`y`, `n`, `a` for the rest
+of the run) and denies when there is no terminal. A custom tool on the
+agent is answered with an error: nothing runs on this machine yet.
+
+A session can be read in the Console under Sessions. Sessions started here
+are listed in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/sessions/`.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -72,10 +107,11 @@ just --list                                   # the map
 `just skills` lists the custom skill ids on the account, for `-s`.
 `just completions zsh --install` (or bash, fish) installs tab completion for
 the spec, and says what to add to the shell's rc file.
-`just test` makes one cheap live call per Anthropic contract, and
-`just test-openai` does the same for an OpenAI-compatible API
-(`OPENAI_BASE_URL`, `OPENAI_API_KEY` and optionally `OPENAI_MODEL` in
-`.env`; Venice is just a base URL).
+`just test` makes one cheap live call per Anthropic contract,
+`just test-agents` one session turn plus the lists (`ASK_CLAUDE_AGENT` and
+`ASK_CLAUDE_ENVIRONMENT` in `.env`), and `just test-openai` does the same
+for an OpenAI-compatible API (`OPENAI_BASE_URL`, `OPENAI_API_KEY` and
+optionally `OPENAI_MODEL` in `.env`; Venice is just a base URL).
 
 ---
 

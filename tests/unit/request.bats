@@ -47,3 +47,33 @@ SKILLS='[{"skill_id":"pptx","version":"latest","type":"anthropic"},{"skill_id":"
 @test "skills: empty input gives an empty array" {
     printf '' | jq -R -s -c -f "$ROOT/lib/skills.jq" | grep -qx '\[\]'
 }
+
+# web search, web fetch and MCP servers (0.4.0)
+
+request2() { # sys eff skills cid web mcp
+    jq -n --arg m claude-opus-5-5 --argjson max 16000 \
+        --arg sys "$1" --arg eff "$2" --arg skills "$3" --arg cid "$4" --arg web "$5" --arg mcp "$6" \
+        --slurpfile msgs "$FIX/request/history-one-turn.json" \
+        -f "$ROOT/lib/request.jq"
+}
+
+@test "request: --web adds the basic web search and web fetch server tools" {
+    request2 "" "" "" "" 1 "" > "$TMP/out.json"
+    assert_golden "$FIX/request/web.json" "$TMP/out.json"
+}
+
+@test "request: --mcp adds a server per URL, named after its host, and one toolset each" {
+    request2 "" "" "" "" "" "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" > "$TMP/out.json"
+    assert_golden "$FIX/request/mcp.json" "$TMP/out.json"
+    jq -e '.mcp_servers[0] | has("authorization_token") | not' "$TMP/out.json"
+}
+
+@test "request: skills, web and an MCP server with a token from the environment, in one body" {
+    ASK_CLAUDE_MCP_TOKEN=tok_FIXTURE request2 "" "" '[{"skill_id":"pptx","version":"latest","type":"anthropic"}]' "" 1 "https://mcp.deepwiki.com/mcp" > "$TMP/out.json"
+    assert_golden "$FIX/request/everything.json" "$TMP/out.json"
+}
+
+@test "request: without --web or --mcp the old goldens are untouched" {
+    request2 "" "" "" "" "" "" > "$TMP/out.json"
+    assert_golden "$FIX/request/plain.json" "$TMP/out.json"
+}

@@ -1,0 +1,1 @@
+(web_fetch) (thinking) The jqlang.org homepage says jq is "a lightweight and flexible command-line JSON processor."

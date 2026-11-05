@@ -39,3 +39,10 @@ stream() { events "$1" | jq --unbuffered -rj -f "$ROOT/lib/stream.jq"; }
     # nothing in 0x00-0x08, 0x0b-0x1f or 0x7f survives
     ! LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]' "$TMP/out.txt"
 }
+
+@test "stream: web search, web fetch and MCP calls print their markers" {
+    for f in web-search web-fetch mcp; do
+        events "$f" | jq --unbuffered -rj -f "$ROOT/lib/stream.jq" > "$TMP/out.txt"
+        assert_golden "$FIX/sse/$f.stream.txt" "$TMP/out.txt"
+    done
+}

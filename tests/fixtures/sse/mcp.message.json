@@ -1,0 +1,54 @@
+{
+  "model": "claude-haiku-5-5",
+  "stop_reason": "end_turn",
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 2193,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 134,
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard",
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    }
+  },
+  "container": null,
+  "error": null,
+  "content": [
+    {
+      "type": "mcp_tool_use",
+      "id": "mcptoolu_FIXTURE",
+      "name": "ask_wiki_question",
+      "input": {
+        "repoName": "jqlang/jq",
+        "question": "What language is jq written in?"
+      },
+      "server_name": "deepwiki"
+    },
+    {
+      "type": "mcp_tool_result",
+      "tool_use_id": "mcptoolu_FIXTURE",
+      "is_error": false,
+      "content": [
+        {
+          "type": "text",
+          "text": "jq is primarily written in C  . It is designed to be portable and has zero runtime dependencies .\n\n## Core Implementation Language\n\nThe core `jq` processor, which handles JSON parsing, filtering, and transformation, is implemented in C  . This includes its lexer, parser, compiler, and virtual machine .\n\n## Documentation Build System\n\nWhile the `jq` tool itself is in C, its website and documentation are built using a Python-based static site generator . This system uses Python scripts, Jinja2 templates, and YAML content files to produce the static HTML pages for jqlang.org .\n\n## Notes\n\nThe question specifically asks about the language `jq` is written in, referring to the command-line tool itself. The documentation build system, while part of the `jqlang/jq` repository, is a separate component written in Python for generating the website.\n\nWiki pages you might want to explore:\n- [JQ Overview (jqlang/jq)](/wiki/jqlang/jq#1)\n- [Core Architecture (jqlang/jq)](/wiki/jqlang/jq#2)\n- [Website and Download Documentation (jqlang/jq)](/wiki/jqlang/jq#6.2)\n\nView this search on DeepWiki: https://deepwiki.com/search/what-language-is-jq-written-in_4e033d64-77d5-4394-be7b-aaec01fff65f\n"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "text": "jq is written primarily in C (its lexer, parser, compiler, and VM), with its website/docs build system in Python."
+    }
+  ]
+}

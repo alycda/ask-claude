@@ -119,3 +119,10 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
     grep -q 'Found 1 breaking' <<<"$output"
     grep -qE "^breaking \\[cmd-shadows-arg\\] at ask-claude: command 'agent'" <<<"$output"
 }
+
+@test "spec: --web and --mcp bind, --mcp repeats" {
+    run explain --web --mcp https://a.example/mcp --mcp https://b.example/mcp "hi"
+    grep -qE '^\s+flag\s+--web' <<<"$output"
+    grep -qE '^\s+flag\s+--mcp\s+https://a.example/mcp' <<<"$output"
+    ! grep -q refused <<<"$output"
+}

@@ -1,0 +1,67 @@
+{
+  "model": "claude-haiku-5-5",
+  "stop_reason": "end_turn",
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 9448,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 271,
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard",
+    "output_tokens_details": {
+      "thinking_tokens": 179
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 1
+    }
+  },
+  "container": null,
+  "error": null,
+  "content": [
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "web_fetch",
+      "input": {
+        "url": "https://jqlang.org/"
+      }
+    },
+    {
+      "type": "web_fetch_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": {
+        "type": "web_fetch_result",
+        "url": "https://jqlang.org/",
+        "retrieved_at": "2026-11-05T18:44:45+00:00",
+        "content": {
+          "type": "document",
+          "source": {
+            "type": "text",
+            "media_type": "text/plain",
+            "data": "---\ncanonical: https://jqlang.org/\nmeta-og:description: jq is a lightweight and flexible command-line JSON processor\nmeta-og:image: https://jqlang.org/icon.png\nmeta-og:title: jq\nmeta-og:type: website\nmeta-og:url: https://jqlang.org/\nmeta-viewport: width=device-width, initial-scale=1\ntitle: jq\n---\n\n[Skip to main content](#main)\n\n[![jq logo](https://jqlang.org/jq.svg)](https://jqlang.org/)\n\n### jq\n\n- [Top page](https://jqlang.org/)\n- [Tutorial](https://jqlang.org/tutorial/)\n- [Download](https://jqlang.org/download/)\n- [Manual](https://jqlang.org/manual/)\n- [GitHub](https://github.com/jqlang/jq)\n- [Issues](https://github.com/jqlang/jq/issues)\n- [Try online!](https://play.jqlang.org)\n- [News](https://raw.githubusercontent.com/jqlang/jq/master/NEWS.md)\n- [Wiki](https://github.com/jqlang/jq/wiki)\n\n[](https://github.com/jqlang/jq)\n\n# ![jq](https://jqlang.org/jq.svg)\n\n## jq is a lightweight and flexible command-line JSON processor.\n\nDownload jq 1.8.2\n\n- [Linux (AMD64)](https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64)\n- [Linux (ARM64)](https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-arm64)\n- [macOS (Apple Silicon)](https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-arm64)\n- [macOS (Intel Mac)](https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-amd64)\n- [Windows (AMD64)](https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-windows-amd64.exe)\n- [Other platforms, older versions, and source](https://jqlang.org/download/)\n\n[Try online!](https://play.jqlang.org)\n\njq is like `sed` for JSON data - you can use it to slice and filter and map and transform structured data with the same ease that `sed`, `awk`, `grep` and friends let you play with text.\n\njq is written in portable C, and it has zero runtime dependencies. You can download a single binary, `scp` it to a far away machine of the same type, and expect it to work.\n\njq can mangle the data format that you have into the one that you want with very little effort, and the program to do so is often shorter and simpler than you'd expect.\n\nGo read the [tutorial](https://jqlang.org/tutorial/) for more, or the [manual](https://jqlang.org/manual/) for *way* more.\n\nHave a question related to jq? You can seek answers on [Stack Overflow](https://stackoverflow.com/) by using the [jq tag](https://stackoverflow.com/questions/tagged/jq), or in the [#jq channel](https://web.libera.chat/#jq) on [Libera.Chat](https://libera.chat/). For more interactive discussions, feel free to join our [Discord server](https://discord.gg/yg6yjNmgAC).\n\n## News\n\n- 20 June 2026\n  \n  jq 1.8.2 released. See [release notes](https://github.com/jqlang/jq/releases/tag/jq-1.8.2) for details.\n- 1 July 2025\n  \n  jq 1.8.1 released. See [release notes](https://github.com/jqlang/jq/releases/tag/jq-1.8.1) for details.\n- 1 June 2025\n  \n  jq 1.8.0 released. See [release notes](https://github.com/jqlang/jq/releases/tag/jq-1.8.0) for details.\n- 13 December 2023\n  \n  jq 1.7.1 released. Security (CVE-2023-50246, CVE-2023-50268) and bug fixes. See [release notes](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) for details.\n- 7 September 2023\n  \n  After a five-year hiatus, we've returned with a revitalized [GitHub organization](https://github.com/jqlang) and a much-anticipated 1.7 release, thanks to our new admins and maintainers. Check out the [download](https://jqlang.org/download/) page for installation options and see the [release notes](https://github.com/jqlang/jq/releases/tag/jq-1.7) for details.\n- 1 November 2018\n  \n  jq 1.6 released. See installation options on the [download](https://jqlang.org/download/) page, and the [release notes](https://github.com/jqlang/jq/releases/tag/jq-1.6) for details.\n- 15 August 2015\n  \n  jq 1.5 released, including new datetime, math, and regexp functions, try/catch syntax, array and object destructuring, a streaming parser, and a module system. See installation options on the [download](https://jqlang.org/download/) page, and the [release notes](https://github.com/jqlang/jq/releases/tag/jq-1.5) for details.\n- 26 July 2015\n  \n  jq 1.5rc2 is available. Get it on the [releases](https://github.com/jqlang/jq/releases) page.\n- 01 January 2015\n  \n  jq 1.5rc1 is available. Get it on the [releases](https://github.com/jqlang/jq/releases) page.\n- 09 June 2014\n  \n  jq 1.4 (finally) released! Get it on the [download](https://jqlang.org/download/) page.\n- 19 May 2013\n  \n  jq 1.3 released.\n\nThis website is made with [Bootstrap](https://getbootstrap.com), themed with [Bootswatch](https://bootswatch.com).\n\njq is licensed under the MIT license (code) and the [CC-BY-3.0](https://creativecommons.org/licenses/by/3.0/) license (docs)."
+          },
+          "title": "jq"
+        }
+      },
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "REDACTED"
+    },
+    {
+      "type": "text",
+      "text": "The jqlang.org homepage says jq is \"a lightweight and flexible command-line JSON processor.\""
+    }
+  ]
+}

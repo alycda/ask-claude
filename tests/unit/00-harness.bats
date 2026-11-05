@@ -2,7 +2,7 @@
 load helpers
 
 @test "harness: fixtures are present and parse" {
-    for f in text thinking code-execution pause-turn refusal; do
+    for f in text thinking code-execution pause-turn refusal web-search web-fetch mcp; do
         [ -s "$FIX/sse/$f.sse" ]
         events "$f" | jq -e 'select(.type=="message_stop")' >/dev/null
     done

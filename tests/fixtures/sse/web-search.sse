@@ -1,0 +1,54 @@
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-haiku-5-5","id":"msg_FIXTURE","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":2846,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":16,"service_tier":"standard","inference_geo":"global","speed":"standard"},"diagnostics":null}            }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_FIXTURE","name":"web_search","input":{}}    }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":""}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\": \"jq "}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"latest "}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"release"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":" versio"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"n\"}"}              }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0     }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_FIXTURE","content":[{"type":"web_search_result","title":"Releases · emqx/jq · GitHub","url":"https://github.com/emqx/jq/releases","encrypted_content":"REDACTED","page_age":null},{"type":"web_search_result","title":"Releases · jqlang/jq · GitHub","url":"https://github.com/jqlang/jq/releases","encrypted_content":"REDACTED","page_age":"492 days ago"},{"type":"web_search_result","title":"jq","url":"https://mise-versions.jdx.dev/tools/jq","encrypted_content":"REDACTED","page_age":null},{"type":"web_search_result","title":"Releases · devlooped/jq · GitHub","url":"https://github.com/devlooped/jq/releases","encrypted_content":"REDACTED","page_age":"960 days ago"},{"type":"web_search_result","title":"Package jq · GitHub","url":"https://github.com/jqlang/jq/pkgs/container/jq","encrypted_content":"REDACTED","page_age":"1193 days ago"},{"type":"web_search_result","title":"UbuntuUpdates - Package \"jq\" (jammy 22.04)","url":"https://www.ubuntuupdates.org/package/core/jammy/main/base/jq","encrypted_content":"REDACTED","page_age":null},{"type":"web_search_result","title":"UbuntuUpdates - Package \"jq\" (resolute 26.04)","url":"https://www.ubuntuupdates.org/package/core/resolute/main/updates/jq","encrypted_content":"REDACTED","page_age":"191 days ago"},{"type":"web_search_result","title":"jq","url":"https://mise-tools.jdx.dev/tools/jq","encrypted_content":"REDACTED","page_age":null},{"type":"web_search_result","title":"Java version history","url":"https://en.wikipedia.org/wiki/Java_version_history","encrypted_content":"REDACTED","page_age":null}],"caller":{"type":"direct"}}          }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1  }
+
+event: content_block_start
+data: {"type":"content_block_start","index":2,"content_block":{"type":"text","text":""}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"1.8.2"}            }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":2          }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":13712,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":59,"output_tokens_details":{"thinking_tokens":0},"server_tool_use":{"web_search_requests":1,"web_fetch_requests":0}}    }
+
+event: message_stop
+data: {"type":"message_stop"      }
+

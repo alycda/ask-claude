@@ -34,3 +34,11 @@ reassemble() { events "$1" | jq -s -f "$ROOT/lib/reassemble.jq"; }
 @test "reassemble: usage merges input and output token counts" {
     reassemble text | jq -e '.usage.input_tokens>0 and .usage.output_tokens>0'
 }
+
+@test "reassemble: web search, web fetch and MCP blocks fold like the oracle's, MCP input included" {
+    for f in web-search web-fetch mcp; do
+        events "$f" | jq -s -f "$ROOT/lib/reassemble.jq" > "$TMP/out.json"
+        assert_golden "$FIX/sse/$f.message.json" "$TMP/out.json"
+    done
+    jq -e '.content[0].type=="mcp_tool_use" and (.content[0].input|type)=="object" and (.content[0]|has("partial")|not)' "$FIX/sse/mcp.message.json"
+}

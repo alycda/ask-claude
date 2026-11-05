@@ -20,6 +20,6 @@
 #   .[1] // "latest"    second element, or "latest" when missing
 #   startswith("x")     true when the string begins with x
 
-# TODO: split into lines, drop empty ones, and map each line to
-#       {skill_id, version, type} in that key order
-.
+split("\n") | map(select(length>0) | split("@")
+  | {skill_id:.[0], version:(.[1] // "latest"),
+      type:(if (.[0]|startswith("skill_")) then "custom" else "anthropic" end)})

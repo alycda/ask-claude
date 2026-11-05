@@ -74,8 +74,8 @@ change, that is its own commit with the reason in the message.
 | F1 | feat: lib/reassemble.jq | the `jq -s` program from `call()`, verbatim | T1 green | [ ] |
 | T2 | test: stream printer goldens | `tests/unit/stream.bats` | `jq -rj -f lib/stream.jq` == `fixture.stream.txt` | [t] |
 | F2 | feat: lib/stream.jq | the `--unbuffered -rj` filter, verbatim | T2 green | [ ] |
-| T3 | test: request builder goldens | `tests/unit/request.bats` | 4 arg sets == `request/*.json`; `skills_json` == `skills.json` | [t] |
-| F3 | feat: lib/request.jq + lib/skills.jq | the `jq -n` body and the `$SKILLS` parser | T3 green | [ ] |
+| T3 | test: request builder goldens | `tests/unit/request.bats` | 4 arg sets == `request/*.json`; `skills_json` == `skills.json` | [x] |
+| F3 | feat: lib/request.jq + lib/skills.jq | the `jq -n` body and the `$SKILLS` parser | T3 green | [x] |
 | T4 | test: usage spec | `tests/unit/spec.bats` | `--help` lists `list`/`resume`; `usage explain` binds every flag; `resume [chat]` optional | [t] |
 | F4 | feat: subcommands in the spec | `ask-claude` `#USAGE` block only | T4 green, `just lint` | [ ] |
 

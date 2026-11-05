@@ -12,6 +12,8 @@
 #USAGE flag "-p --provider <provider>" help="anthropic|openai; only anthropic is implemented in bash" default="anthropic" global=#true
 #USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" global=#true
 #USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000" global=#true
+#USAGE flag "--web" help="let the model search and fetch the web (server tools; searches cost extra)" global=#true
+#USAGE flag "--mcp <url>" help="an MCP server (https) the model may call; repeatable; ASK_CLAUDE_MCP_TOKEN for its auth" var=#true global=#true
 #USAGE flag "-V --version" help="print the version"
 #USAGE cmd "list" help="chats on disk, newest first"
 #USAGE cmd "resume" help="continue a chat" {
@@ -92,6 +94,12 @@ http://localhost | http://localhost[:/]* | http://127.0.0.1 | http://127.0.0.1[:
 *) die "--base-url must be https:// (or http:// on localhost), got: $BASE_URL" ;;
 esac
 API="${BASE_URL%/}/v1/messages"
+
+# --mcp: servers the model may call through the MCP connector; https only,
+# like the docs require, and checked here so a typo is exit 2, not a 400.
+for v in ${usage_mcp:-}; do
+  case "$v" in https://*) ;; *) die "--mcp takes https URLs, got: $v" ;; esac
+done
 
 # The key is checked where a request can happen (one shot, chat loop), so
 # `list` works without one.
@@ -258,12 +266,14 @@ call() {
   skills=$(skills_json)
   betas="server-side-fallback-2026-07-01"
   [ -n "$skills" ] && betas="$betas,code-execution-2025-08-25"
+  [ -z "${usage_mcp:-}" ] || betas="$betas,mcp-client-2025-11-20"
   while :; do
     cid=""
     [ -n "$skills" ] && [ -s "$HIST.container" ] && cid=$(cat "$HIST.container")
     body=$(jq -n -c --arg m "$usage_model" --argjson max "$usage_max_tokens" \
       --arg sys "${usage_system:-}" --arg eff "${usage_effort:-}" \
-      --arg skills "$skills" --arg cid "$cid" --slurpfile msgs "$HIST" -f "$LIB/request.jq")
+      --arg skills "$skills" --arg cid "$cid" --arg web "${usage_web:+1}" --arg mcp "${usage_mcp:-}" \
+      --slurpfile msgs "$HIST" -f "$LIB/request.jq")
     log="$HIST.sse" t0=$SECONDS
     : >"$log"
     # tee the raw SSE to $log, strip "data: " with builtins, print text live

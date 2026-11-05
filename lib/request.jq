@@ -3,6 +3,7 @@
 # Invocation (see tests/unit/request.bats), with claude.sh's argument names:
 #     jq -n --arg m MODEL --argjson max N --arg sys SYSTEM --arg eff EFFORT \
 #           --arg skills SKILLS_JSON --arg cid CONTAINER_ID \
+#           --arg web 1-or-empty --arg mcp "https://a/mcp https://b/sse" \
 #           --slurpfile msgs history.json -f lib/request.jq
 #
 # -n means there is no input: everything comes from the variables.
@@ -11,6 +12,8 @@
 #   $msgs                           an ARRAY of the file's JSON values
 #                                   (--slurpfile), so the history is $msgs[0]
 #   $skills                         JSON text from lib/skills.jq; fromjson parses it
+#   $web                            "" or anything: add the web search and fetch tools
+#   $mcp                            MCP server URLs, space-separated; "" means none
 #
 # The tests compare with tests/fixtures/request/*.json byte for byte, so key
 # order matters: `A + B` keeps A's keys first, then adds B's. Build the base
@@ -31,6 +34,13 @@
 #   fallbacks      "default"    let the API retry a refusal on another model
 #   stream         true         always SSE (lib/stream.jq prints it)
 #   cache_control  {type: "ephemeral"}   cache the growing conversation
+def words: split(" ") | map(select(length > 0));
+def host: capture("^[a-z]+://(?<h>[^/:]+)").h | gsub("[^A-Za-z0-9_-]"; "-");
+# $web and $mcp are newer than the other arguments: read through $ARGS.named so
+# a caller that does not pass them (the goldens of 0.1.0) still works
+def web: $ARGS.named.web // "";
+def mcp: $ARGS.named.mcp // "";
+
 {
     model: $m,
     max_tokens: $max,
@@ -43,7 +53,18 @@
 # else branch adds {}, which adds nothing, so the key is left out.
 + (if $sys != "" then {system: $sys} else {} end)
 + (if $eff != "" then {output_config: {effort: $eff}} else {} end)
+# mcp_servers: one per URL in $mcp (space-separated), named after its host
+# (dots to dashes), the token from the environment so it is never an argument
++ (if mcp != "" then {mcp_servers: [mcp | words[] | {type: "url", url: ., name: (. | host)}
+                                      + (if (env.ASK_CLAUDE_MCP_TOKEN // "") != "" then {authorization_token: env.ASK_CLAUDE_MCP_TOKEN} else {} end)]}
+   else {} end)
+# tools, in this order: code_execution for skills, the web tools, one
+# mcp_toolset per server; the key is left out when there are none
++ (([ (if $skills != "" then {type: "code_execution_20260521", name: "code_execution"} else empty end),
+      (if web != "" then {type: "web_search_20250305", name: "web_search", max_uses: 5},
+                           {type: "web_fetch_20250910", name: "web_fetch", max_uses: 5} else empty end) ]
+    + (if mcp != "" then [mcp | words[] | {type: "mcp_toolset", mcp_server_name: (. | host)}] else [] end)) as $tools
+   | if ($tools | length) > 0 then {tools: $tools} else {} end)
 + (if $skills != "" then
-      {tools:[{type:"code_execution_20260521", name:"code_execution"}],
-      container:(({skills:($skills|fromjson)}) + (if $cid != "" then {id:$cid} else {} end))}
+      {container: (({skills: ($skills | fromjson)}) + (if $cid != "" then {id: $cid} else {} end))}
     else {} end)

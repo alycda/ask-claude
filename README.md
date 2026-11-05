@@ -12,6 +12,13 @@ ask-claude resume [chat]            continue a chat (name or prefix)
 ask-claude --help                   every flag
 ```
 
+`--web` lets the model search and fetch the web (server tools; a search
+costs $10 per 1,000, a fetch nothing beyond tokens). `--mcp <https url>`
+(repeatable) lets it call an MCP server through the MCP connector;
+`ASK_CLAUDE_MCP_TOKEN` is sent as its authorization token. Both work with
+`-s`, in the one-shot and in the chat; the stream shows `(web_search) `,
+`(web_fetch) ` and `(mcp <server>) ` while the model uses them.
+
 In the chat loop, `/new` starts a fresh chat, `/history` prints the current
 one, and `/quit` exits and prints the command to resume it.
 
@@ -23,6 +30,7 @@ one, and `/quit` exits and prints the command to resume it.
 | `XDG_STATE_HOME` | chats live in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/` |
 | `ASK_CLAUDE_REPLAY` | testing: read this recorded `.sse` file instead of calling the API |
 | `ASK_CLAUDE_REQUEST_LOG` | testing: append each request body to this file |
+| `ASK_CLAUDE_MCP_TOKEN` | authorization token for the `--mcp` servers |
 
 Nothing else is read.
 

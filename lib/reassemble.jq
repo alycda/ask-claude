@@ -41,7 +41,7 @@ reduce .[] as $e (
         .model=$e.message.model | .usage=$e.message.usage | .container=$e.message.container
     elif $e.type == "content_block_start" then
         .blocks[($e.index|tostring)] = ($e.content_block
-          | if .type=="tool_use" or .type=="server_tool_use" then .partial="" else . end)
+          | if .type=="tool_use" or .type=="server_tool_use" or .type=="mcp_tool_use" then .partial="" else . end)
     elif $e.type == "content_block_delta" then
         ($e.index|tostring) as $i
           | if $e.delta.type=="text_delta" then .blocks[$i].text += $e.delta.text

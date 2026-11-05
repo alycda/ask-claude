@@ -10,6 +10,15 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.1.3 (micro) - 2026-11-05
+
+- `-s pptx,skill_abc@skver_1` runs the turn with those skills in
+  Anthropic's code-execution sandbox; the stream shows `(running code)`
+  and `(result rc=N)` while nothing prints. A chat keeps its container
+  beside its file (`<chat>.json.container`), so `resume -s ...` reuses
+  the files from earlier turns.
+- Still refused with exit 2: `-p openai`, `--base-url`.
+
 ## 0.1.2 (micro) - 2026-11-05
 
 - `ask-claude` with no prompt opens a chat: each line is a turn, `/new`

@@ -36,3 +36,15 @@ test:
     set -a; . "{{ justfile_directory() }}/.env"; set +a
     hurl --test --variable base_url=https://api.anthropic.com \
         --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") .
+
+# Reads .env like test; the key reaches curl through a header file on a pipe.
+
+# custom skills on this account (id, title, latest version), for -s
+skills:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; . "{{ justfile_directory() }}/.env"; set +a
+    curl -sS 'https://api.anthropic.com/v1/skills?source=custom&limit=100' \
+        -H @<(printf 'x-api-key: %s\nanthropic-version: 2026-10-21\n' "$ANTHROPIC_API_KEY") |
+        jq -r 'if .data then .data[] | [.id, (.display_title // "-"), (.latest_version // "-")] | @tsv
+               else "just skills: \(.error.message // "unreadable response")\n" | halt_error end'

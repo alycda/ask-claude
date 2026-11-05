@@ -1,1 +1,1 @@
-I couldn't get Paris's current weather: the weather tool is unavailable.
+(thinking) Weather service unavailable; couldn't get Paris weather.

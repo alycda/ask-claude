@@ -17,9 +17,9 @@
     "input_tokens": 4,
     "output_tokens": 49,
     "cache_read": 4187,
-    "cache_write": 137,
+    "cache_write": 132,
     "list_cost": "0",
-    "active_seconds": 0.924
+    "active_seconds": 0.926
   },
   "error": null
 }

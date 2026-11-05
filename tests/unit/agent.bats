@@ -88,10 +88,10 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     run --separate-stderr replay custom-tool "ping" </dev/null
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$TMP/requests.jsonl")" -eq 3 ]
-    request 2 | jq -e '.events[0].type=="user.custom_tool_result" and .events[0].custom_tool_use_id=="sevt_FIXTURE03" and .events[0].is_error==true'
+    request 2 | jq -e '.events[0].type=="user.custom_tool_result" and .events[0].custom_tool_use_id=="sevt_FIXTURE04" and .events[0].is_error==true'
     request 2 | jq -e '.events[0].content[0].text | test("no local tools")'
-    request 3 | jq -e '.events[0].custom_tool_use_id=="sevt_FIXTURE09"'
-    grep -q 'weather tool is unavailable' <<<"$output"
+    request 3 | jq -e '.events[0].custom_tool_use_id=="sevt_FIXTURE13"'
+    grep -q 'Weather service unavailable' <<<"$output"
 }
 
 

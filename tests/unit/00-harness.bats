@@ -16,14 +16,14 @@ load helpers
 }
 
 # Session fixtures (docs/plans/2026-11-05-001): one file per stream, ids in
-# the FIXTURE form tests/record-session.sh writes. The first recordings were
-# never committed (the .gitignore exception covered sse/ only) and are lost;
-# the files here are reconstructed by hand from the goldens they produced
-# (.stream.txt, .fold.json), byte for byte, with a live stream's framing.
-# They do not prove the live wire format: re-record with
-# tests/record-session.sh when that matters. budget.sse and error.sse were
-# hand-derived from text.sse from the start. Every stream ends in an idle or a
-# termination, because that is where ask-claude stops reading.
+# the FIXTURE form tests/record-session.sh writes. text, confirm/1-2,
+# custom-tool/1-3, chat/1-3 and files/1 are live recordings, made with
+# tests/record-session.sh against the agents its header describes, and the
+# goldens are generated from them. budget.sse and error.sse are hand-derived
+# from text.sse. not-sse/1, terminated/1 and waiting-unknown/1 are still
+# reconstructed by hand, with a live stream's framing; they were not part of
+# the re-recording. Every stream ends in an idle or a termination, because
+# that is where ask-claude stops reading.
 sessions() { sed -n 's/^data: //p' "$FIX/sessions/$1.sse"; }
 
 @test "harness: session fixtures parse and end in idle or terminated" {

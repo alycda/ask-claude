@@ -6,10 +6,10 @@
   "usage": {
     "input_tokens": 6,
     "output_tokens": 53,
-    "cache_read": 8511,
-    "cache_write": 196,
+    "cache_read": 8506,
+    "cache_write": 191,
     "list_cost": "0",
-    "active_seconds": 2.265
+    "active_seconds": 2.222
   },
   "error": null
 }

@@ -21,13 +21,11 @@
 #   a and b            both conditions
 
 if .type == "content_block_start" then
-    # TODO: a marker for blocks whose content is not printed as text:
-    #       thinking                        -> "(thinking) "
-    #       server_tool_use                 -> "(running code) "
-    #       bash_code_execution_tool_result -> "(result rc=N) "
-    #           where N is .content_block.content.return_code, "?" if missing
-    #       any other block                 -> ""
-    ""
+    (if .content_block.type=="thinking" then "(thinking) "
+             elif .content_block.type=="server_tool_use" then "(running code) "
+             elif .content_block.type=="bash_code_execution_tool_result" then
+                 "(result rc=\(.content_block.content.return_code // "?")) "
+             else "" end)
 elif .type == "content_block_delta" and .delta.type == "text_delta" then
     # TODO: the text itself. Other deltas (thinking, signature, tool input)
     #       fall through to the else branch and print nothing.

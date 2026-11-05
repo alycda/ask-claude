@@ -29,8 +29,7 @@ if .type == "content_block_start" then
 elif .type == "content_block_delta" and .delta.type == "text_delta" then
     .delta.text
 elif .type == "message_stop" then
-    # TODO: the final newline
-    ""
+    "\n"
 else
     ""
 end

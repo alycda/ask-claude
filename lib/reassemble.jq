@@ -38,13 +38,13 @@ reduce .[] as $e (
 
     # UPDATE
     if $e.type == "message_start" then
-        # TODO: copy .message.model, .message.usage and .message.container
         .model=$e.message.model | .usage=$e.message.usage | .container=$e.message.container
     elif $e.type == "content_block_start" then
         # TODO: store $e.content_block under .blocks[($e.index|tostring)].
         #       For tool_use / server_tool_use blocks also set .partial = ""
         #       so input_json_delta has something to append to.
-        .
+        .blocks[($e.index|tostring)] = ($e.content_block
+          | if .type=="tool_use" or .type=="server_tool_use" then .partial="" else . end)
     elif $e.type == "content_block_delta" then
         # TODO: ($e.index|tostring) as $i, then by $e.delta.type:
         #       text_delta      -> .blocks[$i].text      += $e.delta.text

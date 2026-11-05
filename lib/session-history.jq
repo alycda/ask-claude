@@ -12,7 +12,7 @@ def safe:
         explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode
     else . end;
 
-.data[]
+.data[]?
 | select(.type == "user.message" or .type == "agent.message")
 | (if .type == "user.message" then "you" else "agent" end) as $who
 | ([.content[]? | select(.type == "text") | .text] | join("\n")) as $t

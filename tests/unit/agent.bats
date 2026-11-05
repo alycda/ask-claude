@@ -133,3 +133,39 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     ! grep -qE -- '--arg(json)? +token' "$BIN"
     grep -q 'env.GITHUB_TOKEN' "$ROOT/lib/session-create.jq"
 }
+
+# the live paths the replay seam used to skip (review of 0.2.3)
+
+@test "live paths: a terminated session without an error still exits 1" {
+    run --separate-stderr replay terminated "ping"
+    [ "$status" -eq 1 ]
+    grep -q 'terminated' <<<"$stderr"
+}
+
+@test "live paths: a stream that is not SSE (an error body) exits 1 with it" {
+    run --separate-stderr replay not-sse "ping"
+    [ "$status" -eq 1 ]
+    grep -q 'invalid x-api-key' <<<"$stderr"
+}
+
+@test "live paths: a refused events POST exits 1 with the API's message, no stream read" {
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sessions/events-refused" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" agent resume sesn_FIXTURE01 <<<$'again\n/quit\n'
+    [ "$status" -eq 0 ]
+    grep -q 'is archived' <<<"$stderr"
+    ! grep -q '^pong' <<<"$output"
+}
+
+@test "live paths: waiting on something this version cannot answer interrupts and exits 1" {
+    run --separate-stderr replay waiting-unknown "ping" </dev/null
+    [ "$status" -eq 1 ]
+    grep -q 'cannot answer' <<<"$stderr"
+    request 2 | jq -e '.events==[{"type":"user.interrupt"}]'
+}
+
+@test "live paths: a prefix matches each session once" {
+    mkdir -p "$(STATE_DIR)/sessions"
+    printf 'agent=a\n' > "$(STATE_DIR)/sessions/sesn_FIXTURE01"
+    run --separate-stderr env -u ANTHROPIC_API_KEY "$BIN" agent trace FIXTURE
+    [ "$status" -eq 0 ]
+    [ "$output" = "https://platform.claude.com/workspaces/default/sessions/sesn_FIXTURE01" ]
+}

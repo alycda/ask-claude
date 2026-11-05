@@ -44,6 +44,10 @@ ask-claude agent "one question"          one shot in a new session
 ask-claude agent                         chat; /new, /history, /quit
 ask-claude agent list                    sessions on the account, newest first
 ask-claude agent resume <sesn|prefix>    continue one
+ask-claude agent files <sesn> [name]... what the agent wrote; download the named ones
+ask-claude agent budget <sesn> <cents>  change the cap (0 removes it, for good)
+ask-claude agent archive <sesn>          archive an idle session
+ask-claude agent trace <sesn>            its page in the Console
 ```
 
 Once, in the Console (platform.claude.com): an **environment** (start with
@@ -60,7 +64,7 @@ trust it). `just environments` and `just agents` print their ids. Put them in
 
 Every session gets a budget, 100 cents at list price unless `--budget` says
 otherwise (`0` for none). Session time bills at $0.08 per active hour on top
-of tokens; the usage line shows cost so far. When the agent wants to run a
+of tokens, and web searches at $10 per 1,000; the usage line shows cost so far. When the agent wants to run a
 tool its policy marks *ask*, ask-claude asks you (`y`, `n`, `a` for the rest
 of the run) and denies when there is no terminal. A custom tool on the
 agent is answered with an error: nothing runs on this machine yet.
@@ -75,8 +79,12 @@ What else a session can carry, each made once in the Console:
 - `--memory <memstore_id>[:ro]` (repeatable, up to 8): memory stores mounted
   under `/mnt/memory/`, `:ro` for read-only.
 
-A session can be read in the Console under Sessions. Sessions started here
-are listed in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/sessions/`.
+`ask-claude agent trace <sesn>` prints a session's page in the Console
+(`ASK_CLAUDE_WORKSPACE` when the key is not in the Default workspace). Ctrl-C
+during a turn sends `user.interrupt`, so the session stops too. Sessions
+started here
+are listed in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/sessions/`;
+`resume`, `files`, `budget`, `archive` and `trace` take a prefix of one.
 
 ## Exit codes
 

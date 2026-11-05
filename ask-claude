@@ -114,6 +114,10 @@ esac
 # live printer has its own copy in lib/stream.jq). Replies and error messages
 # may carry control characters; jq -r decodes \u001b etc. into raw bytes.
 SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode else . end; '
+# DOLLARS: cents as the API gives them (a string) to "$1.23", for the usage
+# line, `agent list` and `agent budget`
+# shellcheck disable=SC2016  # a jq program, not a shell string
+DOLLARS='def dollars: (tonumber / 100) as $d | "$" + ($d | floor | tostring) + "." + (($d * 100 | round) % 100 | tostring | if length < 2 then "0" + . else . end); '
 
 # A fresh history path; the PID keeps two processes started in the same second
 # apart.
@@ -329,10 +333,22 @@ SESSIONS="$STATE/sessions"
 MA_BETA="managed-agents-2026-04-01"
 turn=0
 
-ma_headers() { printf 'content-type: application/json\nx-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: %s\n' "$ANTHROPIC_API_KEY" "$MA_BETA"; }
+# headers <beta>: the request headers for a header file on a pipe
+headers() { printf 'content-type: application/json\nx-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: %s\n' "$ANTHROPIC_API_KEY" "$1"; }
+ma_headers() { headers "$MA_BETA"; }
 
-# ma_call <method> <path> [body]: one request, the response body on stdout.
-# Replay: the body is logged and a canned response stands in for the API.
+# api_error <json>: the API's error message, "unreadable response" for a body
+# that is not JSON, nothing for a body without .error
+api_error() { jq -r "$SAFE"'.error.message // empty | safe' <<<"$1" 2>/dev/null || echo "unreadable response"; }
+
+# sse_data: the JSON of every "data: " line, one per line (a shell loop, so
+# one jq handles the whole stream instead of one per event)
+sse_data() { while IFS= read -r l; do case "$l" in "data: "*) printf '%s\n' "${l#data: }" ;; esac done }
+
+# ma_call <method> <path> [body]: one request, the response body on stdout;
+# a transport failure prints an error body so callers see it through
+# api_error. Replay: the body is logged (GITHUB_TOKEN included, so a test can
+# see it was sent) and a canned response stands in for the API.
 ma_call() {
   local method=$1 path=$2 body=${3:-}
   [ -z "${ASK_CLAUDE_REQUEST_LOG:-}" ] || [ -z "$body" ] || printf '%s\n' "$body" >>"$ASK_CLAUDE_REQUEST_LOG"
@@ -340,56 +356,73 @@ ma_call() {
     case "$method $path" in
     "POST /sessions") echo '{"id":"sesn_FIXTURE01","status":"running"}' ;;
     "POST /sessions/"*"/archive") cat "$ASK_CLAUDE_REPLAY/archive.json" 2>/dev/null || echo '{"id":"sesn_FIXTURE01","status":"terminated","archived_at":"2026-11-05T00:00:00Z"}' ;;
-    "POST /sessions/"*"/events") echo '{}' ;;
+    "POST /sessions/"*"/events") cat "$ASK_CLAUDE_REPLAY/events-post.json" 2>/dev/null || echo '{}' ;;
     "POST /sessions/"*) cat "$ASK_CLAUDE_REPLAY/update.json" 2>/dev/null || jq -c '{id: "sesn_FIXTURE01"} + .' <<<"$body" ;;
     "GET /sessions/"*"/events"*) cat "$ASK_CLAUDE_REPLAY/events.json" 2>/dev/null || echo '{"data":[]}' ;;
     "GET /sessions"*) cat "$ASK_CLAUDE_REPLAY/sessions.json" 2>/dev/null || echo '{"data":[]}' ;;
+    "GET /files"*) cat "$ASK_CLAUDE_REPLAY/files.json" 2>/dev/null || echo '{"data":[]}' ;;
     *) echo '{}' ;;
     esac
     return 0
   fi
   if [ -n "$body" ]; then
-    printf '%s' "$body" | curl -sS -X "$method" "$BASE_URL/v1$path" -H @<(ma_headers) --data-binary @-
+    printf '%s' "$body" | curl -sS -g --max-time 120 -X "$method" "$BASE_URL/v1$path" -H @<(ma_headers) --data-binary @- ||
+      echo '{"error":{"message":"no response (curl failed or timed out)"}}'
   else
-    curl -sS -X "$method" "$BASE_URL/v1$path" -H @<(ma_headers)
+    curl -sS -g --max-time 120 -X "$method" "$BASE_URL/v1$path" -H @<(ma_headers) ||
+      echo '{"error":{"message":"no response (curl failed or timed out)"}}'
   fi
 }
 
-# session_stream <sesn>: the raw SSE of one turn on stdout, stopped after the
-# first idle or termination (sed quits, curl gets the closed pipe). Replay:
-# the fixture file, or the Nth file of a fixture directory for the Nth turn.
-session_stream() {
+# session_stream_open <sesn> <log>: start reading the session's stream into
+# <log> before anything is sent, so no event is missed (a stream delivers only
+# what is emitted after it opens). Sets stream_pid; waits for the stream to
+# say it is connected. Replay: the fixture is the log, or turn N's file of a
+# fixture directory, and there is nothing to wait for.
+session_stream_open() {
+  :
+  stream_pid=""
   if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
-    if [ -d "$ASK_CLAUDE_REPLAY" ]; then cat "$ASK_CLAUDE_REPLAY/$turn.sse"; else cat "$ASK_CLAUDE_REPLAY"; fi
+    if [ -d "$ASK_CLAUDE_REPLAY" ]; then cat "$ASK_CLAUDE_REPLAY/$turn.sse" >"$2"; else cat "$ASK_CLAUDE_REPLAY" >"$2"; fi
     return 0
   fi
-  curl -sS -N --max-time 1800 "$BASE_URL/v1/sessions/$1/events/stream" -H @<(ma_headers) 2>/dev/null |
-    sed -u '/"type":"session.status_idle"/q;/"type":"session.status_terminated"/q'
+  curl -sS -N --max-time 1800 "$BASE_URL/v1/sessions/$1/events/stream" -H @<(ma_headers) >"$2" 2>"$2.err" &
+  stream_pid=$!
+  for _ in $(seq 1 100); do
+    grep -q '^: connected' "$2" 2>/dev/null && return 0
+    kill -0 "$stream_pid" 2>/dev/null || return 0
+    sleep 0.1
+  done
 }
 
-# session_answer <fold>: the events that answer what the session waits on.
-# A tool confirmation is asked at the terminal (y / n / a for the rest of
-# this process) and denied when there is none; ASK_CLAUDE_CONFIRM=allow|deny
-# answers without asking. A custom tool call gets an error result, since
-# nothing runs here yet.
-session_always=""
-session_tty=""      # set per answer round, outside the loop that redirects stdin
-session_confirm() { # <name> <input>: allow | deny
+# session_stream_read <log>: the stream's events as they land in <log>, until
+# the first idle or termination; then the reader is done with curl
+session_stream_read() {
+  if [ -n "$stream_pid" ]; then
+    tail -n +1 -f --pid="$stream_pid" "$1"
+  else
+    cat "$1"
+  fi | sed -u '/"type":"session.status_idle"/q;/"type":"session.status_terminated"/q'
+  [ -z "$stream_pid" ] || kill "$stream_pid" 2>/dev/null
+  stream_pid=""
+}
+
+# session_confirm <name> <input>: allow | deny. A tool confirmation is asked
+# at the terminal (y / n / a for the rest of this process) and denied when
+# there is none; ASK_CLAUDE_CONFIRM=allow|deny answers without asking. The
+# "always" answer is kept in a file, because this runs in a subshell.
+session_confirm() {
   local answer
   case "${ASK_CLAUDE_CONFIRM:-ask}" in
-  allow)
-    echo allow
-    return
-    ;;
-  deny)
-    echo deny
+  allow | deny)
+    echo "$ASK_CLAUDE_CONFIRM"
     return
     ;;
   esac
-  [ -n "$session_always" ] && {
+  if [ -e "$STATE/.always.$$" ]; then
     echo allow
     return
-  }
+  fi
   if [ -z "$session_tty" ] || [ ! -r /dev/tty ]; then
     echo "ask-claude: denied $1 ($2): stdin is not a terminal (ASK_CLAUDE_CONFIRM=allow to allow unattended)" >&2
     echo deny
@@ -399,12 +432,16 @@ session_confirm() { # <name> <input>: allow | deny
   case "$answer" in
   y | Y | yes) echo allow ;;
   a | A | always)
-    session_always=1
+    : >"$STATE/.always.$$"
     echo allow
     ;;
   *) echo deny ;;
   esac
 }
+
+# session_answer <fold>: the events that answer what the session waits on;
+# nothing when it waits on something this version cannot answer
+session_tty="" # set per answer round, outside the loop that redirects stdin
 session_answer() {
   local fold=$1 answers="[]" id name input result
   if [ -t 0 ]; then session_tty=1; else session_tty=""; fi
@@ -421,45 +458,94 @@ session_answer() {
 }
 
 # session_turn <sesn> [events]: one user turn, however many streams it takes.
-# Prints the reply as it arrives and the usage line on stderr; returns 1 on a
-# session error.
+# Prints the reply as it arrives and the usage line on stderr. Returns 1 on a
+# session error, a terminated session, a transport failure, or a request the
+# API refused; 130 after Ctrl-C, which sends user.interrupt so the session
+# stops too.
+session_interrupted=""
 session_turn() {
-  local sesn=$1 events=${2:-} log fold err stop rounds=0 t0=$SECONDS
+  local sesn=$1 events=${2:-} log fold err stop rounds=0 t0=$SECONDS resp
+  log="$STATE/.stream.$$"
+  trap 'session_interrupted=1' INT
   while :; do
-    [ -z "$events" ] || ma_call POST "/sessions/$sesn/events" "$events" >/dev/null
-    turn=$((turn + 1)) # here, not in session_stream: a pipeline runs in a subshell
-    log="$STATE/.stream.$$"
+    turn=$((turn + 1)) # here, not in a pipeline: a subshell would not keep it
     : >"$log"
-    session_stream "$sesn" |
-      tee "$log" |
-      while IFS= read -r l; do case "$l" in "data: "*) printf '%s\n' "${l#data: }" ;; esac done |
-      jq --unbuffered -rj -f "$LIB/session.jq"
-    fold=$(sed -n 's/^data: //p' "$log" | jq -s -c -f "$LIB/session-fold.jq")
-    rm -f "$log"
-    err=$(jq -r "$SAFE"'.error.message // empty | safe' <<<"$fold")
+    session_stream_open "$sesn" "$log"
+    if [ -n "$events" ]; then
+      resp=$(ma_call POST "/sessions/$sesn/events" "$events")
+      err=$(api_error "$resp")
+      if [ -n "$err" ]; then
+        echo "ask-claude: API error: $err" >&2
+        session_cleanup "$log"
+        return 1
+      fi
+    fi
+    session_stream_read "$log" | sse_data | jq --unbuffered -rj -f "$LIB/session.jq"
+    if [ -n "$session_interrupted" ]; then
+      echo "[interrupted: sending user.interrupt]" >&2
+      ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
+      session_cleanup "$log"
+      return 130
+    fi
+    if [ ! -s "$log" ] || ! grep -q '^data: ' "$log"; then
+      echo "ask-claude: no response from the stream ($(head -c 200 "$log.err" "$log" 2>/dev/null | tr -d '\n' | cut -c1-200))" >&2
+      session_cleanup "$log"
+      return 1
+    fi
+    if ! fold=$(sse_data <"$log" | jq -s -c -f "$LIB/session-fold.jq"); then
+      echo "ask-claude: the stream could not be parsed" >&2
+      session_cleanup "$log"
+      return 1
+    fi
+    err=$(api_error "$fold")
     if [ -n "$err" ]; then
       echo "ask-claude: session error: $err" >&2
+      session_cleanup "$log"
       return 1
     fi
     stop=$(jq -r '.stop_reason // ""' <<<"$fold")
-    if [ "$stop" = requires_action ] && [ $rounds -lt 8 ]; then
-      rounds=$((rounds + 1))
-      events=$(session_answer "$fold")
-      continue
+    if [ "$stop" = requires_action ]; then
+      if [ "$(jq '(.asks | length) + (.custom | length)' <<<"$fold")" -eq 0 ]; then
+        echo "ask-claude: the session waits on something this version cannot answer ($(jq -r '.event_ids | join(" ")' <<<"$fold")); interrupting" >&2
+        ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
+        session_cleanup "$log"
+        return 1
+      fi
+      # custom tool calls are answered by this script, so they are capped;
+      # confirmations are the user's, so they are not
+      [ "$(jq '.asks | length' <<<"$fold")" -gt 0 ] || rounds=$((rounds + 1))
+      if [ $rounds -le 8 ]; then
+        events=$(session_answer "$fold")
+        continue
+      fi
     fi
     break
   done
-  jq -r --arg s "$sesn" --argjson t $((SECONDS - t0)) "$SAFE"'.usage
-    | "[\($s) in=\(.input_tokens) out=\(.output_tokens) cache_read=\(.cache_read) cache_write=\(.cache_write) cost=$\((.list_cost | tonumber) / 100 | . * 100 | round / 100 | tostring | if test("\\.") then (. + "00" | capture("(?<d>[0-9]+\\.[0-9]{2})").d) else . + ".00" end) \($t)s]" | safe' <<<"$fold" >&2
+  session_cleanup "$log"
+  jq -r --arg s "$sesn" --argjson t $((SECONDS - t0)) "$SAFE$DOLLARS"'.usage
+    | "[\($s) in=\(.input_tokens) out=\(.output_tokens) cache_read=\(.cache_read) cache_write=\(.cache_write) cost=\(.list_cost | dollars) \($t)s]" | safe' <<<"$fold" >&2
   case "$stop" in
   end_turn | "") ;;
   requires_action)
-    echo "[stopped: requires_action after $rounds rounds; interrupting]" >&2
+    echo "[stopped: requires_action after $rounds custom tool rounds; interrupting]" >&2
     ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
+    return 1
+    ;;
+  terminated)
+    echo "[stopped: the session was terminated]" >&2
+    return 1
     ;;
   budget_reached) echo "[stopped: budget_reached, raise it with: ask-claude agent budget $sesn <cents>]" >&2 ;;
   *) echo "[stopped: $stop]" >&2 ;;
   esac
+}
+
+# session_cleanup <log>: the stream's files and process, and the Ctrl-C trap
+session_cleanup() {
+  [ -z "${stream_pid:-}" ] || kill "$stream_pid" 2>/dev/null
+  stream_pid=""
+  rm -f "$1" "$1.err"
+  trap - INT
 }
 
 # session_create <prompt>: POST /v1/sessions with the prompt as the first
@@ -488,9 +574,11 @@ session_remember() {
 # session_find <id-or-prefix>: a session id, from sessions/ by prefix, or the
 # id itself when it looks like one; exit 2 otherwise
 session_find() {
-  local f n=0 found=""
+  local f n=0 found="" pat
   case "$1" in */* | *[*?[]*) die "resume takes a session id or a prefix from \`ask-claude agent list\`" ;; esac
-  for f in "$SESSIONS/$1"* "$SESSIONS/sesn_$1"*; do
+  # a prefix with or without the sesn_ part; one glob, so a match counts once
+  case "$1" in sesn_*) pat="$SESSIONS/$1" ;; *) pat="$SESSIONS/sesn_$1" ;; esac
+  for f in "$pat"*; do
     [ -f "$f" ] || continue
     found="${f##*/}"
     n=$((n + 1))
@@ -508,14 +596,18 @@ session_find() {
 
 # session_history <sesn>: the session's messages so far, from the API
 session_history() {
-  ma_call GET "/sessions/$1/events?types[]=user.message&types[]=agent.message" | jq -r -f "$LIB/session-history.jq"
+  local page
+  page=$(ma_call GET "/sessions/$1/events?types[]=user.message&types[]=agent.message")
+  session_api_error "$page" && return 1
+  jq -r -f "$LIB/session-history.jq" <<<"$page"
 }
 
 # session_list: the API's sessions, newest first
 session_list() {
-  ma_call GET "/sessions?order=desc&limit=50" | jq -r "$SAFE"'.data[]? | [.id, .status,
-    ("$" + ((.usage.list_cost.amount // "0" | tonumber) / 100 | tostring | if test("\\.") then (. + "00" | capture("(?<d>[0-9]+\\.[0-9]{2})").d) else . + ".00" end)),
-    (.title // "")] | join("  ") | safe'
+  local page
+  page=$(ma_call GET "/sessions?order=desc&limit=50")
+  session_api_error "$page" && return 1
+  jq -r "$SAFE$DOLLARS"'.data[]? | [.id, .status, ((.usage.list_cost.amount // "0") | dollars), (.title // "")] | join("  ") | safe' <<<"$page"
 }
 
 # session_loop [sesn]: one turn per line until /quit. With no session yet,
@@ -573,31 +665,29 @@ file_upload() {
 # the agent wrote to /mnt/session/outputs), or download the named ones into
 # the current directory
 session_files() {
-  local sesn=$1 page name id size n
+  local sesn=$1 page name id size
   shift
-  if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
-    page=$(cat "$ASK_CLAUDE_REPLAY/files.json" 2>/dev/null || echo '{"data":[]}')
-  else
-    page=$(curl -sS "$BASE_URL/v1/files?scope_id=$sesn" -H @<(ma_headers))
-  fi
+  page=$(ma_call GET "/files?scope_id=$sesn")
+  session_api_error "$page" && return 1
   if [ $# -eq 0 ]; then
     jq -r "$SAFE"'.data[]? | [.filename, (.size_bytes | tostring), .id] | @tsv | safe' <<<"$page" | column -t -s $'\t'
     return 0
   fi
   for name in "$@"; do
-    case "$name" in */* | "" | .*) die "files takes names from \`ask-claude agent files $sesn\`, not paths" ;; esac
-    n=$(jq -r --arg n "$name" '[.data[]? | select(.filename == $n)] | length' <<<"$page")
-    [ "$n" -gt 0 ] || die "the session has no file named $name"
-    id=$(jq -r --arg n "$name" 'last(.data[]? | select(.filename == $n)) | .id' <<<"$page")
+    case "$name" in */* | "" | .* | -*) die "files takes names from \`ask-claude agent files $sesn\`, not paths" ;; esac
+    id=$(jq -r --arg n "$name" 'last(.data[]? | select(.filename == $n)) | .id // empty' <<<"$page")
+    [ -n "$id" ] || die "the session has no file named $name"
     if [ -e "$name" ] && [ "${usage_force:-}" != true ]; then
       die "$name exists here; --force overwrites it"
     fi
     if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
       cat "$ASK_CLAUDE_REPLAY/files/$name" >"$name.part"
-    else
-      curl -sS "$BASE_URL/v1/files/$id/content" -H @<(ma_headers) -o "$name.part"
+    elif ! curl -sS --fail --max-time 600 "$BASE_URL/v1/files/$id/content" -H @<(ma_headers) -o "$name.part"; then
+      rm -f "$name.part"
+      echo "ask-claude: download of $name failed" >&2
+      return 1
     fi
-    mv "$name.part" "$name"
+    mv -- "$name.part" "$name"
     size=$(wc -c <"$name")
     echo "ask-claude: wrote $name ($size bytes)" >&2
   done
@@ -615,7 +705,7 @@ session_budget() {
   if [ "$2" = 0 ]; then body='{"budget":null}'; else body=$(jq -n -c --arg c "$2" '{budget: {type: "limit", max_list_cost: {amount: $c, currency: "USD"}}}'); fi
   resp=$(ma_call POST "/sessions/$1" "$body")
   session_api_error "$resp" && return 1
-  jq -r "$SAFE"'"budget: " + (if .budget == null then "none" else ("$" + ((.budget.max_list_cost.amount | tonumber) / 100 | tostring | if test("\\.") then (. + "00" | capture("(?<d>[0-9]+\\.[0-9]{2})").d) else . + ".00" end)) end) | safe' <<<"$resp"
+  jq -r "$SAFE$DOLLARS"'"budget: " + (if .budget == null then "none" else (.budget.max_list_cost.amount | dollars) end) | safe' <<<"$resp"
 }
 
 # session_archive <sesn>: archive an idle session (the API refuses a running
@@ -632,7 +722,7 @@ session_archive() {
 # session_api_error <response>: print an API error and succeed if there is one
 session_api_error() {
   local err
-  err=$(jq -r "$SAFE"'.error.message // empty | safe' <<<"$1" 2>/dev/null)
+  err=$(api_error "$1")
   [ -n "$err" ] || return 1
   echo "ask-claude: API error: $err" >&2
   return 0
@@ -681,13 +771,14 @@ agent)
     session_remember "$sesn"
     exit 0
   fi
-  rm -f "$SESSIONS/$sesn"
   exit 1
   ;;
 "agent files")
   need_key
+  sesn=$(session_find "$usage_session") || exit 2
+  set -f # usage joins the names with spaces: no globbing on them (a name with a space is two names)
   # shellcheck disable=SC2086  # usage_name is the space-joined list usage builds
-  session_files "$usage_session" ${usage_name:-}
+  session_files "$sesn" ${usage_name:-} || exit 1
   exit 0
   ;;
 "agent budget")

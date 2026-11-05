@@ -1,5 +1,5 @@
 {
-  "stop_reason": "end_turn",
+  "stop_reason": "terminated",
   "event_ids": [],
   "asks": [],
   "custom": [],

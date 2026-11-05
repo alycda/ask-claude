@@ -66,3 +66,14 @@ request() { sed -n "$1p" "$TMP/requests.jsonl"; }
     run --separate-stderr replay files sesn_FIXTURE01 ../result.txt
     [ "$status" -eq 2 ]
 }
+
+@test "files: a prefix of a session started here works, and a bad list page exits 1" {
+    mkdir -p "$XDG_STATE_HOME/ask-claude/sessions"
+    printf 'agent=a\n' > "$XDG_STATE_HOME/ask-claude/sessions/sesn_FIXTURE01"
+    run --separate-stderr replay files FIXTURE01
+    [ "$status" -eq 0 ]
+    grep -q 'result.txt' <<<"$output"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sessions/not-sse" "$BIN" agent files sesn_FIXTURE01
+    [ "$status" -eq 1 ]
+    grep -q 'invalid x-api-key' <<<"$stderr"
+}

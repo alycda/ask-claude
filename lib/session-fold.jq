@@ -5,7 +5,7 @@
 #     sed -n 's/^data: //p' session.sse | jq -s -f lib/session-fold.jq
 #
 # Output, keys in this order (tests/fixtures/sessions/*.fold.json):
-#   stop_reason  end_turn | requires_action | budget_reached | null
+#   stop_reason  end_turn | requires_action | budget_reached | terminated | null
 #   event_ids    the ids the session is waiting on (requires_action)
 #   asks         the agent.tool_use events among them: {id, name, input}
 #   custom       the agent.custom_tool_use events among them: {id, name, input}
@@ -16,7 +16,7 @@
 (last(.[] | select(.type == "session.status_idle" or .type == "session.status_terminated"))) as $idle
 | ($idle.stop_reason.event_ids // []) as $ids
 | def waiting: .id as $i | $ids | index($i) != null;
-  { stop_reason: ($idle.stop_reason.type // null),
+  { stop_reason: (if $idle.type == "session.status_terminated" then "terminated" else ($idle.stop_reason.type // null) end),
     event_ids: $ids,
     asks: [ .[] | select(.type == "agent.tool_use" and waiting) | {id, name, input} ],
     custom: [ .[] | select(.type == "agent.custom_tool_use" and waiting) | {id, name, input} ],

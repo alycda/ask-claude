@@ -18,6 +18,8 @@ def safe:
     [.content[]? | select(.type == "text") | .text] | join("")
 elif .type == "agent.thinking" then
     "(thinking) "
+elif .type == "agent.tool_use" and .name == "web_fetch" and (.input.url | type) == "string" then
+    "(web_fetch \(.input.url | capture("^[a-z]+://(?<h>[^/]+)").h // .input.url)) "
 elif .type == "agent.tool_use" or .type == "agent.custom_tool_use" then
     "(\(.name // "tool")) "
 elif .type == "agent.mcp_tool_use" then

@@ -89,3 +89,30 @@ confirm_fixture() {
     grep -qF 'allowed bash ({"command":"echo safe\nid"})' <<<"$stderr"
     if grep -qF 'echo safe\\nid' <<<"$stderr"; then return 1; fi
 }
+
+# no_controls: stderr carries no ESC, BEL or C1 CSI byte
+no_controls() { ! LC_ALL=C grep -q $'[\x1b\x07\x9b]' <<<"$stderr"; }
+
+@test "confirm: tool name, input, stop reason, event ids and a raw stream reach the terminal through safe" {
+    local usage='data: {"type":"session.usage","usage":{"input_tokens":1,"output_tokens":1}}'
+    mkdir -p "$TMP/a" "$TMP/b" "$TMP/c"
+    # a tool call with escapes in its name and string input, then an escaped stop reason
+    printf '%s\n\n' 'data: {"type":"agent.tool_use","id":"sevt_T1","name":"bash\u001b[2Kread_file","input":"\u001b]0;T\u0007ls"}' \
+        "$usage" 'data: {"type":"session.status_idle","stop_reason":{"type":"requires_action","event_ids":["sevt_T1"]}}' >"$TMP/a/1.sse"
+    printf '%s\n\n' "$usage" 'data: {"type":"session.status_idle","stop_reason":{"type":"\u001b]52;c;eA==\u0007end_turn"}}' >"$TMP/a/2.sse"
+    ASK_CLAUDE_CONFIRM=allow run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/a" "$BIN" agent "ping" </dev/null
+    grep -q 'allowed bash\[2Kread_file' <<<"$stderr"
+    no_controls
+    # waiting on an event id with escapes, with nothing to answer
+    printf '%s\n\n' "$usage" 'data: {"type":"session.status_idle","stop_reason":{"type":"requires_action","event_ids":["evt_\u001b]0;T\u0007"]}}' >"$TMP/b/1.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/b" "$BIN" agent "ping" </dev/null
+    [ "$status" -eq 1 ]
+    grep -q 'cannot answer (evt_' <<<"$stderr"
+    no_controls
+    # a stream that is not SSE, with escapes in it
+    printf 'oops \033]0;T\007 \033[2J\n' >"$TMP/c/1.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/c" "$BIN" agent "ping" </dev/null
+    [ "$status" -eq 1 ]
+    grep -q 'no response from the stream' <<<"$stderr"
+    no_controls
+}

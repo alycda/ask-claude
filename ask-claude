@@ -471,8 +471,10 @@ session_answer() {
   while IFS= read -r ask; do
     id=$(jq -r '.id // empty' <<<"$ask")
     [ -n "$id" ] || continue
-    name=$(jq -r '.name | tostring' <<<"$ask")
-    input=$(jq -c '.input' <<<"$ask")
+    # name and input go to the terminal (the prompt and the status lines):
+    # safe, like every other API value printed; the id goes back unchanged
+    name=$(jq -r "$SAFE"'.name | tostring | safe' <<<"$ask")
+    input=$(jq -r "$SAFE"'.input | tojson | safe' <<<"$ask")
     result=$(session_confirm "$name" "$input")
     [ "$result" = allow ] && echo "ask-claude: allowed $name ($input)" >&2
     [ "$result" = deny ] && [ -n "${ASK_CLAUDE_CONFIRM:-}" ] && echo "ask-claude: denied $name ($input): ASK_CLAUDE_CONFIRM=$ASK_CLAUDE_CONFIRM" >&2
@@ -514,7 +516,7 @@ session_turn() {
       return 130
     fi
     if [ ! -s "$log" ] || ! grep -q '^data: ' "$log"; then
-      echo "ask-claude: no response from the stream ($(head -c 200 "$log.err" "$log" 2>/dev/null | tr -d '\n' | cut -c1-200))" >&2
+      echo "ask-claude: no response from the stream ($(head -c 200 "$log.err" "$log" 2>/dev/null | tr -d '\n' | jq -Rr "$SAFE"'safe' | cut -c1-200))" >&2
       session_cleanup "$log"
       return 1
     fi
@@ -529,10 +531,10 @@ session_turn() {
       session_cleanup "$log"
       return 1
     fi
-    stop=$(jq -r '.stop_reason // ""' <<<"$fold")
+    stop=$(jq -r "$SAFE"'.stop_reason // "" | tostring | safe' <<<"$fold")
     if [ "$stop" = requires_action ]; then
       if [ "$(jq '(.asks | length) + (.custom | length)' <<<"$fold")" -eq 0 ]; then
-        echo "ask-claude: the session waits on something this version cannot answer ($(jq -r '.event_ids | join(" ")' <<<"$fold")); interrupting" >&2
+        echo "ask-claude: the session waits on something this version cannot answer ($(jq -r "$SAFE"'.event_ids | map(tostring) | join(" ") | safe' <<<"$fold")); interrupting" >&2
         ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
         session_cleanup "$log"
         return 1

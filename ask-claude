@@ -8,7 +8,7 @@
 #USAGE }
 #USAGE flag "-S --system <system>" help="system prompt" global=#true
 #USAGE flag "-s --skills <skills>" help="comma-separated <skill_id>[@<version>]" global=#true
-#USAGE flag "-f --file <file>" help="prepend this file's contents to the prompt"
+#USAGE flag "-f --file <file>" help="prepend this file's contents to the prompt" global=#true
 #USAGE flag "-p --provider <provider>" help="anthropic|openai; only anthropic is implemented in bash" default="anthropic" global=#true
 #USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" global=#true
 #USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000" global=#true
@@ -16,6 +16,34 @@
 #USAGE cmd "list" help="chats on disk, newest first"
 #USAGE cmd "resume" help="continue a chat" {
 #USAGE   arg "[chat]" help="chat name or unique prefix; newest chat if omitted"
+#USAGE }
+#USAGE cmd "agent" help="a Managed Agents session: one shot with a prompt, a chat without" {
+#USAGE   arg "[prompt]" help="one shot in a new session"
+#USAGE   flag "--agent <id>" help="agent id from the Console" env="ASK_CLAUDE_AGENT" global=#true
+#USAGE   flag "--environment <id>" help="environment id from the Console" env="ASK_CLAUDE_ENVIRONMENT" global=#true
+#USAGE   flag "--budget <cents>" help="spend cap for the session at list price; 0 for none" default="100" global=#true
+#USAGE   flag "--vault <id>" help="vault of credentials to attach; repeatable" var=#true global=#true
+#USAGE   flag "--repo <url>" help="GitHub repository to mount, owner/name[@branch]; GITHUB_TOKEN" global=#true
+#USAGE   flag "--memory <id>" help="memory store to attach, <id>[:ro]; repeatable, up to 8" var=#true global=#true
+#USAGE   flag "--force" help="files: overwrite what exists" global=#true
+#USAGE   cmd "list" help="sessions, newest first"
+#USAGE   cmd "resume" help="continue a session" {
+#USAGE     arg "<session>" help="session id or unique prefix"
+#USAGE   }
+#USAGE   cmd "files" help="what the agent wrote; download the named ones" {
+#USAGE     arg "<session>"
+#USAGE     arg "[name]..." help="files to download into the current directory" var=#true
+#USAGE   }
+#USAGE   cmd "budget" help="change the spend cap of a session" {
+#USAGE     arg "<session>"
+#USAGE     arg "<cents>" help="new cap at list price; 0 removes it, for good"
+#USAGE   }
+#USAGE   cmd "archive" help="archive an idle session" {
+#USAGE     arg "<session>"
+#USAGE   }
+#USAGE   cmd "trace" help="print the Console URL of a session" {
+#USAGE     arg "<session>"
+#USAGE   }
 #USAGE }
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # usage_* vars are set by the usage runtime
@@ -44,6 +72,17 @@ if [ "${usage_version:-}" = true ]; then
   echo "ask-claude $ASK_CLAUDE_VERSION"
   exit 0
 fi
+
+# agent: declared for docs/plans/2026-11-05-001; refused until each piece is
+# built. The commit that builds one deletes its line (and its test in
+# tests/unit/refuse.bats).
+not_built() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plans/2026-11-05-001-feat-managed-agents-sessions-plan.md"; }
+case "${usage_cmd:-}" in
+agent) not_built "agent" ;;                                                 # U4 (one shot), U5 (chat)
+"agent list" | "agent resume") not_built "$usage_cmd" ;;                    # U5
+"agent files") not_built "$usage_cmd" ;;                                    # U8
+"agent budget" | "agent archive" | "agent trace") not_built "$usage_cmd" ;; # U10
+esac
 
 # Providers. The bash version speaks the Messages API only; the OpenAI
 # chat-completions shape (OpenAI, Venice at its own base URL) is the Rust

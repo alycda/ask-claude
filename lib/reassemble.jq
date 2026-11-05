@@ -60,7 +60,6 @@ reduce .[] as $e (
           | .usage=(.usage + ($e.usage // {}))
           | (if ($e.delta.container? // null) != null then .container=$e.delta.container else . end)
     elif $e.type == "error" then
-        # TODO: .error = $e.error
         .error=$e.error
     else
         .

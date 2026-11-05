@@ -39,7 +39,7 @@ reduce .[] as $e (
     # UPDATE
     if $e.type == "message_start" then
         # TODO: copy .message.model, .message.usage and .message.container
-        .
+        .model=$e.message.model | .usage=$e.message.usage | .container=$e.message.container
     elif $e.type == "content_block_start" then
         # TODO: store $e.content_block under .blocks[($e.index|tostring)].
         #       For tool_use / server_tool_use blocks also set .partial = ""

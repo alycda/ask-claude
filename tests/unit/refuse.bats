@@ -33,4 +33,17 @@ refused() { # args...
     [ "$output" = "pong" ]
 }
 
+@test "refuse: --base-url that only looks like localhost (user info before the real host)" {
+    local u
+    for u in http://localhost:@example.com http://127.0.0.1:1@example.com \
+        'http://[::1]:x@example.com' http://localhost:8080@example.com/ \
+        http://localhost.example.com http://127.0.0.1.example.com https://u:p@example.com; do
+        refused --base-url "$u" "hi"
+    done
+    for u in http://localhost http://127.0.0.1:9/x 'http://[::1]:1/' https://api.anthropic.com; do
+        run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" --base-url "$u" "hi"
+        [ "$status" -eq 0 ]
+    done
+}
+
 

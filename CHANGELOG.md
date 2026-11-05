@@ -14,7 +14,8 @@ adds one, and `just check-effver` checks it against `VERSION`.
 
 - First version: one-shot. `ask-claude "question"` streams the reply,
   prints a usage line on stderr, and saves both turns. `-f` prepends a
-  file; `-m`, `-e`, `-S` and `--max-tokens` shape the request.
+  file; `-m`, `-e`, `-S` and `--max-tokens` shape the request; `-V`
+  prints the version.
 - Declared but not built yet, and refused with exit 2: `list`, `resume`,
   the chat loop, `-s`, `-p` and `--base-url`.
 - To adopt: install `curl`, `jq` and `usage` (or `mise install`), set

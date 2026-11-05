@@ -49,3 +49,16 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
     run explain --nope
     grep -q 'refused' <<<"$output"
 }
+
+@test "version: -V and --version print the script's copy of VERSION and exit 0" {
+    run "$BIN" -V
+    [ "$status" -eq 0 ]
+    [ "$output" = "ask-claude $(cat "$ROOT/VERSION")" ]
+    run "$BIN" --version
+    [ "$status" -eq 0 ]
+    [ "$output" = "ask-claude $(cat "$ROOT/VERSION")" ]
+}
+
+@test "version: the script's copy matches VERSION (just check-version-line)" {
+    grep -qx "readonly ASK_CLAUDE_VERSION=$(cat "$ROOT/VERSION")" "$BIN"
+}

@@ -1,3 +1,5 @@
+import 'tools/effver/effver.just'
+
 help:
     ./ask-claude --help
 

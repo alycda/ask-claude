@@ -12,6 +12,7 @@
 #USAGE flag "-p --provider <provider>" help="anthropic|openai; only anthropic is implemented in bash" default="anthropic"
 #USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider"
 #USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000"
+#USAGE flag "-V --version" help="print the version"
 #USAGE cmd "list" help="chats on disk, newest first"
 #USAGE cmd "resume" help="continue a chat" {
 #USAGE   arg "[chat]" help="chat name or unique prefix; newest chat if omitted"
@@ -20,7 +21,8 @@
 # shellcheck disable=SC2154  # usage_* vars are set by the usage runtime
 
 set -uo pipefail
-# The script ships as one file, so it carries its own version.
+# The script ships as one file, so it carries its own copy of VERSION;
+# `just bump` rewrites this line and `just check-version-line` compares them.
 readonly ASK_CLAUDE_VERSION=0.1.0
 # History holds whole conversations, including -f file contents: every file
 # and directory this script creates is private to the user, whatever the
@@ -37,6 +39,12 @@ die() {
   echo "ask-claude: $*" >&2
   exit 2
 }
+
+# -V/--version: print and stop, before anything else is checked.
+if [ "${usage_version:-}" = true ]; then
+  echo "ask-claude $ASK_CLAUDE_VERSION"
+  exit 0
+fi
 
 # The spec already declares what docs/plan.md will build. Until a feature
 # exists it is refused here, before any key check, request or history file;

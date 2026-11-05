@@ -48,16 +48,21 @@ else
   exit 2
 fi
 
-# bump VERSION EFFORT: the version after an EFFORT bump.
+# bump VERSION EFFORT: the version after an EFFORT bump. VERSION comes from
+# commit trees, so it is checked here, at the arithmetic: bash evaluates a
+# variable's value inside $((...)) as an expression, array subscripts and
+# their $(...) included, so "0.4.x[$(cmd)]" would run cmd. 10# keeps a
+# leading zero from being read as octal.
 bump() {
   local x y z
+  [[ $1 =~ $version_re ]] || return 1
   IFS=. read -r x y z <<<"$1"
   case "$x:$2" in
-    0:macro) echo "0.$((y + 1)).0" ;;
-    0:*) echo "0.$y.$((z + 1))" ;;
-    *:macro) echo "$((x + 1)).0.0" ;;
-    *:meso) echo "$x.$((y + 1)).0" ;;
-    *:micro) echo "$x.$y.$((z + 1))" ;;
+    0:macro) echo "0.$((10#$y + 1)).0" ;;
+    0:*) echo "0.$y.$((10#$z + 1))" ;;
+    *:macro) echo "$((10#$x + 1)).0.0" ;;
+    *:meso) echo "$x.$((10#$y + 1)).0" ;;
+    *:micro) echo "$x.$y.$((10#$z + 1))" ;;
   esac
 }
 
@@ -71,6 +76,12 @@ for id in $ids; do
   for p in $(parents "$id"); do
     if pv="$(show "$p" VERSION)"; then
       had=1
+      # a malformed parent VERSION was reported when that commit was checked
+      # (or lies outside the range); it is never a base to bump from
+      if ! [[ $pv =~ $version_re ]]; then
+        problems+=("parent ${p:0:12} has VERSION \"$pv\", not MACRO.MESO.MICRO")
+        continue
+      fi
       [ "$pv" = "$(show "$id" VERSION 2>/dev/null || true)" ] && same=1
       old="$(printf '%s\n%s\n' "$old" "$pv" | sed '/^$/d' | sort -V | tail -n 1)"
     fi
@@ -99,10 +110,12 @@ for id in $ids; do
 
     if [ "$same" -eq 1 ]; then
       [ "$require_bump" -eq 1 ] && problems+=("VERSION is still $version: bump it with bump-effver")
-    elif [ "$had" -eq 1 ] && [ -n "$effort" ]; then
-      want="$(bump "$old" "$effort")"
-      [ "$version" != "$want" ] &&
+    elif [ "$had" -eq 1 ] && [ -n "$effort" ] && [ -n "$old" ]; then
+      if ! want="$(bump "$old" "$effort")"; then
+        problems+=("the parent VERSION \"$old\" is not MACRO.MESO.MICRO")
+      elif [ "$version" != "$want" ]; then
         problems+=("VERSION is $version, but a $effort bump of $old is $want")
+      fi
     fi
   fi
 

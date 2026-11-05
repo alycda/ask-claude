@@ -68,3 +68,54 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
     usage generate completion bash ask-claude -f "$BIN" | grep -q 'complete .*ask-claude'
     usage generate completion fish ask-claude -f "$BIN" | grep -q 'complete .*ask-claude'
 }
+
+# agent: a Managed Agents session (docs/plans/2026-11-05-001 U3)
+
+@test "agent spec: the command, its prompt and its subcommands bind" {
+    run explain agent "hello there"
+    grep -qE '^command\s+(ask-claude\s+)?agent' <<<"$output"
+    grep -qE '^\s+arg\s+\[prompt\]\s+hello there' <<<"$output"
+    ! grep -q refused <<<"$output"
+    for sub in list "resume sesn_x" "files sesn_x" "files sesn_x a.txt b.txt" "budget sesn_x 250" "archive sesn_x" "trace sesn_x"; do
+        # shellcheck disable=SC2086
+        run explain agent $sub
+        grep -qE "^command\s+(ask-claude\s+)?agent ${sub%% *}" <<<"$output"
+        ! grep -q refused <<<"$output"
+    done
+    run explain agent list extra
+    grep -q refused <<<"$output"
+}
+
+@test "agent spec: every flag binds, with its env fallback and default" {
+    run explain agent --agent agent_x --environment env_x --budget 5 --vault vlt_a --vault vlt_b --repo owner/name@main --memory mem_1 --memory mem_2:ro --force "hi"
+    grep -qE '^\s+flag\s+--agent\s+agent_x' <<<"$output"
+    grep -qE '^\s+flag\s+--environment\s+env_x' <<<"$output"
+    grep -qE '^\s+flag\s+--budget\s+5' <<<"$output"
+    grep -qE '^\s+flag\s+--vault\s+vlt_a' <<<"$output"
+    grep -qE '^\s+flag\s+--repo\s+owner/name@main' <<<"$output"
+    grep -qE '^\s+flag\s+--memory\s+mem_1' <<<"$output"
+    grep -qE '^\s+flag\s+--force' <<<"$output"
+    ! grep -q refused <<<"$output"
+    run explain agent "hi"
+    grep -qE '^\s+flag\s+--budget\s+100\s+default' <<<"$output"
+    ASK_CLAUDE_AGENT=agent_env ASK_CLAUDE_ENVIRONMENT=env_env run explain agent "hi"
+    grep -qE '^\s+flag\s+--agent\s+agent_env' <<<"$output"
+    grep -qE '^\s+flag\s+--environment\s+env_env' <<<"$output"
+}
+
+@test "agent spec: -f and the request flags reach the agent command" {
+    run explain -f notes.md agent "summarize"
+    grep -qE '^\s+flag\s+--file\s+notes.md' <<<"$output"
+    ! grep -q refused <<<"$output"
+}
+
+@test "agent spec: the only break since 0.1.4 is the word agent, now a command" {
+    # same file name on both sides: usage names the spec after the file
+    mkdir -p "$TMP/old" "$TMP/new"
+    jj file show -r v0.1.4 ask-claude > "$TMP/old/ask-claude" 2>/dev/null || skip "no v0.1.4 bookmark here"
+    cp "$BIN" "$TMP/new/ask-claude"
+    run usage diff "$TMP/old/ask-claude" "$TMP/new/ask-claude"
+    [ "$status" -ne 0 ]
+    grep -q 'Found 1 breaking' <<<"$output"
+    grep -qE "^breaking \\[cmd-shadows-arg\\] at ask-claude: command 'agent'" <<<"$output"
+}

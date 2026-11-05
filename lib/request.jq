@@ -43,7 +43,7 @@
 # else branch adds {}, which adds nothing, so the key is left out.
 + (if $sys != "" then {system: $sys} else {} end)
 + (if $eff != "" then {output_config: {effort: $eff}} else {} end)
-# TODO: when $skills is not "":
-#       tools: [{type: "code_execution_20260521", name: "code_execution"}]
-#       container: {skills: ($skills | fromjson)}, plus id: $cid when $cid is not ""
-+ {}
++ (if $skills != "" then
+      {tools:[{type:"code_execution_20260521", name:"code_execution"}],
+      container:(({skills:($skills|fromjson)}) + (if $cid != "" then {id:$cid} else {} end))}
+    else {} end)

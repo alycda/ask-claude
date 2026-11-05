@@ -35,7 +35,7 @@ def safe:
     (if .content_block.type=="thinking" then "(thinking) "
              elif .content_block.type=="server_tool_use" then "(running code) "
              elif .content_block.type=="bash_code_execution_tool_result" then
-                 "(result rc=\(.content_block.content.return_code // "?")) "
+                 "(result rc=\(.content_block.content.return_code | if type == "number" then tostring else "?" end)) "
              else "" end)
 elif .type == "content_block_delta" and .delta.type == "text_delta" then
     .delta.text

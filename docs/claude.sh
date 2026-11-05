@@ -41,6 +41,7 @@ umask 077
 
 MODEL="${MODEL:-claude-opus-5-5}"
 MAX_TOKENS="${MAX_TOKENS:-16000}"
+case "$MAX_TOKENS" in ""|*[!0-9]*|0*) echo "claude.sh: MAX_TOKENS must be a positive integer, got: $MAX_TOKENS" >&2; exit 2 ;; esac
 API="https://api.anthropic.com/v1/messages"
 STATE="$HOME/.local/state/claude-curl"
 mkdir -p "$STATE" && chmod 700 "$STATE"
@@ -123,12 +124,19 @@ skills_json() {
            type:(if (.[0]|startswith("skill_")) then "custom" else "anthropic" end)})'
 }
 
+# rollback_to <n>: keep the first n turns of the history (n >= 0)
+rollback_to() { jq --argjson n "$(( $1 < 0 ? 0 : $1 ))" '.[:$n]' "$HIST" > "$HIST.tmp" && mv "$HIST.tmp" "$HIST"; }
+
 # call: send the whole history as-is (no new user turn) and append the reply.
 # ask <text>: append a user turn, then call. Both print the text blocks and
 # return non-zero on API error. A pause_turn (server tool still working) is
 # continued automatically, up to 8 rounds.
 call() {
-    local body resp err stop skills cid betas rounds=0
+    local body resp err stop skills cid betas rounds=0 n0
+    # history length when this call started: ask() has just appended the user
+    # turn, so any failure rolls back to n0 - 1, before that turn, even after
+    # pause_turn rounds have appended partial assistant turns
+    n0=$(jq length "$HIST")
     skills=$(skills_json)
     betas="server-side-fallback-2026-07-01"
     [ -n "$skills" ] && betas="$betas,code-execution-2025-08-25"
@@ -163,18 +171,20 @@ call() {
             (if .content_block.type=="thinking" then "(thinking) "
              elif .content_block.type=="server_tool_use" then "(running code) "
              elif .content_block.type=="bash_code_execution_tool_result" then
-                 "(result rc=\(.content_block.content.return_code // "?")) "
+                 "(result rc=\(.content_block.content.return_code | if type == "number" then tostring else "?" end)) "
              else "" end)
         elif .type=="content_block_delta" and .delta.type=="text_delta" then .delta.text
         elif .type=="message_stop" then "\n"
         else "" end) | safe'
-    [ -s "$log" ] || { rm -f "$log"; echo "claude.sh: no response (curl failed or timed out)" >&2; return 1; }
+    [ -s "$log" ] || { rm -f "$log"; echo "claude.sh: no response (curl failed or timed out)" >&2; rollback_to $((n0 - 1)); return 1; }
     if ! grep -q '^data: ' "$log"; then
         # not SSE: an HTTP error body
         err=$(jq -r "$SAFE"'.error.message // "unreadable response" | safe' "$log" 2>/dev/null || echo "unreadable response")
     else
-        # reassemble the message from the event stream
-        resp=$(sed -n 's/^data: //p' "$log" | jq -s '
+        # reassemble the message from the event stream; a reply jq cannot
+        # fold (malformed tool input, odd block index) is an error, not an
+        # empty turn that silently vanishes
+        if ! resp=$(sed -n 's/^data: //p' "$log" | jq -s '
             reduce .[] as $e ({blocks:{}, model:null, stop_reason:null, stop_details:null, usage:{}, container:null, error:null};
               if $e.type=="message_start" then
                   .model=$e.message.model | .usage=$e.message.usage | .container=$e.message.container
@@ -198,14 +208,20 @@ call() {
                   | (if ($e.delta.container? // null) != null then .container=$e.delta.container else . end)
               elif $e.type=="error" then .error=$e.error
               else . end)
-            | .content = (.blocks | to_entries | sort_by(.key|tonumber) | map(.value)) | del(.blocks)')
-        err=$(printf '%s' "$resp" | jq -r "$SAFE"'.error.message // empty | safe')
+            | .content = (.blocks | to_entries | sort_by(.key|tonumber) | map(.value)) | del(.blocks)'); then
+            err="the reply could not be parsed"
+        else
+            err=$(printf '%s' "$resp" | jq -r "$SAFE"'.error.message // empty | safe')
+        fi
     fi
     if [ -n "$err" ]; then
         rm -f "$log"
         echo "claude.sh: API error: $err" >&2
-        # drop the user turn so the history stays valid for a retry
-        jq '.[:-1]' "$HIST" > "$HIST.tmp" && mv "$HIST.tmp" "$HIST"
+        # a container the API no longer accepts (expired, deleted) would fail
+        # every later turn of this chat: forget it, the next turn starts a new one
+        [ -n "$cid" ] && case "$err" in *[Cc]ontainer*) rm -f "$HIST.container" ;; esac
+        # back to the history before this ask, so it stays valid for a retry
+        rollback_to $((n0 - 1))
         return 1
     fi
     # keep the full content array (thinking blocks included) for the next turn

@@ -28,3 +28,9 @@ assert_cmd = "2.2.2"
 predicates = "3.1.4"
 tempfile = "3.27.0"
 
+# benches/goldens.rs: how fast the pure parts run over the recorded fixtures
+criterion = "0.8.2"
+
+[[bench]]
+name = "goldens"
+harness = false

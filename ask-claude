@@ -462,15 +462,22 @@ session_confirm() {
 # nothing when it waits on something this version cannot answer
 session_tty="" # set per answer round, outside the loop that redirects stdin
 session_answer() {
-  local fold=$1 answers="[]" id name input result
+  local fold=$1 answers="[]" ask id name input result
   if [ -t 0 ]; then session_tty=1; else session_tty=""; fi
-  while IFS=$'\t' read -r id name input; do
+  # One compact JSON line per ask (JSON escapes newlines, so a line is an
+  # ask). The input is shown as jq -c renders it, encoded exactly once: going
+  # through @tsv as well escaped its backslashes a second time, so a real
+  # newline (two commands) looked like a literal \n (one command).
+  while IFS= read -r ask; do
+    id=$(jq -r '.id // empty' <<<"$ask")
     [ -n "$id" ] || continue
+    name=$(jq -r '.name | tostring' <<<"$ask")
+    input=$(jq -c '.input' <<<"$ask")
     result=$(session_confirm "$name" "$input")
     [ "$result" = allow ] && echo "ask-claude: allowed $name ($input)" >&2
     [ "$result" = deny ] && [ -n "${ASK_CLAUDE_CONFIRM:-}" ] && echo "ask-claude: denied $name ($input): ASK_CLAUDE_CONFIRM=$ASK_CLAUDE_CONFIRM" >&2
     answers=$(jq -c --arg id "$id" --arg r "$result" '. + [{type: "user.tool_confirmation", tool_use_id: $id, result: $r}]' <<<"$answers")
-  done < <(jq -r '.asks[] | [.id, .name, (.input | tostring)] | @tsv' <<<"$fold")
+  done < <(jq -c '.asks[]' <<<"$fold")
   jq -c --argjson a "$answers" --arg msg "Tool unavailable: ask-claude $ASK_CLAUDE_VERSION runs no local tools (see docs/plan.md). Do not call it again; answer the user without it." '
     {events: ($a + [.custom[] | {type: "user.custom_tool_result", custom_tool_use_id: .id,
                                  content: [{type: "text", text: $msg}], is_error: true}])}' <<<"$fold"

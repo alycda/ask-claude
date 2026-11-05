@@ -77,3 +77,15 @@ confirm_fixture() {
     request 2 | jq -e '.events[0].result=="deny"'
     [ -z "$(find "$XDG_STATE_HOME/ask-claude" -maxdepth 1 -name '.always.*')" ]
 }
+
+@test "confirm: the input is shown encoded once, so a newline is not a literal \\n" {
+    confirm_fixture "$TMP/fx"
+    # two commands on two lines, the way a model can propose them
+    sed -i.bak 's/"echo pong"/"echo safe\\nid"/' "$TMP/fx/1.sse"
+    ASK_CLAUDE_CONFIRM=allow run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/fx" \
+        ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" agent "ping" </dev/null
+    [ "$status" -eq 0 ]
+    # exactly one backslash before the n: the JSON of a real newline
+    grep -qF 'allowed bash ({"command":"echo safe\nid"})' <<<"$stderr"
+    if grep -qF 'echo safe\\nid' <<<"$stderr"; then return 1; fi
+}

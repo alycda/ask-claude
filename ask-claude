@@ -2,16 +2,16 @@
 #USAGE about "chat loop; /new resets, /quit exits"
 #USAGE unknown_flags "error"
 #USAGE arg "[prompt]" help="one shot, prints the response"
-#USAGE flag "-m --model <model>" help="haiku, sonnet, opus, fable, or a full model id" default="claude-opus-5-5"
-#USAGE flag "-e --effort <effort>" help="how hard the model thinks" default="medium" {
+#USAGE flag "-m --model <model>" help="haiku, sonnet, opus, fable, or a full model id" default="claude-opus-5-5" global=#true
+#USAGE flag "-e --effort <effort>" help="how hard the model thinks" default="medium" global=#true {
 #USAGE   choices "low" "medium" "high" "xhigh" "max"
 #USAGE }
-#USAGE flag "-S --system <system>" help="system prompt"
-#USAGE flag "-s --skills <skills>" help="comma-separated <skill_id>[@<version>]"
+#USAGE flag "-S --system <system>" help="system prompt" global=#true
+#USAGE flag "-s --skills <skills>" help="comma-separated <skill_id>[@<version>]" global=#true
 #USAGE flag "-f --file <file>" help="prepend this file's contents to the prompt"
-#USAGE flag "-p --provider <provider>" help="anthropic|openai; only anthropic is implemented in bash" default="anthropic"
-#USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider"
-#USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000"
+#USAGE flag "-p --provider <provider>" help="anthropic|openai; only anthropic is implemented in bash" default="anthropic" global=#true
+#USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" global=#true
+#USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000" global=#true
 #USAGE flag "-V --version" help="print the version"
 #USAGE cmd "list" help="chats on disk, newest first"
 #USAGE cmd "resume" help="continue a chat" {
@@ -51,13 +51,14 @@ fi
 # the commit that implements it deletes its line (and its test in
 # tests/unit/refuse.bats).
 not_implemented() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plan.md"; }
-[ -z "${usage_cmd:-}" ] || not_implemented "$usage_cmd"                                        # F6: list, resume
-[ -n "${usage_prompt:-}" ] || not_implemented "the chat loop"                                  # F7
+[ -n "${usage_cmd:-}${usage_prompt:-}" ] || not_implemented "the chat loop"                    # F7
 [ -z "${usage_skills:-}" ] || not_implemented "--skills"                                       # F8
 [ "${usage_provider:-anthropic}" = anthropic ] || not_implemented "--provider $usage_provider" # F9
 [ -z "${usage_base_url:-}" ] || not_implemented "--base-url"                                   # F9
 
-[ -n "${ANTHROPIC_API_KEY:-}" ] || die "no key: export ANTHROPIC_API_KEY"
+# The key is checked where a request can happen (one shot, chat loop), so
+# `list` works without one.
+need_key() { [ -n "${ANTHROPIC_API_KEY:-}" ] || die "no key: export ANTHROPIC_API_KEY"; }
 command -v jq >/dev/null || die "jq not found"
 case "$usage_max_tokens" in
 "" | *[!0-9]* | 0*) die "--max-tokens must be a positive integer, got: $usage_max_tokens" ;;
@@ -83,6 +84,86 @@ new_chat() { echo "$STATE/$(date +%Y%m%dT%H%M%S)-$$.json"; }
 
 # rollback_to <n>: keep the first n turns of the history (n >= 0)
 rollback_to() { jq --argjson n "$(($1 < 0 ? 0 : $1))" '.[:$n]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"; }
+
+# show_history [file]: the chat as "you:" / "claude:" text (thinking blocks skipped)
+show_history() {
+  jq -r "$SAFE"'.[] | (if .role=="user" then "you" else "claude" end) as $who
+        | (if (.content|type)=="string" then .content
+           else [.content[] | select(.type=="text") | .text] | join("\n") end) as $t
+        | "\($who): \($t)\n" | safe' "${1:-$HIST}"
+}
+
+# list_chats: chats on disk, newest first: name, turn count, the first
+# prompt cut at 60 characters
+list_chats() {
+  # shellcheck disable=SC2012  # ls -t is the sort; names are ours, one per line
+  ls -1t "$STATE"/*.json 2>/dev/null | while IFS= read -r f; do
+    printf '%s  %s turns  %s\n' "$(basename "$f" .json)" "$(jq length "$f")" \
+      "$(jq -r "$SAFE"'first(.[]|select(.role=="user"))|.content|if type=="string" then .[:60] else "" end | safe' "$f")"
+  done
+}
+
+# find_chat [name-or-prefix]: the history file to resume, or exit 2. With no
+# argument, the newest chat that has turns (empty files from aborted starts
+# are skipped).
+find_chat() {
+  local f n=0 found=""
+  if [ -n "${1:-}" ]; then
+    # a chat name or prefix from `list`: no path parts or glob characters
+    case "$1" in */* | *[*?[]*) die "resume takes a chat name from \`ask-claude list\`" ;; esac
+    for f in "$STATE/$1"*.json; do
+      [ -f "$f" ] || continue
+      found="$f"
+      n=$((n + 1))
+    done
+    [ "$n" -le 1 ] || die "\"$1\" matches $n chats, see \`ask-claude list\`"
+  else
+    # shellcheck disable=SC2012
+    found=$(ls -1t "$STATE"/*.json 2>/dev/null | while IFS= read -r f; do
+      [ "$(jq length "$f")" -gt 0 ] && {
+        echo "$f"
+        break
+      }
+    done)
+  fi
+  [ -n "$found" ] && [ -f "$found" ] || die "nothing to resume (see \`ask-claude list\`)"
+  echo "$found"
+}
+
+# chat_loop: one turn per line until /quit; /new starts another chat,
+# /history prints this one. On quit, prints the chat and the resume command;
+# an empty chat leaves no file.
+chat_loop() {
+  local line
+  echo "ask-claude: $usage_model, history $HIST  (/new resets, /quit exits)" >&2
+  while IFS= read -r -e -p "> " line; do
+    case "$line" in
+    "") continue ;;
+    /quit | /exit) break ;;
+    /history)
+      show_history
+      continue
+      ;;
+    /new)
+      [ "$(jq length "$HIST")" -gt 0 ] || rm -f "$HIST" "$HIST.container"
+      HIST=$(new_chat)
+      echo '[]' >"$HIST"
+      echo "new chat: $HIST" >&2
+      continue
+      ;;
+    esac
+    ask "$line"
+    echo
+  done
+  if [ "$(jq length "$HIST")" -eq 0 ]; then
+    rm -f "$HIST" "$HIST.container"
+    return 0
+  fi
+  echo
+  echo "--- history ($HIST) ---" >&2
+  show_history
+  echo "resume with: ask-claude resume $(basename "$HIST" .json)" >&2
+}
 
 # transport: the request body on stdin, the raw SSE on stdout.
 # ASK_CLAUDE_REPLAY=<file.sse> replays a recording instead of calling curl;
@@ -171,7 +252,23 @@ ask() {
   call
 }
 
+case "${usage_cmd:-}" in
+list)
+  list_chats
+  exit 0
+  ;;
+resume)
+  HIST=$(find_chat "${usage_chat:-}") || exit 2
+  need_key
+  echo "resuming $HIST" >&2
+  show_history >&2
+  chat_loop
+  exit $?
+  ;;
+esac
+
 # one shot: optional -f FILE, then the prompt
+need_key
 prefix=""
 if [ -n "${usage_file:-}" ]; then
   [ -r "$usage_file" ] || die "cannot read $usage_file"

@@ -14,17 +14,6 @@ refused() { # args...
     [ -z "$(ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null)" ]
 }
 
-@test "refuse: list" {
-    refused list
-    grep -q '^ask-claude: list is not implemented' <<<"$stderr"
-}
-
-@test "refuse: resume, with and without a chat" {
-    refused resume
-    refused resume 20260101T000000
-    grep -q '^ask-claude: resume is not implemented' <<<"$stderr"
-}
-
 @test "refuse: the chat loop (no prompt)" {
     refused
     grep -q '^ask-claude: the chat loop is not implemented' <<<"$stderr"
@@ -54,7 +43,7 @@ refused() { # args...
 }
 
 @test "refuse: the version in the message is the script's own" {
-    refused list
+    refused -s pptx "hi"
     v="$(sed -n 's/^readonly ASK_CLAUDE_VERSION=//p' "$BIN")"
     [ -n "$v" ]
     grep -q "not implemented in ask-claude $v," <<<"$stderr"

@@ -28,7 +28,7 @@ SKILLS='[{"skill_id":"pptx","version":"latest","type":"anthropic"},{"skill_id":"
 
 @test "request: skills add the code_execution tool and a container" {
     request "" "" "$SKILLS" "" > "$TMP/out.json"
-    assert_golden "$FIX/request/skills.json" "$TMP/out.json"
+    assert_golden "$FIX/request/skills-request.json" "$TMP/out.json"
     jq -e '.tools[0].type=="code_execution_20260521"' "$TMP/out.json"
     jq -e '.container|has("id")|not' "$TMP/out.json"
 }

@@ -40,9 +40,6 @@ reduce .[] as $e (
     if $e.type == "message_start" then
         .model=$e.message.model | .usage=$e.message.usage | .container=$e.message.container
     elif $e.type == "content_block_start" then
-        # TODO: store $e.content_block under .blocks[($e.index|tostring)].
-        #       For tool_use / server_tool_use blocks also set .partial = ""
-        #       so input_json_delta has something to append to.
         .blocks[($e.index|tostring)] = ($e.content_block
           | if .type=="tool_use" or .type=="server_tool_use" then .partial="" else . end)
     elif $e.type == "content_block_delta" then
@@ -51,7 +48,12 @@ reduce .[] as $e (
         #       thinking_delta  -> .blocks[$i].thinking  += $e.delta.thinking
         #       signature_delta -> .blocks[$i].signature  = $e.delta.signature
         #       input_json_delta-> .blocks[$i].partial   += $e.delta.partial_json
-        .
+        ($e.index|tostring) as $i
+          | if $e.delta.type=="text_delta" then .blocks[$i].text += $e.delta.text
+            elif $e.delta.type=="thinking_delta" then .blocks[$i].thinking += $e.delta.thinking
+            elif $e.delta.type=="signature_delta" then .blocks[$i].signature = $e.delta.signature
+            elif $e.delta.type=="input_json_delta" then .blocks[$i].partial += $e.delta.partial_json
+            else . end
     elif $e.type == "content_block_stop" then
         # TODO: if the block has "partial", parse it: "" -> {}, else fromjson,
         #       store as .input, and del(.partial)

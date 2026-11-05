@@ -14,11 +14,6 @@ refused() { # args...
     [ -z "$(ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null)" ]
 }
 
-@test "refuse: the chat loop (no prompt)" {
-    refused
-    grep -q '^ask-claude: the chat loop is not implemented' <<<"$stderr"
-}
-
 @test "refuse: -s/--skills" {
     refused -s pptx "hi"
     grep -q '^ask-claude: --skills is not implemented' <<<"$stderr"

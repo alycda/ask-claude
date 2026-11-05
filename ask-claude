@@ -51,7 +51,6 @@ fi
 # the commit that implements it deletes its line (and its test in
 # tests/unit/refuse.bats).
 not_implemented() { die "$* is not implemented in ask-claude $ASK_CLAUDE_VERSION, see docs/plan.md"; }
-[ -n "${usage_cmd:-}${usage_prompt:-}" ] || not_implemented "the chat loop"                    # F7
 [ -z "${usage_skills:-}" ] || not_implemented "--skills"                                       # F8
 [ "${usage_provider:-anthropic}" = anthropic ] || not_implemented "--provider $usage_provider" # F9
 [ -z "${usage_base_url:-}" ] || not_implemented "--base-url"                                   # F9
@@ -78,9 +77,18 @@ esac
 # may carry control characters; jq -r decodes \u001b etc. into raw bytes.
 SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode else . end; '
 
-# A fresh history path; the PID keeps two chats started in the same second
+# A fresh history path; the PID keeps two processes started in the same second
 # apart.
-new_chat() { echo "$STATE/$(date +%Y%m%dT%H%M%S)-$$.json"; }
+new_chat() {
+  local f
+  f="$STATE/$(date +%Y%m%dT%H%M%S)-$$.json"
+  # /new in the same second would reuse the name and overwrite the chat
+  while [ -e "$f" ]; do
+    sleep 1
+    f="$STATE/$(date +%Y%m%dT%H%M%S)-$$.json"
+  done
+  echo "$f"
+}
 
 # rollback_to <n>: keep the first n turns of the history (n >= 0)
 rollback_to() { jq --argjson n "$(($1 < 0 ? 0 : $1))" '.[:$n]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"; }
@@ -266,6 +274,15 @@ resume)
   exit $?
   ;;
 esac
+
+# no prompt: the chat loop
+if [ -z "${usage_prompt:-}" ]; then
+  need_key
+  HIST=$(new_chat)
+  echo '[]' >"$HIST"
+  chat_loop
+  exit $?
+fi
 
 # one shot: optional -f FILE, then the prompt
 need_key

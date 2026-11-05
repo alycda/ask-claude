@@ -335,9 +335,11 @@ call() {
   esac
 }
 
-# ask <text>: append a user turn, then call
+# ask <text>: append a user turn, then call. The text (a typed line, or a
+# whole -f file) reaches jq on stdin: a command line is readable by other
+# local accounts, the same reason transport keeps the body off curl's.
 ask() {
-  jq --arg c "$1" '. + [{"role":"user","content":$c}]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"
+  printf '%s' "$1" | jq --rawfile c /dev/stdin '. + [{"role":"user","content":$c}]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"
   call
 }
 
@@ -580,9 +582,10 @@ session_cleanup() {
 # event; prints the new session id, or an API error and returns 1.
 session_create() {
   local body resp sesn err
-  body=$(jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" --arg file "${session_file_id:-}" --arg file_name "$(basename "${usage_file:-}")" \
+  # the prompt on stdin, not on jq's command line (see ask)
+  body=$(printf '%s' "$1" | jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" --arg file "${session_file_id:-}" --arg file_name "$(basename "${usage_file:-}")" \
     --arg vaults "${usage_vault:-}" --arg repo "${usage_repo:-}" --arg memories "${usage_memory:-}" \
-    --arg title "" --arg prompt "$1" -f "$LIB/session-create.jq")
+    --arg title "" --rawfile prompt /dev/stdin -f "$LIB/session-create.jq")
   resp=$(ma_call POST /sessions "$body")
   sesn=$(jq -r '.id // empty' <<<"$resp" 2>/dev/null)
   if [ -z "$sesn" ]; then
@@ -675,7 +678,7 @@ session_loop() {
       sesn=$(session_create "$line") || continue
       session_turn "$sesn" && session_remember "$sesn"
     else
-      session_turn "$sesn" "$(jq -n -c --arg t "$line" '{events: [{type: "user.message", content: [{type: "text", text: $t}]}]}')"
+      session_turn "$sesn" "$(printf '%s' "$line" | jq -n -c --rawfile t /dev/stdin '{events: [{type: "user.message", content: [{type: "text", text: $t}]}]}')"
     fi
     echo
   done

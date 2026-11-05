@@ -10,6 +10,14 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.1 (micro) - 2026-11-05
+
+- `-f FILE` with `agent` uploads the file and the agent finds it at
+  `/mnt/session/uploads/<name>`; `ask-claude agent files <session>` lists what
+  a session holds and downloads the named ones into the current directory
+  (`--force` to overwrite).
+- Still refused with exit 2: `agent budget`, `agent archive`, `agent trace`.
+
 ## 0.2.0 (macro) - 2026-11-05
 
 - `ask-claude agent "question"` runs a prompt as a Managed Agents session,

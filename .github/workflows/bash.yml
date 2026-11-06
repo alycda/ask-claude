@@ -42,7 +42,9 @@ jobs:
         run: |
           set -euo pipefail
           if git ls-files -z 'tests/fixtures/**.sse' | git check-ignore --no-index -z --stdin -q; then
-            git ls-files -z 'tests/fixtures/**.sse' | git check-ignore --no-index -z --stdin -v | tr '\0' ' ' >&2
+            git ls-files -z 'tests/fixtures/**.sse' | git check-ignore --no-index -z --stdin -v \
+              | tr '\0' '\n' | paste - - - - \
+              | awk -F'\t' '$3 !~ /^!/ { print $4 " matches " $1 ":" $2 " " $3 }' >&2
             echo "a tracked fixture matches an ignore rule; fix .gitignore" >&2
             exit 1
           fi

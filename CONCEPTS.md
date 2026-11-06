@@ -129,6 +129,8 @@ An empty commit whose description is the instruction for a step not yet built. I
 ### Gate
 The ordered list of commands that must pass before a version is cut, held in an empty verifier commit at the end of a milestone. Running it produces a Verified commit.
 
+A Gate passes at zero failures. A test that cannot pass in some environment is excluded there by name or tag, so the exclusion is visible in the command; a tolerated count is a red baseline, and a red baseline hides new failures.
+
 ### Verified commit
 An empty commit recording that a Gate passed: where it ran, when, and every command with its result.
 

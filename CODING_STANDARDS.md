@@ -103,6 +103,12 @@ enforce belong elsewhere.
 - **A negative assertion in bats goes through a helper.** A bare `! grep`
   does not fail the test unless it is the last line. Source: "request text
   reaches jq on stdin" (on the way).
+- **A gate passes at zero failures.** A test that cannot pass in some
+  environment is excluded there by name or tag, never tolerated as a
+  count. A steady red baseline hides new failures: two tests that caught
+  a real fold bug sat among twenty-four fixture failures on every fresh
+  checkout until found by accident. Source:
+  `docs/solutions/workflow-issues/a-steady-red-baseline-hides-new-failures.md`.
 - **A recorded fixture is tracked, and its redaction is tested without the
   API.** A gitignored fixture hides the failures of every test that needs
   it. Source: "redact ids as values only", "track the session fixtures".

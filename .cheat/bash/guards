@@ -1,0 +1,29 @@
+---
+syntax: bash
+tags: [ bash, errors, tests ]
+---
+# Unset variables are errors; a pipeline fails if ANY stage fails.
+# (No -e: the script checks each step itself and decides what failure means.)
+set -uo pipefail
+
+# Guard clause: test || { message to stderr; exit with a code; }
+[ -n "$key" ] || { echo "myscript: no key" >&2; exit 2; }
+
+# Is a command on PATH?
+command -v jq >/dev/null || { echo "myscript: jq not found" >&2; exit 2; }
+
+# File and string tests
+[ -r "$f" ]    # exists and readable
+[ -s "$f" ]    # exists and non-empty
+[ -f "$f" ]    # regular file (not a dir, not missing)
+[ -z "$s" ]    # empty string
+[ -n "$s" ]    # non-empty string
+
+# Create with default content only if missing or empty
+[ -s "$hist" ] || echo '[]' > "$hist"
+
+# Chain tests with && / || between brackets, not -a / -o inside them.
+# Careful: `a && b || c` runs c when a OR b fails.
+[ -n "$hist" ] && [ -f "$hist" ] || { echo "nothing to resume" >&2; exit 2; }
+
+# Exit codes as an interface: 0 ok, 1 runtime failure, 2 bad input

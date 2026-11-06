@@ -1,0 +1,35 @@
+---
+syntax: bash
+tags: [ bash, loops, input ]
+---
+# Read lines verbatim: IFS= keeps leading spaces, -r keeps backslashes
+while IFS= read -r l; do printf '%s\n' "$l"; done < file.txt
+
+# REPL: -e gives readline editing and history, -p prints a prompt
+while IFS= read -r -e -p "> " line; do
+    case "$line" in
+        "")          continue ;;
+        /quit|/exit) break ;;
+        /new)        echo "new chat" >&2; continue ;;
+    esac
+    echo "you said: $line"
+done
+
+# Dispatch on the first argument
+case "${1:-}" in
+    --list)   echo "list"; exit 0 ;;
+    --resume) shift ;;
+esac
+
+# Retry loop with a cap
+rounds=0
+while :; do
+    stop=$(get_stop_reason)
+    if [ "$stop" = pause_turn ] && [ "$rounds" -lt 8 ]; then
+        rounds=$((rounds + 1)); continue
+    fi
+    break
+done
+
+# First match, then stop
+first=$(for f in "$dir"/*.json; do [ "$(jq length "$f")" -gt 0 ] && { echo "$f"; break; }; done)

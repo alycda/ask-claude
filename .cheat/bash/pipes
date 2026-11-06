@@ -1,0 +1,27 @@
+---
+syntax: bash
+tags: [ bash, pipes, streaming ]
+---
+# Stream: keep a raw copy with tee, handle lines as they arrive
+#   curl -N  no output buffering     -sS  silent, but still print errors
+curl -sS -N "$url" | tee "$log" | while IFS= read -r l; do printf '%s\n' "$l"; done
+
+# Strip a line prefix with builtins: one loop, not one process per line
+while IFS= read -r l; do
+    case "$l" in "data: "*) printf '%s\n' "${l#data: }" ;; esac
+done < "$log"
+
+# The same, after the fact: sed -n + p prints only lines that matched
+sed -n 's/^data: //p' "$log"
+
+# Does the file contain a match? (exit status only, no output)
+grep -q '^data: ' "$log" && echo "is SSE"
+
+# printf, not echo, for arbitrary data (echo can eat -n, -e and backslashes)
+printf '%s' "$resp" | jq -r '.id'
+
+# Exit status of every stage of the last pipeline
+false | true; echo "${PIPESTATUS[@]}"     # => 1 0
+
+# Fallback when a command fails
+err=$(jq -r '.error.message' "$log" 2>/dev/null || echo "unreadable response")

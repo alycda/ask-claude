@@ -1,0 +1,38 @@
+---
+syntax: bash
+tags: [ usage, bash, cli ]
+---
+# Give a bash script --help, flags and input checks in 4 steps:
+#   1. First line:   #!/usr/bin/env -S usage bash
+#   2. Below it:     one #USAGE line per arg or flag  (cheat usage/spec)
+#   3. In the body:  read $usage_<long_name>, dashes become underscores
+#   4. Try it:       chmod +x myscript && ./myscript --help
+
+#!/usr/bin/env -S usage bash
+#USAGE arg "[prompt]" help="one shot"
+#USAGE flag "-m --model <model>" help="model id" default="claude-opus-5-5"
+#USAGE flag "--max-tokens <n>" help="output cap" default="16000"
+#USAGE flag "-q --quiet" help="less output"
+#USAGE cmd "list" help="chats on disk"
+set -uo pipefail
+
+# == Read a value ==
+echo "$usage_model"           # has a default: always set
+echo "$usage_max_tokens"      # --max-tokens -> usage_max_tokens
+echo "${usage_prompt:-}"      # no default: add :- or set -u stops the script
+echo "${usage_cmd:-}"         # subcommand's real name, even if typed as an alias
+
+# == Test a value ==
+[ "${usage_quiet:-}" = true ]       # on/off flag
+[ "${usage_verbose:-0}" -ge 2 ]     # count flag (-vv)
+eval "tags=(${usage_tag:-})"        # repeatable flag -> bash array
+
+# == Branch on the subcommand ==
+case "${usage_cmd:-}" in
+  list) list_chats ;;
+  "")   chat_loop ;;
+esac
+
+# == Not bash? Same #USAGE lines, values arrive in the environment ==
+#!/usr/bin/env -S usage exec perl      # perl: $ENV{usage_name}
+#!/usr/bin/env -S usage exec node      # node: process.env.usage_name

@@ -1,0 +1,28 @@
+---
+syntax: bash
+tags: [ usage, cli, docs, completion ]
+---
+# Most used: check a spec (a .kdl file, or a script with #USAGE lines)
+usage lint ask-claude                # exit 1 on an error; -W fails on warnings too
+
+# == Why did my command line parse like that? ==
+usage explain -f ask-claude ask-claude -m sonnet resume abc
+usage complete-word -f ask-claude -- ask-claude --effort ''   # what Tab offers; keep the --
+
+# == Tab completion: pick ONE ==
+eval "$(usage generate completion-init bash)"    # in ~/.bashrc: every usage script on PATH
+usage generate completion bash ask-claude -f ask-claude > ~/.local/share/bash-completion/completions/ask-claude
+#   Both call `usage` on every Tab, so keep it installed
+
+# == Docs ==
+usage generate markdown -f ask-claude --out-file docs/cli.md
+usage generate markdown -f ask-claude --multi --out-dir docs/cli   # one page per subcommand
+usage generate manpage  -f ask-claude -o ask-claude.1 && man ./ask-claude.1
+
+# == Did my change break the command line? 3 steps ==
+mkdir -p /tmp/old                                     # 1. a dir for the old copy
+jj file show -r @- ask-claude > /tmp/old/ask-claude   # 2. same file name, previous version
+usage diff /tmp/old/ask-claude ask-claude             # 3. exit 1 = breaking change
+
+# == Spec as JSON, for jq ==
+usage generate json -f ask-claude | jq -r '.cmd.flags[].name'

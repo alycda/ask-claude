@@ -1,0 +1,39 @@
+---
+syntax: bash
+tags: [ usage, bash, gotchas ]
+---
+# Find the symptom you see; the fix is the line under it.
+# All found with usage 7.1.3 and ask-claude.
+
+# ==== In your script ====
+
+# "usage_dry_run: unbound variable"
+[ "${usage_dry_run:-}" = true ]      # flag not given + no default = no variable; add :-
+
+# Repeatable flag holds quotes, like: 'a b' c
+eval "tags=(${usage_tag:-})"         # -> ("a b" "c"); usage did the quoting, so eval is safe
+
+# ./ask-claude list   runs the list subcommand, not the prompt "list"
+./ask-claude -- list                 # after --, it is the prompt
+
+# "Missing required arg: <input>" when running a subcommand
+# A required <arg> at the top level blocks every cmd. Make it [arg], or move it into the cmd.
+
+# A check for exit code 1 misses some errors
+# Missing arg, bad choice: 1. Unknown flag, broken spec: 181. Test for non-zero.
+
+# ==== Running the usage tool ====
+
+# "unsupported cmd prop alias"
+#USAGE cmd "list" help="x" { alias "ls"; }    # alias goes inside { }, not alias="ls"
+
+# "Found invalid node name" when reading "-" (stdin)
+sed -n 's/^#USAGE \{0,1\}//p' ask-claude | usage lint -   # stdin wants plain KDL; strip #USAGE
+
+# "unexpected argument '--effort'" from complete-word or explain
+usage complete-word -f ask-claude -- ask-claude --effort ''   # put -- before the command line
+
+# usage diff reports "bin-changed" as breaking
+# Cause: no bin node, so the name comes from the file name. Fix, either:
+#USAGE bin "ask-claude"                        # 1. pin the name in the spec
+cp ask-claude /tmp/old/ask-claude              # 2. compare files with the same name

@@ -1,0 +1,40 @@
+---
+syntax: kdl
+tags: [ usage, kdl, cli ]
+---
+// Copy a line, change the names. Every line here works as-is.
+// In a script, put "#USAGE " in front of each line.
+// Check your spec:  usage lint <file>
+
+// == 1. Name the program ==
+bin "demo"
+about "one line for the top of --help"
+version "0.1.0"
+
+// == 2. Positional args ==
+arg "[input]" help="optional"                    // [name] = optional, <name> = required
+arg "[rest]..." help="0 or more" var=#true       // ... = many (last arg only)
+
+// == 3. Flags ==
+flag "-n --dry-run" help="on/off"                              // "true", or not set at all
+flag "-o --out <file>" help="takes a value" default="out.txt"  // <file> = takes a value
+flag "-v --verbose" help="-vvv gives 3" count=#true
+flag "-t --tag <tag>" help="-t a -t b" var=#true
+flag "--color" help="--no-color turns it off" negate="--no-color" default=#true
+
+// == 4. Allow only some values ==
+flag "-e --effort <effort>" help="how hard" default="medium" {
+  choices "low" "medium" "high"
+}
+
+// == 5. Subcommands ==
+cmd "list" help="show things" { alias "ls"; }
+cmd "resume" help="continue one" {
+  arg "<name>" help="which one"                  // required, but only for resume
+}
+
+// == Extras: add only when needed ==
+flag "--key <key>" help="falls back to $DEMO_KEY" env="DEMO_KEY"
+flag "-q --quiet" help="also works after a subcommand" global=#true
+unknown_flags "error"                            // reject flags not listed here
+example "demo -vv notes.txt" help="read loudly"  // shown in --help and docs

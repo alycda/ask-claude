@@ -1,0 +1,28 @@
+---
+syntax: bash
+tags: [ bash, security, gotchas ]
+---
+# Pitfalls in the original claude.sh that later fix: commits closed
+
+# Secrets in argv are visible to every user via `ps`
+curl -H "x-api-key: $key" "$url"                          # leaks
+printf 'x-api-key: %s\n' "$key" | curl -H @- "$url"       # header from stdin (curl 7.55+)
+printf '%s' "$body" | curl --data-binary @- "$url"        # body from stdin
+# (only one of -H @- / --data-binary @- can read stdin; use -H @<(...) for the other)
+
+# Default umask 022 makes new files world-readable
+umask 077
+
+# Predictable "$f.tmp" can be a symlink someone else planted; use mktemp
+tmp=$(mktemp "$f.XXXXXX") && jq '.' "$f" > "$tmp" && mv "$tmp" "$f"
+
+# User input that names a file: validate before it becomes a path
+case "$id" in ""|*[!A-Za-z0-9_-]*) echo "bad id: $id" >&2; exit 2 ;; esac
+
+# Check jq's exit status, not just whether it printed something
+resp=$(jq -s '.' "$log") || { echo "unparseable reply" >&2; exit 1; }
+
+# Untrusted text can carry terminal escape sequences; strip control chars, keep \t \n
+printf '%s' "$reply" | tr -d '\000-\010\013-\037\177'
+
+# for f in $(ls ...) splits names on spaces; glob instead (see: cheat bash/files)

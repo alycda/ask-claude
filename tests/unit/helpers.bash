@@ -22,7 +22,7 @@ teardown() {
 }
 
 # events <fixture>: the JSON payloads of an SSE fixture, one per line,
-# exactly as claude.sh's `read` loop strips them
+# exactly as claude.sh's `read` loop stripped them
 events() {
     sed -n 's/^data: //p' "$FIX/sse/$1.sse"
 }

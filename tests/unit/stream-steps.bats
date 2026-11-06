@@ -19,7 +19,7 @@ pick() {
     events "$f" | jq -c 'select(.type as $t | $ARGS.positional | index($t))' --args "$@"
 }
 
-# print_events: run lib/stream.jq over events on stdin, the way claude.sh does
+# print_events: run lib/stream.jq over events on stdin, the way claude.sh did
 print_events() { jq --unbuffered -rj -f "$ROOT/lib/stream.jq"; }
 
 # same_bytes <expected-file> <actual-file>

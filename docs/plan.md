@@ -24,11 +24,15 @@ Owner: **A** = Alyssa writes the code, **C** = Claude writes tests/fixtures.
 
 ## Oracle
 
-claude.sh is the reference implementation. Its three inline jq programs were
+claude.sh was the reference implementation. Its three inline jq programs were
 extracted verbatim and run over recorded SSE fixtures to produce the goldens in
-`tests/fixtures/`. A golden is not a design choice; it is "what claude.sh does
-today". Change a golden only with a commit message saying why claude.sh was
-wrong.
+`tests/fixtures/`. A golden is not a design choice; it is "what claude.sh did".
+Change a golden only with a commit message saying why that behaviour was wrong.
+
+claude.sh itself was removed after 0.1.4, once the bash `ask-claude` did
+everything it did. It is still in the history: as imported, in "feat: import
+claude.sh as originally written", and as last kept, with the security-audit
+fixes, at the `v0.1.4` bookmark (`jj file show -r v0.1.4 docs/claude.sh`).
 
 Fixtures (recorded 2026-11-02 against api.anthropic.com, ids redacted):
 

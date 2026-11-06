@@ -35,7 +35,7 @@ test:
     set -euo pipefail
     set -a; . "{{ justfile_directory() }}/.env"; set +a
     hurl --test --variable base_url=https://api.anthropic.com \
-        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") .
+        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") messages.hurl anthropic-stream.hurl
 
 # Reads .env like test; the key reaches curl through a header file on a pipe.
 

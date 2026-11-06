@@ -21,7 +21,7 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     grep -qE '^\s+flag\s+--skills\s+pptx'        <<<"$output"
     grep -qE '^\s+flag\s+--max-tokens\s+10'      <<<"$output"
     grep -qE '^\s+arg\s+\[prompt\]\s+hello there' <<<"$output"
-    ! grep -q 'refused' <<<"$output"
+    refute grep -q 'refused' <<<"$output"
 }
 
 @test "spec: defaults apply when flags are absent" {
@@ -33,7 +33,7 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
 @test "spec: resume takes an optional chat name" {
     run explain resume
     grep -qE '^command\s+(ask-claude\s+)?resume' <<<"$output"
-    ! grep -q 'refused' <<<"$output"
+    refute grep -q 'refused' <<<"$output"
     run explain resume 20260101T000000
     grep -qE '^\s+arg\s+\[chat\]\s+20260101T000000' <<<"$output"
 }
@@ -76,12 +76,12 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     run explain agent "hello there"
     grep -qE '^command\s+(ask-claude\s+)?agent' <<<"$output"
     grep -qE '^\s+arg\s+\[prompt\]\s+hello there' <<<"$output"
-    ! grep -q refused <<<"$output"
+    refute grep -q refused <<<"$output"
     for sub in list "resume sesn_x" "files sesn_x" "files sesn_x a.txt b.txt" "budget sesn_x 250" "archive sesn_x" "trace sesn_x"; do
         # shellcheck disable=SC2086
         run explain agent $sub
         grep -qE "^command\s+(ask-claude\s+)?agent ${sub%% *}" <<<"$output"
-        ! grep -q refused <<<"$output"
+        refute grep -q refused <<<"$output"
     done
     run explain agent list extra
     grep -q refused <<<"$output"
@@ -96,7 +96,7 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     grep -qE '^\s+flag\s+--repo\s+owner/name@main' <<<"$output"
     grep -qE '^\s+flag\s+--memory\s+mem_1' <<<"$output"
     grep -qE '^\s+flag\s+--force' <<<"$output"
-    ! grep -q refused <<<"$output"
+    refute grep -q refused <<<"$output"
     run explain agent "hi"
     grep -qE '^\s+flag\s+--budget\s+100\s+default' <<<"$output"
     ASK_CLAUDE_AGENT=agent_env ASK_CLAUDE_ENVIRONMENT=env_env run explain agent "hi"
@@ -107,7 +107,7 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
 @test "agent spec: -f and the request flags reach the agent command" {
     run explain -f notes.md agent "summarize"
     grep -qE '^\s+flag\s+--file\s+notes.md' <<<"$output"
-    ! grep -q refused <<<"$output"
+    refute grep -q refused <<<"$output"
 }
 
 @test "agent spec: the only break since 0.1.4 is the word agent, now a command" {
@@ -125,5 +125,5 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     run explain --web --mcp https://a.example/mcp --mcp https://b.example/mcp "hi"
     grep -qE '^\s+flag\s+--web' <<<"$output"
     grep -qE '^\s+flag\s+--mcp\s+https://a.example/mcp' <<<"$output"
-    ! grep -q refused <<<"$output"
+    refute grep -q refused <<<"$output"
 }

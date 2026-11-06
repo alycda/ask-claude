@@ -14,7 +14,7 @@ stream() { events "$1" | jq --unbuffered -rj -f "$ROOT/lib/stream.jq"; }
 @test "stream: thinking block shows a marker, not its content" {
     stream thinking > "$TMP/out.txt"
     assert_golden "$FIX/sse/thinking.stream.txt" "$TMP/out.txt"
-    ! grep -q 'signature' "$TMP/out.txt"
+    refute grep -q 'signature' "$TMP/out.txt"
 }
 
 @test "stream: code execution shows running and result markers" {
@@ -37,7 +37,7 @@ stream() { events "$1" | jq --unbuffered -rj -f "$ROOT/lib/stream.jq"; }
     printf 'a]0;tb[2Kc2Kdef\tg\nh' > "$TMP/expected.txt"
     assert_golden "$TMP/expected.txt" "$TMP/out.txt"
     # nothing in 0x00-0x08, 0x0b-0x1f or 0x7f survives
-    ! LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]' "$TMP/out.txt"
+    LC_ALL=C refute grep -q $'[\x01-\x08\x0b-\x1f\x7f]' "$TMP/out.txt"
 }
 
 @test "stream: web search, web fetch and MCP calls print their markers" {

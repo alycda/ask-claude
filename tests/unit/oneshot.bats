@@ -75,7 +75,7 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
 @test "spec: -f --file binds" {
     run usage explain -f "$(spec_file)" -- ask-claude -f notes.md "summarize"
     grep -qE '^\s+flag\s+--file\s+notes.md' <<<"$output"
-    ! grep -q refused <<<"$output"
+    refute grep -q refused <<<"$output"
 }
 
 @test "one-shot: --web and --mcp reach the request; a non-https MCP URL exits 2 first" {

@@ -19,7 +19,7 @@ load helpers
     run usage explain -f "$(spec_file)" -- ask-claude -p openai --base-url https://api.venice.ai/api/v1 "hi"
     grep -qE '^\s+flag\s+--provider\s+openai' <<<"$output"
     grep -qE '^\s+flag\s+--base-url\s+https://api.venice.ai/api/v1' <<<"$output"
-    ! grep -q refused <<<"$output"
+    refute grep -q refused <<<"$output"
 }
 
 @test "provider: an unknown provider exits 2" {

@@ -131,7 +131,7 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
 
 # bats test_tags=bash-only
 @test "resources: the token never goes on a command line" {
-    ! grep -qE -- '--arg(json)? +token' "$BIN"
+    refute grep -qE -- '--arg(json)? +token' "$BIN"
     grep -q 'env.GITHUB_TOKEN' "$ROOT/lib/session-create.jq"
 }
 
@@ -153,7 +153,7 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sessions/events-refused" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" agent resume sesn_FIXTURE01 <<<$'again\n/quit\n'
     [ "$status" -eq 0 ]
     grep -q 'is archived' <<<"$stderr"
-    ! grep -q '^pong' <<<"$output"
+    refute grep -q '^pong' <<<"$output"
 }
 
 @test "live paths: waiting on something this version cannot answer interrupts and exits 1" {

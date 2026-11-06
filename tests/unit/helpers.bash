@@ -49,3 +49,10 @@ spec_file() {
         printf '%s\n' "$TMP/spec/ask-claude"
     fi
 }
+
+# refute <command...>: the command must fail. A bare `! cmd` on any line but
+# the last never fails a bats test (bash exempts negated commands from
+# errexit, shellcheck SC2314); a function that returns the negation does.
+refute() {
+    ! "$@"
+}

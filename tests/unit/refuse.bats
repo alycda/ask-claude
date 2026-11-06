@@ -22,7 +22,7 @@ refused() { # args...
     unset ANTHROPIC_API_KEY
     run --separate-stderr env -u ANTHROPIC_API_KEY ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" -p anthropic "hi"
     [ "$status" -eq 2 ]
-    ! grep -q 'not implemented' <<<"$stderr"
+    refute grep -q 'not implemented' <<<"$stderr"
     grep -q 'ANTHROPIC_API_KEY' <<<"$stderr"
 }
 

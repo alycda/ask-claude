@@ -30,9 +30,11 @@ jobs:
 
       - name: shellcheck
         run: |
+          set -euo pipefail
           shellcheck --version | head -2
-          shellcheck -x ask-claude tests/record-session.sh tests/unit/helpers.bash \
-            tests/unit/*.bats tools/effver/bump-effver tools/effver/check-effver
+          mapfile -t files < <(git grep -l -E '^#!/usr/bin/env (bash|bats|-S usage bash)$' -- . ; git ls-files '*.bash')
+          printf '%s\n' "${files[@]}"
+          shellcheck -x "${files[@]}"
 
   spec:
     name: "the #USAGE spec parses"

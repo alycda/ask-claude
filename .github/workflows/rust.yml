@@ -1,0 +1,75 @@
+# The Rust port (rust/, docs/plan.md phase 4), only when its files or the spec
+# it must match change. Two steps must pass from the first scaffold: the crate
+# builds, and `just parity` finds no breaking difference between the two
+# usage specs. fmt, clippy and the tests are allowed to fail until the port
+# clears its gates: the golden tests are red on todo!() by design until each
+# step lands, and a spike may be unformatted. Flip continue-on-error off when
+# the parity gate's verified commit says so.
+name: Rust
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rust/**'
+      - 'ask-claude'
+      - 'tests/fixtures/**'
+      - 'mise.toml'
+      - 'mise.lock'
+      - 'justfile'
+      - '.github/workflows/rust.yml'
+  pull_request:
+    paths:
+      - 'rust/**'
+      - 'ask-claude'
+      - 'tests/fixtures/**'
+      - 'mise.toml'
+      - 'mise.lock'
+      - 'justfile'
+      - '.github/workflows/rust.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: build, parity, then the soft checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The workflow exists ahead of the crate: until the port's line merges,
+      # main has no rust/ and mise.toml pins no rust, so every later step is
+      # skipped rather than failing on a toolchain that is not declared yet.
+      - name: Is the crate here?
+        id: crate
+        run: |
+          if [ -f rust/Cargo.toml ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "no rust/Cargo.toml on this tree; nothing to build yet"; fi
+
+      - uses: jdx/mise-action@v5
+        if: steps.crate.outputs.present == 'true'
+        with:
+          install_args: rust usage just
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.crate.outputs.present == 'true'
+        with:
+          workspaces: rust
+
+      - name: Build
+        if: steps.crate.outputs.present == 'true'
+        run: just rust-build
+
+      - name: Parity of the two usage specs
+        if: steps.crate.outputs.present == 'true'
+        run: just parity
+
+      - name: fmt and clippy (soft until the foundations land)
+        if: steps.crate.outputs.present == 'true'
+        continue-on-error: true
+        run: just rust-lint
+
+      - name: Tests (soft until the parity gate)
+        if: steps.crate.outputs.present == 'true'
+        continue-on-error: true
+        run: just rust-test

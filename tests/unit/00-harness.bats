@@ -1,9 +1,17 @@
 #!/usr/bin/env bats
 load helpers
 
+# present <file>: the fixture exists and is not empty, else say which one is
+# missing. A bare `[ -s ]` fails without a name, and the first guess is then
+# that the test is wrong; the fixtures are gitignored by pattern with tracked
+# exceptions, so a missing one is usually an exception that was not added.
+present() {
+    [ -s "$1" ] || { echo "missing fixture: ${1#"$ROOT/"}" >&2; return 1; }
+}
+
 @test "harness: fixtures are present and parse" {
     for f in text thinking code-execution pause-turn refusal web-search web-fetch mcp; do
-        [ -s "$FIX/sse/$f.sse" ]
+        present "$FIX/sse/$f.sse"
         events "$f" | jq -e 'select(.type=="message_stop")' >/dev/null
     done
     jq -e '.error.type == "not_found_error"' "$FIX/sse/error.sse"
@@ -28,7 +36,7 @@ sessions() { sed -n 's/^data: //p' "$FIX/sessions/$1.sse"; }
 
 @test "harness: session fixtures parse and end in idle or terminated" {
     for f in text budget error confirm/1 confirm/2 custom-tool/1 custom-tool/2 custom-tool/3; do
-        [ -s "$FIX/sessions/$f.sse" ]
+        present "$FIX/sessions/$f.sse"
         sessions "$f" | jq -e 'select(.type=="session.status_idle" or .type=="session.status_terminated")' >/dev/null
         last=$(sessions "$f" | tail -n 1 | jq -r .type)
         [ "$last" = session.status_idle ] || [ "$last" = session.status_terminated ]

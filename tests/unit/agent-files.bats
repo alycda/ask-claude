@@ -42,7 +42,7 @@ request() { sed -n "$1p" "$TMP/requests.jsonl"; }
     run --separate-stderr replay files sesn_FIXTURE01 result.txt
     [ "$status" -eq 0 ]
     [ "$(cat "$TMP/result.txt")" = "OUT" ]
-    [ "$(stat -c %a "$TMP/result.txt")" = "600" ]
+    [ "$(stat -c %a "$TMP/result.txt" 2>/dev/null || stat -f %Lp "$TMP/result.txt")" = "600" ]
     grep -q 'result.txt' <<<"$stderr"
 }
 

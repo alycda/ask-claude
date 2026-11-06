@@ -55,6 +55,9 @@ something stays in history; squash only fixups with no lesson.
   retires a rule.
 - `REVIEW.md` — how review behaves here: what a finding needs, the
   severities, what not to flag.
+- `CONCEPTS.md` — shared domain vocabulary (entities, named processes,
+  status concepts). Relevant when orienting to the codebase or discussing
+  domain concepts.
 - `docs/plan.md` — decisions, commit graph, per-commit validation and
   status.
 - `docs/plans/` — implementation plans written by `ce-plan`.

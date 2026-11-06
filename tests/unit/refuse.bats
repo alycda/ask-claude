@@ -12,6 +12,7 @@ refused() { # args...
     [ -z "$(ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null)" ]
 }
 
+# bats test_tags=bash-only
 @test "refuse: -p openai, with the pointer to the plan" {
     refused -p openai "hi"
     grep -q '^ask-claude: --provider openai is not implemented in the bash version, see docs/plan.md$' <<<"$stderr"

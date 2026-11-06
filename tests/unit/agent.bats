@@ -129,6 +129,7 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# bats test_tags=bash-only
 @test "resources: the token never goes on a command line" {
     ! grep -qE -- '--arg(json)? +token' "$BIN"
     grep -q 'env.GITHUB_TOKEN' "$ROOT/lib/session-create.jq"

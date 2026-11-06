@@ -63,6 +63,7 @@ confirm_fixture() {
     printf '%s\n\n' "$usage" 'data: {"type":"session.status_idle","stop_reason":{"type":"end_turn"}}' >"$1/2.sse"
 }
 
+# bats test_tags=bash-only
 @test "confirm: an always answer left by an earlier process with this PID answers nothing" {
     confirm_fixture "$TMP/fx"
     mkdir -p "$XDG_STATE_HOME/ask-claude"

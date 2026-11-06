@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# bats file_tags=bash-only
 # What another local account can read: a process's command line. Neither the
 # key nor request text (a -f file, a typed line) may appear on the command
 # line of anything the script starts. A jq shim first on PATH records every

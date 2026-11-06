@@ -17,9 +17,17 @@ ask question="" *FLAGS:
 completions shell *flags:
     usage generate completion {{ quote(shell) }} ask-claude -f ask-claude {{ flags }}
 
+# Skips the tests tagged pty, which need a terminal name readline reports
+# bracketed paste for (`just pty-test` runs them), and rust-only, behaviour the
+# script does not have.
+
 # offline: bats over recorded fixtures (tests/unit), no key needed
 unit-tests:
-    bats tests/unit
+    bats --filter-tags '!pty,!rust-only' tests/unit
+
+# the pty-tagged tests alone, under a TERM readline reports bracketed paste for
+pty-test:
+    TERM=xterm-256color bats --filter-tags pty tests/unit
 
 unit-test unit:
     bats tests/unit/{{ quote(unit) }}.bats

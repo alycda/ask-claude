@@ -8,6 +8,7 @@ load helpers
     grep -qE '^\s+flag\s+--provider\s+anthropic' <<<"$output"
 }
 
+# bats test_tags=bash-only
 @test "provider: openai is refused by the bash version, exit 2" {
     run --separate-stderr "$BIN" -p openai "hi"
     [ "$status" -eq 2 ]

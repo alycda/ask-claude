@@ -59,6 +59,7 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
     [ "$output" = "ask-claude $(cat "$ROOT/VERSION")" ]
 }
 
+# bats test_tags=bash-only
 @test "version: the script's copy matches VERSION (just check-version-line)" {
     grep -qx "readonly ASK_CLAUDE_VERSION=$(cat "$ROOT/VERSION")" "$BIN"
 }

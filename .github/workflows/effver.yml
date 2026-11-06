@@ -1,9 +1,10 @@
-# EffVer. check-effver verifies that VERSION and CHANGELOG.md agree in every
-# commit of the range, and fails the job when they do not. A second step runs
-# a usage diff of the #USAGE spec since the last version commit and writes
-# the effort floor to the job summary, as `just effort-floor` prints it
-# locally. The floor is advice to the person cutting the release, so it never
-# fails the job.
+# EffVer. `just check-effver` verifies that VERSION and CHANGELOG.md agree
+# in every commit of the range, and fails the job when they do not.
+# `just effort-floor` runs a usage diff of the #USAGE spec since the last
+# version commit, and the summary shows it. Both recipes pick git when there
+# is no .jj, so the runner and a local checkout print the same thing. The
+# floor is advice to the person cutting the release, so it never fails the
+# job.
 name: EffVer
 
 on:
@@ -25,7 +26,7 @@ jobs:
 
       - uses: jdx/mise-action@v5
         with:
-          install_args: usage
+          install_args: usage just
 
       - name: check-effver over the range
         env:
@@ -34,27 +35,18 @@ jobs:
           set -euo pipefail
           if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
             echo "no base to compare against (first push?); checking HEAD alone"
-            tools/effver/check-effver HEAD~1..HEAD
+            just check-effver HEAD~1..HEAD
           else
-            tools/effver/check-effver "$BASE..HEAD"
+            just check-effver "$BASE..HEAD"
           fi
 
       - name: the effort floor, from the spec since the last version commit
         run: |
           set -euo pipefail
-          rel="$(git log -1 --format=%H HEAD -- VERSION)"
-          [ "$rel" != "$(git rev-parse HEAD)" ] || rel="$(git log -1 --format=%H HEAD~1 -- VERSION)"
-          mkdir -p /tmp/floor/old /tmp/floor/new
-          git show "$rel:ask-claude" > /tmp/floor/old/ask-claude
-          cp ask-claude /tmp/floor/new/ask-claude
           {
-            echo "### Effort floor since $(git log -1 --format=%s "$rel")"
+            echo "### Effort floor"
             echo
             echo '```'
-            if usage diff /tmp/floor/old/ask-claude /tmp/floor/new/ask-claude; then
-              echo "floor: micro (no breaking interface change)"
-            else
-              echo "floor: meso (breaking interface change; macro if it hits most users)"
-            fi
+            just effort-floor
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"

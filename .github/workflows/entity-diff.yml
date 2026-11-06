@@ -21,4 +21,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: Ataraxy-Labs/sem/action@v0.29.1
+      - uses: Ataraxy-Labs/sem/action@04f6990ca0c58fd01e9b78a48fee387596edc983 # v0.29.1

@@ -50,6 +50,11 @@ something stays in history; squash only fixups with no lesson.
 
 ## Where things are
 
+- `CODING_STANDARDS.md` — the rules code here follows. Read it before
+  writing or reviewing code; update it when a change establishes or
+  retires a rule.
+- `REVIEW.md` — how review behaves here: what a finding needs, the
+  severities, what not to flag.
 - `docs/plan.md` — decisions, commit graph, per-commit validation and
   status.
 - `docs/plans/` — implementation plans written by `ce-plan`.

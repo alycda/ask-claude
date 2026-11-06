@@ -10,6 +10,28 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.5 (micro) - 2026-11-06
+
+- Ten fixes from the security audit (`docs/security-audit/`): `--base-url`
+  checks the parsed host, so `http://localhost:@example.com` no longer sends
+  the key to example.com; the `always` answer to a tool confirmation ends with
+  its process instead of living on as a file a later process could inherit;
+  every Managed Agents value the script prints goes through `safe`; the
+  confirmation prompt shows the tool input encoded once; request text reaches
+  jq on stdin, never on a command line; the API session id is validated
+  before it names a file; `agent files` writes a fresh temp file, never
+  through a symlink; the session fold has explicit defaults, so jq 1.8 folds
+  a turn; the recorder redacts ids as values only, and more kinds of them;
+  `check-effver` validates the parent `VERSION` before arithmetic.
+- The session fixtures are live recordings, ids redacted; the harness says
+  which streams are recorded and which are derived, and names a missing one.
+- The gates report zero failures with their exclusions in the command:
+  `just unit-tests` skips the terminal-bound test, which `just pty-test` runs
+  alone; the script-bound tests are tagged for the Rust suite to skip.
+  `usage` is pinned at 7.3.0.
+- Adopting needs no change from 0.2.4: a `--base-url` with user info before
+  the host and an `always` grant that outlived its process were bugs.
+
 ## 0.2.4 (micro) - 2026-11-05
 
 - `--web` lets the model search and fetch the web; `--mcp <https url>` lets it

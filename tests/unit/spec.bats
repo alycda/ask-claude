@@ -3,10 +3,10 @@ load helpers
 
 # The #USAGE block in ask-claude, checked with usage itself.
 
-explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
+explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
 
 @test "spec: parses and lists both subcommands in --help" {
-    run usage bash "$BIN" --help
+    run "$BIN" --help
     [ "$status" -eq 0 ]
     grep -qE '^\s+list\b'   <<<"$output"
     grep -qE '^\s+resume\b' <<<"$output"
@@ -65,9 +65,9 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
 }
 
 @test "completions: usage generates a script for each shell from the spec" {
-    usage generate completion zsh  ask-claude -f "$BIN" | grep -q '^#compdef ask-claude$'
-    usage generate completion bash ask-claude -f "$BIN" | grep -q 'complete .*ask-claude'
-    usage generate completion fish ask-claude -f "$BIN" | grep -q 'complete .*ask-claude'
+    usage generate completion zsh ask-claude -f "$(spec_file)" | grep -q '^#compdef ask-claude$'
+    usage generate completion bash ask-claude -f "$(spec_file)" | grep -q 'complete .*ask-claude'
+    usage generate completion fish ask-claude -f "$(spec_file)" | grep -q 'complete .*ask-claude'
 }
 
 # agent: a Managed Agents session (docs/plans/2026-11-05-001 U3)
@@ -114,7 +114,7 @@ explain() { usage explain -f "$BIN" -- ask-claude "$@"; }
     # same file name on both sides: usage names the spec after the file
     mkdir -p "$TMP/old" "$TMP/new"
     jj file show -r v0.1.4 ask-claude > "$TMP/old/ask-claude" 2>/dev/null || skip "no v0.1.4 bookmark here"
-    cp "$BIN" "$TMP/new/ask-claude"
+    cp "$(spec_file)" "$TMP/new/ask-claude"
     run usage diff "$TMP/old/ask-claude" "$TMP/new/ask-claude"
     [ "$status" -ne 0 ]
     grep -q 'Found 1 breaking' <<<"$output"

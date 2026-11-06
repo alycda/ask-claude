@@ -73,7 +73,7 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
 }
 
 @test "spec: -f --file binds" {
-    run usage explain -f "$BIN" -- ask-claude -f notes.md "summarize"
+    run usage explain -f "$(spec_file)" -- ask-claude -f notes.md "summarize"
     grep -qE '^\s+flag\s+--file\s+notes.md' <<<"$output"
     ! grep -q refused <<<"$output"
 }

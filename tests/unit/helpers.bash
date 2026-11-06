@@ -34,3 +34,18 @@ assert_golden() {
         return 1
     fi
 }
+
+# spec_file: a file `usage` can read the #USAGE spec from, for the binary
+# under test. The script is that file itself (usage parses its header
+# comments). The Rust binary prints its spec with --usage-spec; it is
+# written under the same name, ask-claude, because usage names the spec
+# after the file and the tests match on that name.
+spec_file() {
+    if head -c 64 "$BIN" | grep -q '^#!.*usage'; then
+        printf '%s\n' "$BIN"
+    else
+        mkdir -p "$TMP/spec"
+        "$BIN" --usage-spec >"$TMP/spec/ask-claude"
+        printf '%s\n' "$TMP/spec/ask-claude"
+    fi
+}

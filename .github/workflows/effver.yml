@@ -1,8 +1,9 @@
-# EffVer: VERSION and CHANGELOG.md agree in every commit of the range, and
-# the effort floor from a usage diff of the #USAGE spec since the last
-# version commit is written to the job summary, as `just effort-floor` prints
-# it locally. The floor is advice to the person cutting the release, so it
-# never fails the job; check-effver does.
+# EffVer. check-effver verifies that VERSION and CHANGELOG.md agree in every
+# commit of the range, and fails the job when they do not. A second step runs
+# a usage diff of the #USAGE spec since the last version commit and writes
+# the effort floor to the job summary, as `just effort-floor` prints it
+# locally. The floor is advice to the person cutting the release, so it never
+# fails the job.
 name: EffVer
 
 on:

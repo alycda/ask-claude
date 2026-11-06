@@ -1,8 +1,9 @@
-# The offline gate for the bash script, on the toolchain mise.toml pins and
-# mise.lock checksums: bats over the recorded fixtures, the one terminal-bound
-# test under a TERM readline accepts, the version line, and the rule that
-# every fixture is tracked. No live recipe runs here: `just test`,
-# `just test-openai` and `just test-agents` spend tokens and need keys.
+# The offline gate for the bash script. mise installs the toolchain mise.toml
+# pins, checked against mise.lock. The job runs bats over the recorded
+# fixtures, the one terminal-bound test under a TERM readline accepts, the
+# version-line check, and the rule that every fixture is tracked. No recipe
+# that calls the model runs here: `just test`, `just test-openai` and
+# `just test-agents` spend tokens and need keys.
 name: Bash
 
 on:
@@ -24,8 +25,8 @@ jobs:
         with:
           install_args: jq usage bats just
 
-      # TERM is unset on a runner, which is the case the pty tag exists for:
-      # unit-tests must report zero failures without it.
+      # TERM is unset on a runner. That is the case the pty tag exists for:
+      # unit-tests must pass without it.
       - name: Unit tests
         run: just unit-tests
 
@@ -36,9 +37,10 @@ jobs:
         run: just check-version-line
 
       # Fixtures are gitignored by pattern with tracked exceptions. A rule that
-      # starts matching a tracked fixture leaves it tracked here but ignored for
-      # the next clone that re-adds it; a missing exception for a new fixture
-      # directory already shows up as the harness test naming the file.
+      # starts matching a tracked fixture leaves it tracked here, but a clone
+      # that re-records it cannot add the file back. A missing exception for a
+      # new fixture directory needs no check here: the harness test already
+      # names the missing file.
       - name: No tracked fixture matches an ignore rule
         run: |
           set -euo pipefail

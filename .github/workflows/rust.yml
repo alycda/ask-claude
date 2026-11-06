@@ -1,10 +1,10 @@
-# The Rust port (rust/, docs/plan.md phase 4), only when its files or the spec
-# it must match change. Two steps must pass from the first scaffold: the crate
-# builds, and `just parity` finds no breaking difference between the two
-# usage specs. fmt, clippy and the tests are allowed to fail until the port
-# clears its gates: the golden tests are red on todo!() by design until each
-# step lands, and a spike may be unformatted. Flip continue-on-error off when
-# the parity gate's verified commit says so.
+# Checks on the Rust port (rust/, docs/plan.md phase 4), run only when its
+# files or the spec it must match change. Two steps must pass from the first
+# scaffold: the crate builds, and `just parity` finds no breaking difference
+# between the two usage specs. fmt, clippy and the tests are allowed to fail
+# until the port clears its gates: the golden tests are red on todo!() by
+# design until each step lands, and a spike may be unformatted. Turn
+# continue-on-error off when the parity gate's verified commit says so.
 name: Rust
 
 on:
@@ -38,9 +38,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The workflow exists ahead of the crate: until the port's line merges,
+      # The workflow exists ahead of the crate. Until the port's line merges,
       # main has no rust/ and mise.toml pins no rust, so every later step is
-      # skipped rather than failing on a toolchain that is not declared yet.
+      # skipped instead of failing on a toolchain that is not declared yet.
       - name: Is the crate here?
         id: crate
         run: |

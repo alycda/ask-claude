@@ -1,7 +1,8 @@
-# Static checks on the shell: shellcheck over the script, the recorder, the
-# test helpers and files, and the EffVer tools; and a parse of the #USAGE
-# spec by the usage CLI the script runs under. shfmt is not here yet: the
-# script is not in shfmt's shape, and a formatting commit comes first.
+# Static checks on the shell. shellcheck runs over the script, the recorder,
+# the test helpers, the bats files and the EffVer tools. A second job parses
+# the #USAGE spec with the usage CLI the script runs under. shfmt is not here
+# yet: the script is not in shfmt's shape, and a formatting commit comes
+# first.
 name: Lint
 
 on:
@@ -19,9 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # shellcheck at the version mise.toml pins, not the runner image's (0.9.0
-      # there, which reports what 0.11.0 does not); tests/unit/.shellcheckrc
-      # names the bats idioms it would otherwise flag.
+      # shellcheck at the version mise.toml pins, not the runner image's. The
+      # image ships 0.9.0, which reports findings 0.11.0 does not.
+      # tests/unit/.shellcheckrc names the bats idioms shellcheck would
+      # otherwise flag.
       - uses: jdx/mise-action@v5
         with:
           install_args: shellcheck

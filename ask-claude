@@ -247,14 +247,15 @@ chat_loop() {
 transport() {
   local body
   body=$(cat)
-  # the log line goes down before anything is sent, as the sessions path does
-  # it: `tee -a LOG | cat REPLAY` lost the line whenever the replay side had
-  # already exited, because GNU tee writes to the pipe first and dies on the
-  # SIGPIPE before it reaches the file (BSD tee ignores the signal).
+  # The log line is written before anything is sent, as the sessions path
+  # does it. The old `tee -a LOG | cat REPLAY` lost the line whenever the
+  # replay side had already exited: GNU tee writes to the pipe first and dies
+  # on the SIGPIPE before it reaches the file. BSD tee ignores the signal.
   # A log that cannot be written fails the request, as the tee inside the
   # pipefail pipeline did; a test that reads the log then sees this message
   # instead of jq failing on a file that is not there.
-  if [ -n "${ASK_CLAUDE_REQUEST_LOG:-}" ] && ! printf '%s\n' "$body" >>"$ASK_CLAUDE_REQUEST_LOG"; then
+  if [ -n "${ASK_CLAUDE_REQUEST_LOG:-}" ] && ! printf '%s
+' "$body" >>"$ASK_CLAUDE_REQUEST_LOG"; then
     echo "ask-claude: the request log $ASK_CLAUDE_REQUEST_LOG cannot be written; nothing sent" >&2
     return 1
   fi

@@ -1,0 +1,28 @@
+---
+syntax: bash
+tags: [ bash, files ]
+---
+# Update a file "in place": write a temp, then rename (mv is atomic on one filesystem)
+tmp=$(mktemp "$f.XXXXXX") && jq '.[:-1]' "$f" > "$tmp" && mv "$tmp" "$f"
+
+# Create or truncate to empty
+: > "$log"
+
+# Read a one-line secret, dropping all whitespace (trailing newline included)
+key=$(tr -d '[:space:]' < ~/.config/anthropic/api_key)
+
+# Whole file into a variable ($( ) strips trailing newlines)
+body="$(cat notes.md)"
+
+# Files you create are private (history, keys, logs)
+umask 077
+mkdir -p "$HOME/.local/state/myscript"
+
+# Newest first, for display only
+ls -1t "$dir"/*.json
+
+# To loop over files, glob; don't parse `ls` (names with spaces split)
+for f in "$dir"/*.json; do
+    [ -e "$f" ] || continue          # no matches: the glob stays literal
+    printf '%s\n' "$f"
+done

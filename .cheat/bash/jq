@@ -1,0 +1,25 @@
+---
+syntax: bash
+tags: [ bash, jq, json ]
+---
+# Pass shell values INTO jq as variables; never splice them into the filter text
+jq -n --arg m "$MODEL" --argjson max "$MAX_TOKENS" '{model:$m, max_tokens:$max}'
+#   --arg name val          always a string
+#   --argjson name val      parsed as JSON (numbers, objects); errors if invalid
+#   --slurpfile name file   the file's JSON values, as an array: $name[0]
+jq -n --slurpfile msgs hist.json '{messages:$msgs[0]}'
+
+# Optional keys: add an object, or {}
+jq -n --arg sys "${SYSTEM:-}" '{} + (if $sys != "" then {system:$sys} else {} end)'
+
+# Comma list -> JSON array
+printf '%s' "a,b" | tr ',' '\n' | jq -R -s -c 'split("\n") | map(select(length > 0))'
+#   -R raw text in   -s slurp everything   -c compact out
+
+# Output for the shell
+jq -r '.id // empty' resp.json   # raw string; prints nothing (not "null") when missing
+jq -rj '.text' resp.json         # raw, no newline between outputs (live streaming)
+jq --unbuffered '.' resp.json    # flush each output (needed in the middle of a pipe)
+
+# Big or secret text goes in on stdin, not argv (argv is visible in ps, capped by ARG_MAX)
+printf '%s' "$text" | jq -R -s '{role:"user", content:.}'

@@ -1,0 +1,30 @@
+---
+syntax: bash
+tags: [ bash, strings, variables ]
+---
+# Default when unset OR empty; safe under `set -u`
+model="${MODEL:-claude-opus-5-5}"
+
+# Optional positional arg under `set -u` (bare "$1" is an "unbound variable" error)
+case "${1:-}" in --list) echo list ;; esac
+
+# Strip a prefix (#) or suffix (%) with builtins: no sed, no subprocess
+line='data: {"type":"ping"}'
+printf '%s\n' "${line#data: }"     # => {"type":"ping"}
+f=/state/20261106T0208.json
+printf '%s\n' "${f##*/}"           # => 20261106T0208.json   (## = longest match)
+printf '%s\n' "${f%.json}"         # => /state/20261106T0208
+
+# basename does both in one call, at the cost of a process
+basename "$f" .json                # => 20261106T0208
+
+# ANSI-C quoting: real newlines (or tabs, \e, ...) inside a string
+prefix="$(cat notes.md)"$'\n\n'
+
+# "$*" joins all args into ONE word with spaces; "$@" keeps each arg separate
+prompt="$prefix$*"
+
+# Arithmetic; SECONDS counts up from shell start
+t0=$SECONDS
+rounds=$((rounds + 1))
+echo "took $((SECONDS - t0))s"

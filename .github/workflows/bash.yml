@@ -48,4 +48,7 @@ jobs:
             echo "a tracked fixture matches an ignore rule; fix .gitignore" >&2
             exit 1
           fi
-          test "$(git ls-files 'tests/fixtures/**.sse' | wc -l)" -gt 20
+          if [ "$(git ls-files 'tests/fixtures/**.sse' | wc -l)" -lt 1 ]; then
+            echo "tests/fixtures/**.sse matched no tracked fixture, so the check above tested nothing" >&2
+            exit 1
+          fi

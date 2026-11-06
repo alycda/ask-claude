@@ -8,7 +8,7 @@
 #          inside it so no test touches ~/.local/state
 
 ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-BIN="${ASK_CLAUDE_BIN:-$ROOT/ask-claude.sh}"
+BIN="${ASK_CLAUDE_BIN:-$ROOT/ask-claude}"
 FIX="$ROOT/tests/fixtures"
 
 setup() {

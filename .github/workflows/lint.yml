@@ -1,0 +1,48 @@
+# Static checks on the shell: shellcheck over the script, the recorder, the
+# test helpers and files, and the EffVer tools; and a parse of the #USAGE
+# spec by the usage CLI the script runs under. shfmt is not here yet: the
+# script is not in shfmt's shape, and a formatting commit comes first.
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # shellcheck at the version mise.toml pins, not the runner image's (0.9.0
+      # there, which reports what 0.11.0 does not); tests/unit/.shellcheckrc
+      # names the bats idioms it would otherwise flag.
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: shellcheck
+
+      - name: shellcheck
+        run: |
+          shellcheck --version | head -2
+          shellcheck -x ask-claude tests/record-session.sh tests/unit/helpers.bash \
+            tests/unit/*.bats tools/effver/bump-effver tools/effver/check-effver
+
+  spec:
+    name: "the #USAGE spec parses"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: usage
+
+      - name: usage reads the spec and explains a call
+        run: |
+          usage explain -f ask-claude -- ask-claude -m haiku "hello" | grep -E '^\s+flag\s+--model\s+haiku'
+          usage generate completion zsh ask-claude -f ask-claude | grep -q '^#compdef ask-claude$'

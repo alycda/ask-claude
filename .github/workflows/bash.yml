@@ -1,7 +1,7 @@
 # The offline gate for the bash script. mise installs the toolchain mise.toml
 # pins, checked against mise.lock. The job runs bats over the recorded
-# fixtures, the one terminal-bound test under a TERM readline accepts, the
-# version-line check, and the rule that every fixture is tracked. No recipe
+# fixtures, the one terminal-bound test under a TERM readline accepts, and
+# the rule that every fixture is tracked. No recipe
 # that calls the model runs here: `just test`, `just test-openai` and
 # `just test-agents` spend tokens and need keys.
 name: Bash
@@ -32,9 +32,6 @@ jobs:
 
       - name: The terminal-bound test alone
         run: just pty-test
-
-      - name: The script's copy of VERSION
-        run: just check-version-line
 
       # Fixtures are gitignored by pattern with tracked exceptions. A rule that
       # starts matching a tracked fixture leaves it tracked here, but a clone

@@ -159,7 +159,10 @@ parity: build
     set -euo pipefail
     usage diff ask-claude <(rust/target/debug/ask-claude --usage-spec)
 
+# Skips pty like unit-tests, and bash-only: the tests that read the script as a
+# file or pin what only the script does.
+
 # the bats suite against the Rust binary (R5 onwards; bash stays the oracle until R8)
 [group('rust')]
 test-rust: build
-    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats tests/unit
+    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats --filter-tags '!pty,!bash-only' tests/unit

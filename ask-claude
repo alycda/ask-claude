@@ -16,6 +16,8 @@
 #USAGE cmd "resume" help="continue a chat" {
 #USAGE   arg "[chat]" help="chat name or unique prefix; newest chat if omitted"
 #USAGE }
+# shellcheck shell=bash
+# shellcheck disable=SC2154  # usage_* vars are set by the usage runtime
 
 set -uo pipefail
 

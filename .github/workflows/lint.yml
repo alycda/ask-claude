@@ -46,3 +46,15 @@ jobs:
         run: |
           usage explain -f ask-claude -- ask-claude -m haiku "hello" | grep -E '^\s+flag\s+--model\s+haiku'
           usage generate completion zsh ask-claude -f ask-claude | grep -q '^#compdef ask-claude$'
+
+  workflows:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: just
+
+      - run: just actionlint

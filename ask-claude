@@ -1,5 +1,5 @@
 #!/usr/bin/env -S usage bash
-#USAGE about "chat loop; /new resets, /quit exits"
+#USAGE about "chat loop (messages api); /new resets, /quit exits"
 #USAGE unknown_flags "error"
 #USAGE arg "[prompt]" help="one shot, prints the response"
 #USAGE flag "-m --model <model>" help="a full model id (see https://platform.claude.com/docs/en/api/cli/models/list)" default="claude-opus-5-5" global=#true

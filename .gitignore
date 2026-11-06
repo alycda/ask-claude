@@ -33,3 +33,6 @@ target
 
 # rustc will dump stack traces when hitting an internal compiler error to PWD
 rustc-ice-*.txt
+
+# compound engineering plugin scratch space
+.context/compound-engineering/

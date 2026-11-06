@@ -21,9 +21,9 @@ jobs:
       - uses: actions/checkout@v7
 
       # shellcheck at the version mise.toml pins, not the runner image's. The
-      # image ships 0.9.0, which reports findings 0.11.0 does not.
-      # tests/unit/.shellcheckrc names the bats idioms shellcheck would
-      # otherwise flag.
+      # image ships 0.9.0, which reports findings 0.11.0 does not. The bats
+      # files that use an idiom shellcheck reads as a mistake name the code
+      # at their top.
       - uses: jdx/mise-action@v5
         with:
           install_args: shellcheck

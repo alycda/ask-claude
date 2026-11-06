@@ -1,0 +1,26 @@
+{
+  "name": "ask-claude",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/mise:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "davidanson.vscode-markdownlint",
+        "editorconfig.editorconfig",
+        "hverlin.mise-vscode"
+      ],
+      "settings": {
+        "mise.configureExtensionsAutomatically": false
+      }
+    }
+  },
+  "mounts": [],
+  "containerEnv": {
+    "CHEAT_CONFIG_PATH": "${containerWorkspaceFolder}/cheat.yml",
+    "MISE_DISABLE_UPDATE_WARNING": "true"
+  },
+  "remoteEnv": {},
+  "postCreateCommand": "mkdir -p ~/.config/cheat/cheatsheets/personal && mise install"
+}

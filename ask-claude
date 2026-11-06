@@ -1,0 +1,22 @@
+#!/usr/bin/env -S usage bash
+#USAGE about "chat loop; /new resets, /quit exits"
+#USAGE unknown_flags "error"
+#USAGE arg "[prompt]" help="one shot, prints the response"
+#USAGE flag "-m --model <model>" help="haiku, sonnet, opus, fable, or a full model id" default="claude-opus-5-5"
+#USAGE flag "-e --effort <effort>" help="how hard the model thinks" default="medium" {
+#USAGE   choices "low" "medium" "high" "xhigh" "max"
+#USAGE }
+#USAGE flag "-S --system <system>" help="system prompt"
+#USAGE flag "-s --skills <skills>" help="comma-separated <skill_id>[@<version>]"
+#USAGE flag "-f --file <file>" help="prepend this file's contents to the prompt"
+#USAGE flag "-p --provider <provider>" help="anthropic|openai; only anthropic is implemented in bash" default="anthropic"
+#USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider"
+#USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000"
+#USAGE cmd "list" help="chats on disk, newest first"
+#USAGE cmd "resume" help="continue a chat" {
+#USAGE   arg "[chat]" help="chat name or unique prefix; newest chat if omitted"
+#USAGE }
+
+set -uo pipefail
+
+echo "hello, world"

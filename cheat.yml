@@ -1,0 +1,25 @@
+---
+# cheat config, found through CHEAT_CONFIG_PATH set in .devcontainer.json.
+# The project's sheets in .cheat/ need no entry: cheat finds the nearest .cheat
+# directory above the working directory on its own (`cheat -d` lists it as "cwd").
+
+# Overridden by $VISUAL or $EDITOR.
+editor: /usr/bin/editor
+colorize: true
+style: monokai
+formatter: terminal256
+pager: less -FRX
+
+cheatpaths:
+  # Your own sheets, outside the repo. Created by postCreateCommand; lost when
+  # the container is rebuilt unless you mount it.
+  - name: personal
+    path: ~/.config/cheat/cheatsheets/personal
+    tags: [ personal ]
+    readonly: false
+  # Community sheets (tar, curl, ...). To install:
+  #   git clone https://github.com/cheat/cheatsheets ~/.config/cheat/cheatsheets/community
+  #- name: community
+  #  path: ~/.config/cheat/cheatsheets/community
+  #  tags: [ community ]
+  #  readonly: true

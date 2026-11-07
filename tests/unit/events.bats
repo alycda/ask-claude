@@ -253,3 +253,26 @@ events_fixture_log() {
         ASK_CLAUDE_REPLAY="$TMP/bad" "$BIN" agent resume sesn_FIXTURE01 <<<$'again\n/quit\n'
     jq -e '.kind=="session" and .error=="unreadable"' "$(LOG)"
 }
+
+# ---- a session that never started ----------------------------------------
+
+@test "events: a refused session create is a line with the API's error type and no chat" {
+    mkdir -p "$TMP/nocreate"
+    printf '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}\n' >"$TMP/nocreate/create.json"
+    run --separate-stderr env ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE \
+        ASK_CLAUDE_REPLAY="$TMP/nocreate" "$BIN" agent "my secret prompt" </dev/null
+    [ "$status" -eq 1 ]
+    [ "$(wc -l <"$(LOG)")" -eq 1 ]
+    jq -e '.kind=="session" and .chat==null and .error=="authentication_error" and .input_tokens==null' "$(LOG)"
+    refute grep -q 'secret\|x-api-key' "$(LOG)"
+}
+
+@test "events: a session create that returns no usable id is an unreadable line" {
+    mkdir -p "$TMP/badid"
+    printf '{"id":"../../../victim.txt","status":"running"}\n' >"$TMP/badid/create.json"
+    run --separate-stderr env ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE \
+        ASK_CLAUDE_REPLAY="$TMP/badid" "$BIN" agent "ping" </dev/null
+    [ "$status" -eq 1 ]
+    jq -e '.kind=="session" and .chat==null and .error=="unreadable"' "$(LOG)"
+    refute grep -q 'victim' "$(LOG)"
+}

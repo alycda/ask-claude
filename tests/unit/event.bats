@@ -119,3 +119,9 @@ event() {
     [ "$(event session "$TMP/s.json" 0 "" sesn_FIXTURE01 | jq -r .list_cost)" = 12.5 ]
     [ "$(event session "$TMP/x.json" 0 "" sesn_FIXTURE01 | jq -r .list_cost)" = unknown ]
 }
+
+@test "event: an empty chat is null, not unknown" {
+    echo null | jq -c --arg ts 2026-11-07T00:00:00Z --arg version 0.2.7 --arg kind session --arg chat "" \
+        --arg host api.anthropic.com --argjson round 0 --argjson seconds 0 --arg error unreadable \
+        -f "$ROOT/lib/event.jq" | jq -e '.chat==null'
+}

@@ -123,3 +123,72 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     [ "$(wc -l <<<"$output")" -eq 1 ]
     refute grep -q events <<<"$output"
 }
+
+# ---- Managed Agents sessions ---------------------------------------------
+
+agent() { ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE ASK_CLAUDE_REPLAY="$FIX/sessions/$1" "$BIN" agent "${@:2}"; }
+
+@test "events: a session turn writes one session line" {
+    run --separate-stderr agent text.sse "my secret prompt" </dev/null
+    [ "$status" -eq 0 ]
+    [ "$(wc -l <"$(LOG)")" -eq 1 ]
+    jq -e '.kind=="session" and .usage_scope=="session" and (.chat|startswith("sesn_")) and .stop_reason=="end_turn"' "$(LOG)"
+    jq -e '.list_cost=="0" and .cache_write==4311 and .model==null and .error==null' "$(LOG)"
+    refute grep -q 'secret' "$(LOG)"
+}
+
+@test "events: a session chat writes a line per turn, usage only grows" {
+    run --separate-stderr env ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE \
+        ASK_CLAUDE_REPLAY="$FIX/sessions/chat" "$BIN" agent <<<$'hi\nagain\n/quit'
+    [ "$(wc -l <"$(LOG)")" -ge 2 ]
+    jq -s -e 'all(.kind=="session") and ([.[].chat]|unique|length)==1' "$(LOG)"
+    jq -s -e '[.[].input_tokens] as $t | [range(1; $t|length) | $t[.] >= $t[.-1]] | all' "$(LOG)"
+}
+
+@test "events: a session line counts the custom-tool rounds answered" {
+    run --separate-stderr agent custom-tool "ping" </dev/null
+    [ "$status" -eq 0 ]
+    [ "$(wc -l <"$(LOG)")" -eq 1 ]
+    jq -e '.round==2' "$(LOG)"
+}
+
+@test "events: a session error is a line with its type and none of its message" {
+    run --separate-stderr agent error.sse "ping" </dev/null
+    [ "$status" -eq 1 ]
+    [ "$(wc -l <"$(LOG)")" -eq 1 ]
+    jq -e '.kind=="session" and .error=="api_error"' "$(LOG)"
+    refute grep -q 'could not be started' "$(LOG)"
+}
+
+@test "events: a wait this version cannot answer is an unanswerable line" {
+    run --separate-stderr agent waiting-unknown "ping" </dev/null
+    [ "$status" -eq 1 ]
+    jq -e '.error=="unanswerable"' "$(LOG)"
+}
+
+@test "events: a terminated session is a normal line with its stop reason" {
+    run --separate-stderr agent terminated "ping" </dev/null
+    [ "$status" -eq 1 ]
+    [ "$(wc -l <"$(LOG)")" -eq 1 ]
+    jq -e '.stop_reason=="terminated" and .error==null' "$(LOG)"
+}
+
+@test "events: a refused events POST is a line with the API's error type" {
+    run --separate-stderr env ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE \
+        ASK_CLAUDE_REPLAY="$FIX/sessions/events-refused" "$BIN" agent resume sesn_FIXTURE01 <<<$'again\n/quit\n'
+    jq -e '.kind=="session" and .error=="invalid_request_error"' "$(LOG)"
+    refute grep -q 'archived' "$(LOG)"
+}
+
+@test "events: a session stream that never came is a no_response line" {
+    mkdir -p "$TMP/none"
+    run --separate-stderr env ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE \
+        ASK_CLAUDE_REPLAY="$TMP/none" "$BIN" agent "ping" </dev/null
+    [ "$status" -eq 1 ]
+    jq -e '.kind=="session" and .error=="no_response"' "$(LOG)"
+}
+
+@test "events: ASK_CLAUDE_EVENTS=off writes nothing on the session path" {
+    ASK_CLAUDE_EVENTS=off agent text.sse "ping" </dev/null >/dev/null 2>&1
+    [ ! -e "$(LOG)" ]
+}

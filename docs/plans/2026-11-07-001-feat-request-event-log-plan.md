@@ -46,6 +46,7 @@ Carried from the origin doc, with the same IDs.
 - **Session usage is cumulative.** `lib/session-fold.jq` takes the last `session.usage`, which covers the session so far, not just the turn. The fixtures confirm it: `sessions/chat/*.sse` and `sessions/custom-tool/*.sse` only grow. The line says so with `usage_scope: "session"`, against `"request"` for Messages lines.
 - **One session line per turn.** This supersedes the origin's note that each custom-tool round gets its own line. The fold, and so the usage, is only known once per stream, and it is cumulative, so per-round lines would carry no extra information. The line's `round` is the number of custom-tool rounds answered. Turns that stop after the footer (`requires_action` after the round cap, `terminated`, `budget_reached`) get a normal line with that `stop_reason` and `error: null`.
 - **Error category, never error text.** When the error body is JSON with an `error.type`, the category is that type (for example `overloaded_error`). JSON without a type, which is what `ma_call` writes when curl fails, is `no_response`. Otherwise the category is `no_response`, `parse` or `unreadable`. A session also gets `interrupted` and `unanswerable`. The error message is never written, because it can quote request content back.
+- **Strings from the API are validated, not trusted.** `model`, the advisor model, the error category, `stop_category` and the session id come from the endpoint, which `--base-url` can point anywhere. `lib/event.jq` keeps each one only if it matches `^[A-Za-z0-9._:-]{1,64}$`, and writes `"unknown"` otherwise. R6 then holds by construction rather than by trusting the server, and README queries never print control characters.
 - **Host only.** `--base-url` already refuses user info (`ask-claude`, the `BASE_URL` check). The line keeps only the host and port, so no path or query string reaches the log.
 - **Whole seconds.** The line uses the footer's `$SECONDS` arithmetic. Milliseconds would need `EPOCHREALTIME`, which macOS `/bin/bash` 3.2 lacks, and the field would then have two precisions.
 - **`ASK_CLAUDE_EVENTS=off` is the only new variable.** Tests already move the state directory through `XDG_STATE_HOME`, so no path override is needed. Any other value, or unset, means on.
@@ -109,6 +110,8 @@ Line shape, directional only. Absent advisor fields are `null`.
   - `sessions/text.fold.json` and `sessions/budget.fold.json` → `kind: session`, `usage_scope: session`, `list_cost` carried as given.
   - `null` input with `error=overloaded_error` → model and usage fields null, `error: "overloaded_error"`.
   - Privacy: for every golden, no string value contains a text block's text or a tool input from its source fixture.
+  - Hostile endpoint: a hand-written input whose `model`, `error.type`, `stop_details.category` and advisor model hold prompt text, spaces, a newline and an escape character → each field is `"unknown"`, and the golden has no control characters.
+  - Boundary: a 64-character identifier is kept and a 65-character one becomes `"unknown"`.
 - **Verification:** `just unit-tests` passes and `shellcheck -x ask-claude` is clean (the check `.github/workflows/lint.yml` runs).
 
 ### U2. Write lines on the Messages path
@@ -173,7 +176,9 @@ Line shape, directional only. Absent advisor fields are `null`.
   - README: a new `## Events on disk` section after `## Chats on disk`, with location, privacy, a field table, the note that session usage is cumulative, and five `jq` queries. The queries are tokens per chat, cache hit rate (`cache_read / (input + cache_read + cache_write)`), mean and max seconds by model, refusals by category, and advisor tokens by advisor model.
   - `docs/plan.md`: the Phase 4 row for its R6 gains "event log lines" and points at `tests/unit/events.bats`. Its R5 seam already runs these tests against the Rust binary.
   - Version: `just bump` with the effort it measures. The log is new behaviour and a new variable.
-- **Test scenarios:** Each README query runs against a file built from the U2 and U3 replays and returns one non-empty result. These go in `tests/unit/events.bats`, so the queries cannot rot.
+- **Test scenarios:** `tests/unit/events.bats` extracts each fenced `jq` block under `## Events on disk` in `README.md`, so a README edit is exactly what the tests run. Each block runs against a file built from the U2 and U3 replays and returns one non-empty result.
+  - Exactly five query blocks are found, so a heading rename or a lost fence fails the test rather than silently testing nothing.
+  - A query that `jq` rejects fails the test and names the block.
 - **Verification:** `just unit-tests` passes, `just check-version-line` passes, and the README's queries are the ones the tests run.
 
 ---

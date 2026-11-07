@@ -648,7 +648,7 @@ session_cleanup() {
 # session_create <prompt>: POST /v1/sessions with the prompt as the first
 # event; prints the new session id, or an API error and returns 1.
 session_create() {
-  local body resp sesn err
+  local body resp sesn err failure t0=$SECONDS
   # the prompt on stdin, not on jq's command line (see ask)
   body=$(printf '%s' "$1" | jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" --arg file "${session_file_id:-}" --arg file_name "$(basename "${usage_file:-}")" \
     --arg vaults "${usage_vault:-}" --arg repo "${usage_repo:-}" --arg memories "${usage_memory:-}" \
@@ -659,6 +659,8 @@ session_create() {
     err=$(api_error "$resp")
     [ -n "$err" ] || err="unreadable response"
     echo "ask-claude: API error: $err" >&2
+    failure=$(error_kind <<<"$resp")
+    echo null | event session 0 $((SECONDS - t0)) "$failure" ""
     return 1
   fi
   # the id names a file under sessions/ and goes into URL paths and the
@@ -666,6 +668,7 @@ session_create() {
   # outside sessions/)
   if ! session_id_ok "$sesn"; then
     echo "ask-claude: API error: the session id is not one (sesn_ and letters, digits, _ or -)" >&2
+    echo null | event session 0 $((SECONDS - t0)) unreadable ""
     return 1
   fi
   echo "$sesn"

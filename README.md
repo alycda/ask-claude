@@ -69,13 +69,18 @@ A `pause_turn` continuation is its own request, so it gets its own line. A
 Managed Agents session gets one line per turn, and its usage is the
 session's so far (`usage_scope: "session"`). To total a session, take the
 last line or the maximum, not the sum.
+A session that fails to start gets one error line with `chat: null`.
+
+One known gap: Ctrl-C during a Messages request ends the script before the
+line is written, so an interrupted Messages request leaves no line. A session
+turn interrupted with Ctrl-C writes `interrupted`.
 
 | Field | Value |
 | --- | --- |
 | `v`, `ask_claude` | line format (1) and script version |
 | `ts` | UTC, ISO 8601, to the second |
 | `kind` | `messages` or `session` |
-| `chat` | the chat's name as `list` shows it, or the session id |
+| `chat` | the chat's name as `list` shows it, the session id, or `null` for a session that never started |
 | `host` | the API host and port from `--base-url`, no path |
 | `model` | the replying model (`null` for sessions) |
 | `round` | `pause_turn` round from 0, or custom-tool rounds answered |

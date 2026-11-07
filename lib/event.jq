@@ -39,7 +39,7 @@ def cents: if . == null then null elif type == "number" then tostring
     ask_claude: ($version | ident),
     ts: ($ts | ident),
     kind: (if $s then "session" else "messages" end),
-    chat: ($chat | ident),
+    chat: (if $chat == "" then null else $chat | ident end),
     host: ($host | hostname),
     model: (if $s then null else $in.model // null | ident end),
     round: $round,

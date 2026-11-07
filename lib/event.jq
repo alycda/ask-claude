@@ -19,16 +19,22 @@
 #
 # The tests compare with tests/fixtures/events/*.jsonl byte for byte, so the
 # key order below is part of the format: the Rust port writes the same.
-
+# \A and \z, not ^ and $: in Oniguruma $ also matches before a final newline
 def ident: if . == null then null
-  elif type == "string" and test("^[A-Za-z0-9._:-]{1,64}$") then .
+  elif type == "string" and test("\\A[A-Za-z0-9._:-]{1,64}\\z") then .
   else "unknown" end;
-def hostname: if type == "string" and test("^[A-Za-z0-9.:\\[\\]-]{1,255}$") then . else "unknown" end;
+def hostname: if type == "string" and test("\\A[A-Za-z0-9.:\\[\\]-]{1,255}\\z") then . else "unknown" end;
+# token counts: a number, or null; a string here could be anything
+def num: if type == "number" then . else null end;
+# cents, as the API gives them (a string), or a number made into one
+def cents: if . == null then null elif type == "number" then tostring
+  elif type == "string" and test("\\A[0-9]+(\\.[0-9]+)?\\z") then .
+  else "unknown" end;
 
-. as $in
+(if type == "object" then . else null end) as $in
 | ($kind == "session") as $s
-| ($in.usage // null) as $u
-| ([$u.iterations[]? | select(.type == "advisor_message")]) as $a
+| ($in.usage // null | if type == "object" then . else null end) as $u
+| ([$u.iterations[]? | select(type == "object" and .type == "advisor_message")]) as $a
 | { v: 1,
     ask_claude: ($version | ident),
     ts: ($ts | ident),
@@ -39,16 +45,16 @@ def hostname: if type == "string" and test("^[A-Za-z0-9.:\\[\\]-]{1,255}$") then
     round: $round,
     seconds: $seconds,
     stop_reason: ($in.stop_reason // null | ident),
-    stop_category: ($in.stop_details.category // null | ident),
+    stop_category: ($in.stop_details.category? // null | ident),
     usage_scope: (if $s then "session" else "request" end),
-    input_tokens: $u.input_tokens,
-    output_tokens: $u.output_tokens,
-    cache_read: (if $u == null then null elif $s then $u.cache_read else $u.cache_read_input_tokens // 0 end),
-    cache_write: (if $u == null then null elif $s then $u.cache_write else $u.cache_creation_input_tokens // 0 end),
-    list_cost: (if $s then $u.list_cost // null | ident else null end),
+    input_tokens: ($u.input_tokens | num),
+    output_tokens: ($u.output_tokens | num),
+    cache_read: (if $u == null then null elif $s then $u.cache_read | num else $u.cache_read_input_tokens // 0 | num end),
+    cache_write: (if $u == null then null elif $s then $u.cache_write | num else $u.cache_creation_input_tokens // 0 | num end),
+    list_cost: (if $s then $u.list_cost | cents else null end),
     advisor: (if ($a | length) > 0 then
                 { model: ($a[0].model | ident), calls: ($a | length),
-                  input_tokens: ($a | map(.input_tokens // 0) | add),
-                  output_tokens: ($a | map(.output_tokens // 0) | add) }
+                  input_tokens: ($a | map(.input_tokens | num // 0) | add),
+                  output_tokens: ($a | map(.output_tokens | num // 0) | add) }
               else null end),
     error: (if $error == "" then null else $error | ident end) }

@@ -54,13 +54,16 @@ An empty chat leaves no file.
 
 ## Events on disk
 
-Every API request appends one JSON line to `events.jsonl` in the same
-directory. It holds what the footer shows: tokens, timing and outcome. It
-never holds prompt or reply text, file contents, tool inputs, error messages
-or the key. Strings that come from the API (model, error type, stop category,
-session id) are kept only when they look like identifiers, and anything else
-is written as `"unknown"`. The file is private (mode 600) and only ever
-appended to. `ASK_CLAUDE_EVENTS=off` turns it off.
+Every Messages request and every Managed Agents session turn appends one
+JSON line to `events.jsonl` in the same directory. It holds what the footer
+shows: tokens, timing and outcome. It never holds prompt or reply text, file
+contents, tool inputs, error messages or the key. Strings that come from the
+API (model, error type, stop category, session id) are kept only when they
+look like identifiers, and anything else is written as `"unknown"`. Token
+counts that are not numbers are written as `null`. That bounds what an
+endpoint can slip in, but a single word that looks like an identifier still
+passes. The file is private (mode 600) and only ever appended to.
+`ASK_CLAUDE_EVENTS=off` turns it off.
 
 A `pause_turn` continuation is its own request, so it gets its own line. A
 Managed Agents session gets one line per turn, and its usage is the
@@ -82,7 +85,7 @@ last line or the maximum, not the sum.
 | `input_tokens`, `output_tokens`, `cache_read`, `cache_write` | tokens |
 | `list_cost` | sessions only: the API's cost so far, in cents, as a string |
 | `advisor` | `{model, calls, input_tokens, output_tokens}`, or `null` |
-| `error` | `null`, the API's error type, or `no_response`, `parse`, `unreadable`, `interrupted`, `unanswerable` |
+| `error` | `null`, the API's error type, `unknown` (an error without one), or `no_response`, `parse`, `unreadable`; sessions also `interrupted` (Ctrl-C) and `unanswerable` |
 
 Five questions, each answered with `jq` alone:
 

@@ -149,8 +149,14 @@ event() {
   line=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg version "$ASK_CLAUDE_VERSION" \
     --arg kind "$1" --argjson round "$2" --argjson seconds "$3" --arg error "$4" \
     --arg chat "$5" --arg host "$HOST" -f "$LIB/event.jq" 2>/dev/null) || return 0
-  { printf '%s\n' "$line" >>"$STATE/events.jsonl"; } 2>/dev/null || :
+  # in a subshell: a signal from the write (SIGXFSZ at a ulimit -f) ends it,
+  # not the script
+  (printf "%s\n" "$line" >>"$STATE/events.jsonl") 2>/dev/null || :
 }
+
+# error_kind: the event-log category for an error body on stdin: its
+# error.type, unknown for JSON without one, unreadable for anything else
+error_kind() { jq -rs 'if (.[0] | type) == "object" then .[0].error.type // "unknown" else "unreadable" end' 2>/dev/null || echo unreadable; }
 
 # A fresh history path; the PID keeps two processes started in the same second
 # apart.
@@ -338,15 +344,14 @@ call() {
       # not SSE: an HTTP error body
       err=$(api_error "$(cat "$log")")
       [ -n "$err" ] || err="unreadable response"
-      failure=$(jq -r 'if type == "object" then .error.type // empty else empty end' "$log" 2>/dev/null)
-      [ -n "$failure" ] || failure=unreadable
+      failure=$(error_kind <"$log")
     elif ! resp=$(sse_data <"$log" | jq -s -f "$LIB/reassemble.jq"); then
       # a reply jq cannot fold is an error, not an empty turn that vanishes
       err="the reply could not be parsed"
       resp=null failure=parse
     else
       err=$(printf '%s' "$resp" | jq -r "$SAFE"'.error.message // empty | safe')
-      failure=$(printf '%s' "$resp" | jq -r '.error.type // "unknown"')
+      [ -z "$err" ] || failure=$(printf '%s' "$resp" | error_kind)
     fi
     if [ -n "$err" ]; then
       rm -f "$log"
@@ -438,10 +443,10 @@ ma_call() {
   fi
   if [ -n "$body" ]; then
     printf '%s' "$body" | curl -sS -g --max-time 120 -X "$method" "$BASE_URL/v1$path" -H @<(ma_headers) --data-binary @- ||
-      echo '{"error":{"message":"no response (curl failed or timed out)"}}'
+      echo '{"error":{"type":"no_response","message":"no response (curl failed or timed out)"}}'
   else
     curl -sS -g --max-time 120 -X "$method" "$BASE_URL/v1$path" -H @<(ma_headers) ||
-      echo '{"error":{"message":"no response (curl failed or timed out)"}}'
+      echo '{"error":{"type":"no_response","message":"no response (curl failed or timed out)"}}'
   fi
 }
 
@@ -558,9 +563,9 @@ session_turn() {
       err=$(api_error "$resp")
       if [ -n "$err" ]; then
         echo "ask-claude: API error: $err" >&2
-        # ma_call's own curl-failure body has no type
-        failure=$(jq -r '.error.type // empty' <<<"$resp" 2>/dev/null)
-        echo null | event session $rounds $((SECONDS - t0)) "${failure:-no_response}" "$sesn"
+        # ma_call's own curl-failure body says no_response
+        failure=$(error_kind <<<"$resp")
+        echo null | event session $rounds $((SECONDS - t0)) "$failure" "$sesn"
         session_cleanup "$log"
         return 1
       fi
@@ -614,7 +619,8 @@ session_turn() {
   session_cleanup "$log"
   jq -r --arg s "$sesn" --argjson t $((SECONDS - t0)) "$SAFE$DOLLARS"'.usage
     | "[\($s) in=\(.input_tokens) out=\(.output_tokens) cache_read=\(.cache_read) cache_write=\(.cache_write) cost=\(.list_cost | dollars) \($t)s]" | safe' <<<"$fold" >&2
-  event session $rounds $((SECONDS - t0)) "" "$sesn" <<<"$fold"
+  # at the cap the last round was counted but not answered
+  event session $((rounds > 8 ? 8 : rounds)) $((SECONDS - t0)) "" "$sesn" <<<"$fold"
   case "$stop" in
   end_turn | "") ;;
   requires_action)

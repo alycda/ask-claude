@@ -141,3 +141,70 @@ setup_repo() {
     [ "$status" -eq 2 ]
     grep -q 'usage: just check-effver <git range>' <<<"$output"
 }
+
+@test "effort-floor: a feature landed on a released main measures from that release" {
+    # main's tip is the release; the merge brings in no release, so the floor
+    # is since that release, not the one before it
+    setup_repo
+    release 0.1.0 macro
+    spec '-e --effort <effort>'
+    release 0.2.0 macro
+    git checkout -q -b feature
+    printf 'notes\n' >README.md
+    commit "a feature"
+    git checkout -q main
+    git -c user.name=t -c user.email=t@t merge -q --no-ff -m "merge feature" feature
+    run just effort-floor
+    grep -qE '^since [0-9a-f]{12}, version\(0\.2\.0\): macro$' <<<"$output"
+    grep -q '^floor: micro' <<<"$output"
+}
+
+@test "effort-floor: an octopus landing on a released main measures from that release" {
+    setup_repo
+    release 0.1.0 macro
+    spec '-e --effort <effort>'
+    release 0.2.0 macro
+    git checkout -q -b f1
+    printf 'one\n' >one
+    commit "one"
+    git checkout -q main
+    git checkout -q -b f2
+    printf 'two\n' >two
+    commit "two"
+    git checkout -q main
+    git -c user.name=t -c user.email=t@t merge -q --no-ff -m "merge f1 f2" f1 f2
+    run just effort-floor
+    grep -qE '^since [0-9a-f]{12}, version\(0\.2\.0\): macro$' <<<"$output"
+}
+
+@test "effort-floor: when both sides carry a release, main's release is the baseline" {
+    setup_repo
+    release 0.1.0 macro
+    git checkout -q -b pr
+    spec
+    spec '-m --model <model>' '-e --effort <effort>'
+    release 0.3.0 macro
+    git checkout -q main
+    spec '-e --effort <effort>'
+    release 0.2.0 macro
+    git -c user.name=t -c user.email=t@t merge -q --no-ff --no-commit pr || true
+    git checkout -q --theirs -- VERSION CHANGELOG.md ask-claude
+    commit "merge pr"
+    run just effort-floor
+    grep -qE '^since [0-9a-f]{12}, version\(0\.2\.0\): macro$' <<<"$output"
+}
+
+@test "effort-floor: a release that is itself a merge measures from the release before it" {
+    setup_repo
+    release 0.1.0 macro
+    git checkout -q -b feature
+    printf 'notes\n' >README.md
+    commit "a feature"
+    git checkout -q main
+    git -c user.name=t -c user.email=t@t merge -q --no-ff --no-commit feature
+    spec '-e --effort <effort>'
+    release 0.2.0 macro
+    run just effort-floor
+    grep -qE '^since [0-9a-f]{12}, version\(0\.1\.0\): macro$' <<<"$output"
+    grep -q '^floor: meso' <<<"$output"
+}

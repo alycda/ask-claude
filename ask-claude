@@ -101,6 +101,9 @@ https://*) ;;
   ;;
 esac
 API="${BASE_URL%/}/v1/messages"
+# the event log records where requests went, never the path or a query
+HOST="${BASE_URL#*://}"
+HOST="${HOST%%/*}"
 
 # --mcp: servers the model may call through the MCP connector; https only,
 # like the docs require, and checked here so a typo is exit 2, not a 400.
@@ -133,6 +136,21 @@ SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 
 # line, `agent list` and `agent budget`
 # shellcheck disable=SC2016  # a jq program, not a shell string
 DOLLARS='def dollars: (tonumber / 100) as $d | "$" + ($d | floor | tostring) + "." + (($d * 100 | round) % 100 | tostring | if length < 2 then "0" + . else . end); '
+
+# event <kind> <round> <seconds> <error> <chat>: append one line to the event
+# log, built by lib/event.jq from the message, fold or null on stdin. Tokens,
+# timing and outcome only, never prompt, reply or error text. Off with
+# ASK_CLAUDE_EVENTS=off. A log that cannot be written is skipped in silence:
+# the redirect sits inside the group, because bash reports a failed >> open
+# before a trailing 2>/dev/null applies.
+event() {
+  local line
+  [ "${ASK_CLAUDE_EVENTS:-}" != off ] || return 0
+  line=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg version "$ASK_CLAUDE_VERSION" \
+    --arg kind "$1" --argjson round "$2" --argjson seconds "$3" --arg error "$4" \
+    --arg chat "$5" --arg host "$HOST" -f "$LIB/event.jq" 2>/dev/null) || return 0
+  { printf '%s\n' "$line" >>"$STATE/events.jsonl"; } 2>/dev/null || :
+}
 
 # A fresh history path; the PID keeps two processes started in the same second
 # apart.
@@ -277,8 +295,9 @@ transport() {
 # with the history rolled back to before this ask. A pause_turn (server tool
 # still working) is continued automatically, up to 8 rounds.
 call() {
-  local body resp err stop rounds=0 n0 log t0 skills cid
+  local body resp err stop rounds=0 n0 log t0 skills cid failure chat
   n0=$(jq length "$HIST")
+  chat=$(basename "$HIST" .json)
   # Skills run in Anthropic's code-execution sandbox, so -s also adds the
   # code_execution tool and its beta; the container id comes back in the
   # reply and is kept in $HIST.container so files persist across turns.
@@ -308,22 +327,31 @@ call() {
     [ -s "$log" ] || {
       rm -f "$log"
       echo "ask-claude: no response (curl failed or timed out)" >&2
+      echo null | event messages $rounds $((SECONDS - t0)) no_response "$chat"
       rollback_to $((n0 - 1))
       return 1
     }
+    # each arm names the failure for the event log: the API's error.type when
+    # there is one, never its message
+    resp=null
     if ! grep -q '^data: ' "$log"; then
       # not SSE: an HTTP error body
       err=$(api_error "$(cat "$log")")
       [ -n "$err" ] || err="unreadable response"
+      failure=$(jq -r 'if type == "object" then .error.type // empty else empty end' "$log" 2>/dev/null)
+      [ -n "$failure" ] || failure=unreadable
     elif ! resp=$(sse_data <"$log" | jq -s -f "$LIB/reassemble.jq"); then
       # a reply jq cannot fold is an error, not an empty turn that vanishes
       err="the reply could not be parsed"
+      resp=null failure=parse
     else
       err=$(printf '%s' "$resp" | jq -r "$SAFE"'.error.message // empty | safe')
+      failure=$(printf '%s' "$resp" | jq -r '.error.type // "unknown"')
     fi
     if [ -n "$err" ]; then
       rm -f "$log"
       echo "ask-claude: API error: $err" >&2
+      printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "$failure" "$chat"
       # a container the API no longer accepts (expired, deleted) would fail
       # every later turn of this chat: forget it, the next turn starts a new one
       [ -n "$cid" ] && case "$err" in *[Cc]ontainer*) rm -f "$HIST.container" ;; esac
@@ -343,6 +371,7 @@ call() {
       ([.usage.iterations[]? | select(.type == "advisor_message")]) as $a
       | (if ($a | length) > 0 then " advisor=\($a[0].model) in=\($a | map(.input_tokens // 0) | add) out=\($a | map(.output_tokens // 0) | add)" else "" end) as $adv
       | "[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens)\($adv) \($s)s]" | safe' >&2
+    printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "" "$chat"
     if [ "$stop" = "pause_turn" ] && [ $rounds -lt 8 ]; then
       rounds=$((rounds + 1))
       echo "[pause_turn: continuing, round $rounds]" >&2

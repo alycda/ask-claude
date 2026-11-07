@@ -20,28 +20,35 @@ check-version-line:
 effort-floor:
     #!/usr/bin/env bash
     set -euo pipefail
-    # tips: the parents of the jj working copy; in git, HEAD and, when HEAD is
-    # a merge, its parents, since a pull_request run checks out refs/pull/N/merge
-    # and a landing on main is a merge too
+    # The tip is HEAD in git; in jj it is the working copy when that is a merge
+    # and its parent otherwise, so an empty child of a merge and the merge
+    # itself agree with git. A merge's first parent is the side already
+    # released: a merge measures from the last version commit there. A version
+    # commit at a plain tip measures from the one before it.
     if [ -d .jj ]; then
-      tips='@-'
-      last() { jj log --no-graph -r "latest(::($1) & files(\"VERSION\"))" -T 'commit_id'; }
-      is_tip() { [ -n "$(jj log --no-graph -r "($tips) & $1" -T 'commit_id')" ]; }
-      before() { echo "$1-"; }
+      parents() { [ -n "$1" ] || return 0; jj log --no-graph -r "$1" -T 'parents.map(|p| p.commit_id()).join(" ")'; }
+      last() { [ -n "$1" ] || return 0; jj log --no-graph -r "latest(::$1 & files(\"VERSION\"))" -T 'commit_id'; }
       show() { jj file show -r "$1" "$2" 2>/dev/null; }
       subject() { jj log --no-graph -r "$1" -T 'description.first_line()'; }
+      wc="$(jj log --no-graph -r '@' -T 'commit_id')"
+      case "$(parents "$wc")" in *" "*) tip="$wc" ;; *) tip="$(parents "$wc")" ;; esac
     else
-      tips=HEAD
-      last() { git rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1 || return 0; git log -1 --format=%H "$1" -- VERSION; }
-      is_tip() { { git rev-parse HEAD; [ -z "$(git rev-list --no-walk --merges HEAD)" ] || git rev-parse "HEAD^@"; } | grep -qx "$1"; }
-      before() { echo "$1~1"; }
+      parents() { [ -n "$1" ] || return 0; git rev-list --parents -n1 "$1" | cut -s -d' ' -f2-; }
+      last() { [ -n "$1" ] && git rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1 || return 0; git log -1 --format=%H "$1" -- VERSION; }
       show() { git cat-file -e "$1:$2" 2>/dev/null && git show "$1:$2"; }
       subject() { git log -1 --format=%s "$1"; }
+      tip="$(git rev-parse HEAD)"
     fi
-    rel="$(last "$tips")"
-    if [ -n "$rel" ] && is_tip "$rel"; then rel="$(last "$(before "$rel")")"; fi
+    tip_parents="$(parents "$tip")"
+    first="${tip_parents%% *}"
+    if [ "${tip_parents#* }" != "$tip_parents" ]; then
+      rel="$(last "$first")"
+    else
+      rel="$(last "$tip")"
+      [ "$rel" != "$tip" ] || rel="$(last "$first")"
+    fi
     if [ -z "$rel" ]; then
-      echo "no commit touches VERSION yet: nothing to compare"
+      if [ -n "$(last "$tip")" ]; then echo "no version commit before the tip: nothing to compare"; else echo "no commit touches VERSION yet: nothing to compare"; fi
       exit 0
     fi
     tmp="$(mktemp -d)"

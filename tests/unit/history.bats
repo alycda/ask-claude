@@ -65,3 +65,16 @@ ONE='[{"role":"user","content":"second"}]'
     [ "$(ls "$(STATE_DIR)"/*.json | wc -l)" -eq 1 ]
     jq -e 'length==4 and .[2].content=="again"' "$(STATE_DIR)/20260101T000000.json"
 }
+
+@test "resume: a chat that used an advisor sends the advisor beta without --advisor" {
+    # the API refuses advisor blocks in the history without the beta
+    used=$(jq -c '[{role: "user", content: "q"}, {role: "assistant", content: .content}]' "$FIX/sse/advisor.message.json")
+    mkchat 20260101T000000 202601010000 "$used"
+    bash -c "printf 'again\n/quit\n' | ASK_CLAUDE_REPLAY='$FIX/sse/text.sse' ASK_CLAUDE_BETA_LOG='$TMP/betas' '$BIN' resume 20260101" >/dev/null 2>&1
+    grep -q 'advisor-tool-2026-03-01' "$TMP/betas"
+    rm -f "$TMP/betas"
+    mkchat 20260102T000000 202601020000 "$TWO"
+    bash -c "printf 'again\n/quit\n' | ASK_CLAUDE_REPLAY='$FIX/sse/text.sse' ASK_CLAUDE_BETA_LOG='$TMP/betas' '$BIN' resume 20260102" >/dev/null 2>&1
+    [ -s "$TMP/betas" ]
+    refute grep -q 'advisor' "$TMP/betas"
+}

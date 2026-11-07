@@ -14,6 +14,7 @@
 #USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000" global=#true
 #USAGE flag "--web" help="let the model search and fetch the web (server tools; searches cost extra)" global=#true
 #USAGE flag "--mcp <url>" help="an MCP server (https) the model may call; repeatable; ASK_CLAUDE_MCP_TOKEN for its auth" var=#true global=#true
+#USAGE flag "--advisor <model>" help="a model the reply may consult mid-turn (server tool, at most 3 calls a turn, billed at that model's rates); must be at least as capable as -m" global=#true
 #USAGE flag "-V --version" help="print the version"
 #USAGE cmd "list" help="chats on disk, newest first"
 #USAGE cmd "resume" help="continue a chat" {
@@ -53,7 +54,7 @@
 set -uo pipefail
 # The script ships as one file, so it carries its own copy of VERSION;
 # `just bump` rewrites this line and `just check-version-line` compares them.
-readonly ASK_CLAUDE_VERSION=0.2.5
+readonly ASK_CLAUDE_VERSION=0.2.6
 # History holds whole conversations, including -f file contents: every file
 # and directory this script creates is private to the user, whatever the
 # shell's umask.
@@ -241,12 +242,15 @@ chat_loop() {
 
 # transport: the request body on stdin, the raw SSE on stdout.
 # ASK_CLAUDE_REPLAY=<file.sse> replays a recording instead of calling curl;
-# ASK_CLAUDE_REQUEST_LOG=<file> appends each body that would have been sent.
+# ASK_CLAUDE_REQUEST_LOG=<file> appends each body that would have been sent,
+# and ASK_CLAUDE_BETA_LOG=<file> each request's anthropic-beta value, so a
+# replay test can see the header a recording never shows.
 # Neither the key nor the body goes on curl's command line, which other local
 # accounts can read: the headers come from a pipe and the body from stdin.
 transport() {
   local body
   body=$(cat)
+  [ -z "${ASK_CLAUDE_BETA_LOG:-}" ] || printf '%s\n' "$betas" >>"$ASK_CLAUDE_BETA_LOG"
   # The log line is written before anything is sent, as the sessions path
   # does it. The old `tee -a LOG | cat REPLAY` lost the line whenever the
   # replay side had already exited: GNU tee writes to the pipe first and dies
@@ -282,12 +286,17 @@ call() {
   betas="server-side-fallback-2026-07-01"
   [ -n "$skills" ] && betas="$betas,code-execution-2025-08-25"
   [ -z "${usage_mcp:-}" ] || betas="$betas,mcp-client-2025-11-20"
+  # the advisor beta also when the history holds advisor blocks, e.g. a chat
+  # resumed without --advisor: the API refuses those blocks without it
+  if [ -n "${usage_advisor:-}" ] || grep -q '"advisor_tool_result"' "$HIST"; then
+    betas="$betas,advisor-tool-2026-03-01"
+  fi
   while :; do
     cid=""
     [ -n "$skills" ] && [ -s "$HIST.container" ] && cid=$(cat "$HIST.container")
     body=$(jq -n -c --arg m "$usage_model" --argjson max "$usage_max_tokens" \
       --arg sys "${usage_system:-}" --arg eff "${usage_effort:-}" \
-      --arg skills "$skills" --arg cid "$cid" --arg web "${usage_web:+1}" --arg mcp "${usage_mcp:-}" \
+      --arg skills "$skills" --arg cid "$cid" --arg web "${usage_web:+1}" --arg mcp "${usage_mcp:-}" --arg advisor "${usage_advisor:-}" \
       --slurpfile msgs "$HIST" -f "$LIB/request.jq")
     log="$HIST.sse" t0=$SECONDS
     : >"$log"
@@ -328,7 +337,12 @@ call() {
     if [ -s "$HIST.container.tmp" ]; then mv "$HIST.container.tmp" "$HIST.container"; else rm -f "$HIST.container.tmp"; fi
     rm -f "$log"
     stop=$(printf '%s' "$resp" | jq -r "$SAFE"'.stop_reason | safe')
-    printf '%s' "$resp" | jq -r --argjson s $((SECONDS - t0)) "$SAFE"'"[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens) \($s)s]" | safe' >&2
+    # the top-level usage is the executor's alone; an advisor's tokens are in
+    # usage.iterations, billed at its own rates, so name them on the line too
+    printf '%s' "$resp" | jq -r --argjson s $((SECONDS - t0)) "$SAFE"'
+      ([.usage.iterations[]? | select(.type == "advisor_message")]) as $a
+      | (if ($a | length) > 0 then " advisor=\($a[0].model) in=\($a | map(.input_tokens // 0) | add) out=\($a | map(.output_tokens // 0) | add)" else "" end) as $adv
+      | "[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens)\($adv) \($s)s]" | safe' >&2
     if [ "$stop" = "pause_turn" ] && [ $rounds -lt 8 ]; then
       rounds=$((rounds + 1))
       echo "[pause_turn: continuing, round $rounds]" >&2

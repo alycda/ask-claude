@@ -1,0 +1,1 @@
+(advisor) Stop accepting new submissions, close the job channel only after all producers have finished, let the workers drain what remains and exit, wait on a WaitGroup (with a bounded timeout, after which unfinished jobs are explicitly persisted, logged, or retried), and only then close the result channels.

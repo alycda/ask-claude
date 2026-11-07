@@ -46,3 +46,13 @@ stream() { events "$1" | jq --unbuffered -rj -f "$ROOT/lib/stream.jq"; }
         assert_golden "$FIX/sse/$f.stream.txt" "$TMP/out.txt"
     done
 }
+
+@test "stream: an advisor call prints its marker, plaintext or encrypted advice alike" {
+    for f in advisor advisor-redacted; do
+        events "$f" | jq --unbuffered -rj -f "$ROOT/lib/stream.jq" > "$TMP/out.txt"
+        assert_golden "$FIX/sse/$f.stream.txt" "$TMP/out.txt"
+    done
+    # an advisor error names its code and the reply goes on
+    printf '%s\n' '{"type":"content_block_start","index":1,"content_block":{"type":"advisor_tool_result","tool_use_id":"srvtoolu_FIXTURE","content":{"type":"advisor_tool_result_error","error_code":"overloaded"}}}' |
+        jq -rj -f "$ROOT/lib/stream.jq" | grep -qx '(advisor error: overloaded) '
+}

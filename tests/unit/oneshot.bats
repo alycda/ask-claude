@@ -98,3 +98,25 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     grep -q 'request log' <<<"$stderr"
     [ ! -e "$TMP/nodir" ]
 }
+
+@test "one-shot: --advisor reaches the request, and the footer names the advisor's tokens" {
+    run --separate-stderr replay advisor-redacted -m claude-haiku-5-5 --advisor claude-haiku-5-5 "ping"
+    [ "$status" -eq 0 ]
+    jq -e '.tools[-1] == {type: "advisor_20260301", name: "advisor", model: "claude-haiku-5-5", max_uses: 3}' "$TMP/requests.jsonl"
+    grep -q '^(advisor) ' <<<"$output"
+    grep -qE 'out=120 advisor=claude-haiku-5-5 in=2623 out=754 ' <<<"$stderr"
+}
+
+@test "one-shot: without an advisor the footer has no advisor field" {
+    run --separate-stderr replay text "ping"
+    refute grep -q 'advisor=' <<<"$stderr"
+}
+
+@test "one-shot: --advisor sends the advisor beta, and without it there is none" {
+    ASK_CLAUDE_BETA_LOG="$TMP/betas" replay advisor-redacted -m claude-haiku-5-5 --advisor claude-haiku-5-5 "ping" >/dev/null 2>&1
+    grep -q 'advisor-tool-2026-03-01' "$TMP/betas"
+    rm -f "$TMP/betas"
+    ASK_CLAUDE_BETA_LOG="$TMP/betas" replay text "ping" >/dev/null 2>&1
+    [ -s "$TMP/betas" ]
+    refute grep -q 'advisor' "$TMP/betas"
+}

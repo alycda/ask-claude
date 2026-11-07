@@ -12,6 +12,7 @@ Owner: **A** = Alyssa writes the code, **C** = Claude writes tests/fixtures.
 | CLI shape | usage spec, subcommands `list` and `resume [chat]` | completion of chat names comes from `usage_cmd` |
 | Test seam | `ASK_CLAUDE_REPLAY=<file.sse>` replaces curl | every behaviour test runs offline against recorded fixtures |
 | Request log | `ASK_CLAUDE_REQUEST_LOG=<file>` appends each request body | lets replay tests assert what would have been sent (container id reuse) |
+| Beta log | `ASK_CLAUDE_BETA_LOG=<file>` appends each request's `anthropic-beta` value | the headers never reach the request log; lets replay tests assert which betas a turn sends (the advisor beta on resume) |
 | State dir | `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/` | tests point `XDG_STATE_HOME` at a temp dir |
 | Providers | contract tests now, implementation in Rust | OpenAI-style SSE is a second reassembler; not worth a bash twin |
 | History shape | merges for independent lines, chains for dependencies | see "Graph" |

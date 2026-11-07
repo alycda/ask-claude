@@ -34,7 +34,10 @@ def safe:
 (if .type == "content_block_start" then
     (if .content_block.type=="thinking" then "(thinking) "
              elif .content_block.type=="server_tool_use" and (.content_block.name == "web_search" or .content_block.name == "web_fetch") then "(\(.content_block.name)) "
+             elif .content_block.type=="server_tool_use" and .content_block.name == "advisor" then "(advisor) "
              elif .content_block.type=="server_tool_use" then "(running code) "
+             elif .content_block.type=="advisor_tool_result" and .content_block.content.type == "advisor_tool_result_error" then
+                 "(advisor error: \(.content_block.content.error_code // "?")) "
              elif .content_block.type=="mcp_tool_use" then "(mcp \(.content_block.server_name // "?")) "
              elif .content_block.type=="bash_code_execution_tool_result" then
                  "(result rc=\(.content_block.content.return_code | if type == "number" then tostring else "?" end)) "

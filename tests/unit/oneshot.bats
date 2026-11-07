@@ -109,7 +109,7 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
 
 @test "one-shot: without an advisor the footer has no advisor field" {
     run --separate-stderr replay text "ping"
-    ! grep -q 'advisor=' <<<"$stderr"
+    refute grep -q 'advisor=' <<<"$stderr"
 }
 
 @test "one-shot: --advisor sends the advisor beta, and without it there is none" {

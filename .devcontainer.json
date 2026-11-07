@@ -16,7 +16,9 @@
         "jacobpfeifer.pfeifer-hurl",
         "jetmartin.bats",
         "jq-syntax-highlighting.jq-syntax-highlighting",
+        "rust-lang.rust-analyzer",
         "skellock.just",
+        "tamasfe.even-better-toml",
         "timonwong.shellcheck"
       ],
       "settings": {

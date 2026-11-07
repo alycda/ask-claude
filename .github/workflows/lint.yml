@@ -24,7 +24,7 @@ jobs:
       # image ships 0.9.0, which reports findings 0.11.0 does not. The bats
       # files that use an idiom shellcheck reads as a mistake name the code
       # at their top.
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           install_args: shellcheck
 
@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           install_args: usage
 
@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           install_args: just
 

@@ -1,0 +1,52 @@
+# EffVer. `just check-effver` verifies that VERSION and CHANGELOG.md agree
+# in every commit of the range, and fails the job when they do not.
+# `just effort-floor` runs a usage diff of the #USAGE spec since the last
+# version commit, and the summary shows it. Both recipes pick git when there
+# is no .jj, so the runner and a local checkout print the same thing. The
+# floor is advice to the person cutting the release, so it never fails the
+# job.
+name: EffVer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  effver:
+    name: check-effver and the effort floor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: usage just
+
+      - name: check-effver over the range
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "no base to compare against (first push?); checking HEAD alone"
+            just check-effver HEAD~1..HEAD
+          else
+            just check-effver "$BASE..HEAD"
+          fi
+
+      - name: the effort floor, from the spec since the last version commit
+        run: |
+          set -euo pipefail
+          {
+            echo "### Effort floor"
+            echo
+            echo '```'
+            just effort-floor
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

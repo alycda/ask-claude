@@ -1,0 +1,54 @@
+# The offline gate for the bash script. mise installs the toolchain mise.toml
+# pins, checked against mise.lock. The job runs bats over the recorded
+# fixtures, the one terminal-bound test under a TERM readline accepts, and
+# the rule that every fixture is tracked. No recipe
+# that calls the model runs here: `just test`, `just test-openai` and
+# `just test-agents` spend tokens and need keys.
+name: Bash
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  bats:
+    name: bats, offline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: jq usage bats just
+
+      # TERM is unset on a runner. That is the case the pty tag exists for:
+      # unit-tests must pass without it.
+      - name: Unit tests
+        run: just unit-tests
+
+      - name: The terminal-bound test alone
+        run: just pty-test
+
+      # Fixtures are gitignored by pattern with tracked exceptions. A rule that
+      # starts matching a tracked fixture leaves it tracked here, but a clone
+      # that re-records it cannot add the file back. A missing exception for a
+      # new fixture directory needs no check here: the harness test already
+      # names the missing file.
+      - name: No tracked fixture matches an ignore rule
+        run: |
+          set -euo pipefail
+          if git ls-files -z 'tests/fixtures/**.sse' | git check-ignore --no-index -z --stdin -q; then
+            git ls-files -z 'tests/fixtures/**.sse' | git check-ignore --no-index -z --stdin -v \
+              | tr '\0' '\n' | paste - - - - \
+              | awk -F'\t' '$3 !~ /^!/ { print $4 " matches " $1 ":" $2 " " $3 }' >&2
+            echo "a tracked fixture matches an ignore rule; fix .gitignore" >&2
+            exit 1
+          fi
+          if [ "$(git ls-files 'tests/fixtures/**.sse' | wc -l)" -lt 1 ]; then
+            echo "tests/fixtures/**.sse matched no tracked fixture, so the check above tested nothing" >&2
+            exit 1
+          fi

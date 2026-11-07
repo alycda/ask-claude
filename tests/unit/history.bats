@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2012  # ls counts files in a test, where find would add nothing
 load helpers
 
 STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }

@@ -245,18 +245,27 @@ chat_loop() {
 # Neither the key nor the body goes on curl's command line, which other local
 # accounts can read: the headers come from a pipe and the body from stdin.
 transport() {
-  if [ -n "${ASK_CLAUDE_REQUEST_LOG:-}" ]; then
-    tee -a "$ASK_CLAUDE_REQUEST_LOG"
+  local body
+  body=$(cat)
+  # The log line is written before anything is sent, as the sessions path
+  # does it. The old `tee -a LOG | cat REPLAY` lost the line whenever the
+  # replay side had already exited: GNU tee writes to the pipe first and dies
+  # on the SIGPIPE before it reaches the file. BSD tee ignores the signal.
+  # A log that cannot be written fails the request, as the tee inside the
+  # pipefail pipeline did; a test that reads the log then sees this message
+  # instead of jq failing on a file that is not there.
+  if [ -n "${ASK_CLAUDE_REQUEST_LOG:-}" ] && ! printf '%s
+' "$body" >>"$ASK_CLAUDE_REQUEST_LOG"; then
+    echo "ask-claude: the request log $ASK_CLAUDE_REQUEST_LOG cannot be written; nothing sent" >&2
+    return 1
+  fi
+  if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
+    cat "$ASK_CLAUDE_REPLAY"
   else
-    cat
-  fi |
-    if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
-      cat "$ASK_CLAUDE_REPLAY"
-    else
-      curl -sS -N --max-time 1800 "$API" \
-        -H @<(headers "$betas") \
-        --data-binary @-
-    fi
+    printf '%s' "$body" | curl -sS -N --max-time 1800 "$API" \
+      -H @<(headers "$betas") \
+      --data-binary @-
+  fi
 }
 
 # call: send the whole history as-is and append the reply. Prints the text

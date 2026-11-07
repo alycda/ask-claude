@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016  # a jq program in single quotes mentions $ on purpose
 load helpers
 
 # lib/reassemble.jq one branch at a time. Each test feeds the reassembler only

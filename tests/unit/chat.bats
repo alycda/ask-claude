@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2012,SC2059  # ls counts files in a test; a format string from the test itself
 load helpers
 
 chat() { # stdin script

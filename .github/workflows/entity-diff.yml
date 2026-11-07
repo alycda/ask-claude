@@ -1,0 +1,28 @@
+# sem's entity-level diff as a pull request comment: functions, structs and
+# sections that changed, not lines. The same workflow alycda/dotfiles runs.
+# sem parses rust/, the TOML and JSON here, and Markdown. It does not parse
+# the extensionless bash script, the jq programs or the bats files, so until
+# the Rust port lands the comment mostly covers config and docs.
+name: Entity diff
+
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  entity-diff:
+    name: Sem entity diff
+    # a fork's pull request runs with a read-only token; the action then only
+    # warns that it could not comment, so the job would compute a diff nobody
+    # sees
+    if: github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: Ataraxy-Labs/sem/action@04f6990ca0c58fd01e9b78a48fee387596edc983 # v0.29.1
+        with:
+          # the binary the action downloads; without this it takes the latest release
+          sem-version: v0.29.1

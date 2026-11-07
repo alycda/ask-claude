@@ -90,3 +90,11 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     grep -q 'https' <<<"$stderr"
     [ ! -e "$TMP/requests.jsonl" ]
 }
+
+@test "one-shot: a request log that cannot be written fails the request before anything is sent" {
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/nodir/requests.jsonl" "$BIN" "ping"
+    [ "$status" -eq 1 ]
+    [ "$output" = "" ]
+    grep -q 'request log' <<<"$stderr"
+    [ ! -e "$TMP/nodir" ]
+}

@@ -32,7 +32,7 @@ effort-floor:
       subject() { jj log --no-graph -r "$1" -T 'description.first_line()'; }
     else
       tips=HEAD
-      last() { git log -1 --format=%H "$1" -- VERSION; }
+      last() { git rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1 || return 0; git log -1 --format=%H "$1" -- VERSION; }
       is_tip() { { git rev-parse HEAD; [ -z "$(git rev-list --no-walk --merges HEAD)" ] || git rev-parse "HEAD^@"; } | grep -qx "$1"; }
       before() { echo "$1~1"; }
       show() { git cat-file -e "$1:$2" 2>/dev/null && git show "$1:$2"; }

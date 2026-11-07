@@ -41,6 +41,7 @@ one, and `/quit` exits and prints the command to resume it.
 | `ASK_CLAUDE_REQUEST_LOG` | testing: append each request body to this file |
 | `ASK_CLAUDE_BETA_LOG` | testing: append each request's `anthropic-beta` header value to this file |
 | `ASK_CLAUDE_MCP_TOKEN` | authorization token for the `--mcp` servers |
+| `ASK_CLAUDE_EVENTS` | `off` turns off the event log (see "Events on disk") |
 
 Nothing else is read.
 
@@ -50,6 +51,83 @@ One JSON array of turns per chat, named by its start time
 (`20260102T150405.json`). A chat that used skills keeps its container id
 beside it in `<name>.json.container`, so the next turn reuses the container.
 An empty chat leaves no file.
+
+## Events on disk
+
+Every API request appends one JSON line to `events.jsonl` in the same
+directory. It holds what the footer shows: tokens, timing and outcome. It
+never holds prompt or reply text, file contents, tool inputs, error messages
+or the key. Strings that come from the API (model, error type, stop category,
+session id) are kept only when they look like identifiers, and anything else
+is written as `"unknown"`. The file is private (mode 600) and only ever
+appended to. `ASK_CLAUDE_EVENTS=off` turns it off.
+
+A `pause_turn` continuation is its own request, so it gets its own line. A
+Managed Agents session gets one line per turn, and its usage is the
+session's so far (`usage_scope: "session"`). To total a session, take the
+last line or the maximum, not the sum.
+
+| Field | Value |
+| --- | --- |
+| `v`, `ask_claude` | line format (1) and script version |
+| `ts` | UTC, ISO 8601, to the second |
+| `kind` | `messages` or `session` |
+| `chat` | the chat's name as `list` shows it, or the session id |
+| `host` | the API host and port from `--base-url`, no path |
+| `model` | the replying model (`null` for sessions) |
+| `round` | `pause_turn` round from 0, or custom-tool rounds answered |
+| `seconds` | whole seconds, as in the footer |
+| `stop_reason`, `stop_category` | how the reply ended, and the refusal category |
+| `usage_scope` | `request`, or `session` for cumulative session usage |
+| `input_tokens`, `output_tokens`, `cache_read`, `cache_write` | tokens |
+| `list_cost` | sessions only: the API's cost so far, in cents, as a string |
+| `advisor` | `{model, calls, input_tokens, output_tokens}`, or `null` |
+| `error` | `null`, the API's error type, or `no_response`, `parse`, `unreadable`, `interrupted`, `unanswerable` |
+
+Five questions, each answered with `jq` alone:
+
+```sh
+EVENTS="${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/events.jsonl"
+```
+
+Tokens per chat (sessions take their last total):
+
+```sh
+jq -s 'group_by(.chat) | map(.[0].usage_scope as $scope
+  | def total(f): map(f // 0) | if $scope == "session" then max else add end;
+  {chat: .[0].chat, kind: .[0].kind,
+    input_tokens: total(.input_tokens), output_tokens: total(.output_tokens),
+    cache_read: total(.cache_read), cache_write: total(.cache_write)})' "$EVENTS"
+```
+
+Cache hit rate by model (the share of input read from the cache):
+
+```sh
+jq -s 'map(select(.kind == "messages" and .error == null)) | group_by(.model) | map({model: .[0].model,
+  cache_hit: ((map(.cache_read) | add) / ([map(.input_tokens + .cache_read + .cache_write) | add, 1] | max))})' "$EVENTS"
+```
+
+Seconds by model:
+
+```sh
+jq -s 'map(select(.kind == "messages" and .error == null)) | group_by(.model) | map({model: .[0].model,
+  requests: length, mean_seconds: (map(.seconds) | add / length), max_seconds: (map(.seconds) | max)})' "$EVENTS"
+```
+
+Refusals by category:
+
+```sh
+jq -s 'map(select(.stop_reason == "refusal")) | group_by(.stop_category)
+  | map({category: .[0].stop_category, refusals: length})' "$EVENTS"
+```
+
+Advisor spend by advisor model:
+
+```sh
+jq -s 'map(select(.advisor != null)) | group_by(.advisor.model) | map({advisor: .[0].advisor.model,
+  calls: (map(.advisor.calls) | add), input_tokens: (map(.advisor.input_tokens) | add),
+  output_tokens: (map(.advisor.output_tokens) | add)})' "$EVENTS"
+```
 
 ## Agents
 

@@ -94,3 +94,28 @@ event() {
     [ "$(wc -l <"$TMP/out.jsonl")" -eq 1 ]
     [ "$(jq -c 'keys_unsorted' "$TMP/out.jsonl")" = '["v","ask_claude","ts","kind","chat","host","model","round","seconds","stop_reason","stop_category","usage_scope","input_tokens","output_tokens","cache_read","cache_write","list_cost","advisor","error"]' ]
 }
+
+@test "event: usage that is not a number is null, and never written as given" {
+    jq -n '{model: "claude-opus-5-5", stop_reason: "end_turn",
+        usage: {input_tokens: "the user secret prompt", output_tokens: {t: "reply text"},
+                cache_read_input_tokens: [1], cache_creation_input_tokens: "x",
+                iterations: [{type: "advisor_message", model: "claude-opus-5-5", input_tokens: "advisor secret", output_tokens: 2}]}}' >"$TMP/in.json"
+    event messages "$TMP/in.json" 0 "" >"$TMP/out.jsonl"
+    jq -e '.input_tokens==null and .output_tokens==null and .cache_read==null and .cache_write==null' "$TMP/out.jsonl"
+    jq -e '.advisor.input_tokens==0 and .advisor.output_tokens==2' "$TMP/out.jsonl"
+    refute grep -q 'secret\|reply' "$TMP/out.jsonl"
+}
+
+@test "event: an identifier with a trailing newline is unknown" {
+    jq -n '{model: "claude-x\n"}' >"$TMP/in.json"
+    [ "$(event messages "$TMP/in.json" 0 "" | jq -r .model)" = unknown ]
+}
+
+@test "event: list_cost keeps the API's cents as a string, from a string or a number" {
+    jq '.usage.list_cost = 42' "$FIX/sessions/text.fold.json" >"$TMP/n.json"
+    jq '.usage.list_cost = "12.5"' "$FIX/sessions/text.fold.json" >"$TMP/s.json"
+    jq '.usage.list_cost = "twelve dollars"' "$FIX/sessions/text.fold.json" >"$TMP/x.json"
+    [ "$(event session "$TMP/n.json" 0 "" sesn_FIXTURE01 | jq -r .list_cost)" = 42 ]
+    [ "$(event session "$TMP/s.json" 0 "" sesn_FIXTURE01 | jq -r .list_cost)" = 12.5 ]
+    [ "$(event session "$TMP/x.json" 0 "" sesn_FIXTURE01 | jq -r .list_cost)" = unknown ]
+}

@@ -236,3 +236,20 @@ events_fixture_log() {
     readme_queries >/dev/null
     EVENTS="$(LOG)" bash "$TMP/q/1.sh" | jq -e 'map(select(.chat | startswith("sesn_"))) | all(.input_tokens == 4)'
 }
+
+# ---- error categories mean the same on both paths ------------------------
+
+@test "events: a JSON error body without a type is unknown, not unreadable" {
+    printf '{"error":{"message":"rate limited"}}\n' >"$TMP/untyped.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/untyped.sse" "$BIN" "ping"
+    [ "$status" -eq 1 ]
+    jq -e '.error=="unknown"' "$(LOG)"
+}
+
+@test "events: a session events POST answered with something not JSON is unreadable" {
+    mkdir -p "$TMP/bad"
+    printf 'Bad Gateway\n' >"$TMP/bad/events-post.json"
+    run --separate-stderr env ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE \
+        ASK_CLAUDE_REPLAY="$TMP/bad" "$BIN" agent resume sesn_FIXTURE01 <<<$'again\n/quit\n'
+    jq -e '.kind=="session" and .error=="unreadable"' "$(LOG)"
+}

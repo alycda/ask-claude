@@ -144,7 +144,7 @@ Crate `ask-claude` in `rust/` (own line, merged when it reaches parity).
 | R3 | feat: request builder | `Request::new(args).to_json() == request/*.json` | [ ] |
 | R4 | feat: stream printer | same bytes as `*.stream.txt` | [ ] |
 | R5 | feat: transport trait, replay impl | the bats suite runs unchanged against the Rust binary via `ASK_CLAUDE_BIN` | [ ] |
-| R6 | feat: history, list, resume, chat loop | same bats files, same `XDG_STATE_HOME` seam | [ ] |
+| R6 | feat: history, list, resume, chat loop, event log lines | same bats files, same `XDG_STATE_HOME` seam; the event log (`docs/plans/2026-11-07-001-feat-request-event-log-plan.md`) is `tests/unit/events.bats`, the same line shape as `lib/event.jq`'s goldens | [ ] |
 | R7 | feat: `Provider` trait with two impls: `Anthropic` and `OpenAiCompatible { base_url }`; openai and venice are rows in a table, not types | `tests/providers/openai-compatible.hurl` green for both rows; a recorded OpenAI-shape fixture gets its own goldens then | [ ] |
 | R8 | chore: `just test-rust` runs the bats suite against both binaries | both green; bash stays the oracle until R8 is merged | [ ] |
 

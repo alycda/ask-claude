@@ -54,7 +54,7 @@
 set -uo pipefail
 # The script ships as one file, so it carries its own copy of VERSION;
 # `just bump` rewrites this line and `just check-version-line` compares them.
-readonly ASK_CLAUDE_VERSION=0.2.6
+readonly ASK_CLAUDE_VERSION=0.2.7
 # History holds whole conversations, including -f file contents: every file
 # and directory this script creates is private to the user, whatever the
 # shell's umask.
@@ -101,6 +101,9 @@ https://*) ;;
   ;;
 esac
 API="${BASE_URL%/}/v1/messages"
+# the event log records where requests went, never the path or a query
+HOST="${BASE_URL#*://}"
+HOST="${HOST%%/*}"
 
 # --mcp: servers the model may call through the MCP connector; https only,
 # like the docs require, and checked here so a typo is exit 2, not a 400.
@@ -133,6 +136,27 @@ SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 
 # line, `agent list` and `agent budget`
 # shellcheck disable=SC2016  # a jq program, not a shell string
 DOLLARS='def dollars: (tonumber / 100) as $d | "$" + ($d | floor | tostring) + "." + (($d * 100 | round) % 100 | tostring | if length < 2 then "0" + . else . end); '
+
+# event <kind> <round> <seconds> <error> <chat>: append one line to the event
+# log, built by lib/event.jq from the message, fold or null on stdin. Tokens,
+# timing and outcome only, never prompt, reply or error text. Off with
+# ASK_CLAUDE_EVENTS=off. A log that cannot be written is skipped in silence:
+# the redirect sits inside the group, because bash reports a failed >> open
+# before a trailing 2>/dev/null applies.
+event() {
+  local line
+  [ "${ASK_CLAUDE_EVENTS:-}" != off ] || return 0
+  line=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg version "$ASK_CLAUDE_VERSION" \
+    --arg kind "$1" --argjson round "$2" --argjson seconds "$3" --arg error "$4" \
+    --arg chat "$5" --arg host "$HOST" -f "$LIB/event.jq" 2>/dev/null) || return 0
+  # in a subshell: a signal from the write (SIGXFSZ at a ulimit -f) ends it,
+  # not the script
+  (printf "%s\n" "$line" >>"$STATE/events.jsonl") 2>/dev/null || :
+}
+
+# error_kind: the event-log category for an error body on stdin: its
+# error.type, unknown for JSON without one, unreadable for anything else
+error_kind() { jq -rs 'if (.[0] | type) == "object" then .[0].error.type // "unknown" else "unreadable" end' 2>/dev/null || echo unreadable; }
 
 # A fresh history path; the PID keeps two processes started in the same second
 # apart.
@@ -277,8 +301,9 @@ transport() {
 # with the history rolled back to before this ask. A pause_turn (server tool
 # still working) is continued automatically, up to 8 rounds.
 call() {
-  local body resp err stop rounds=0 n0 log t0 skills cid
+  local body resp err stop rounds=0 n0 log t0 skills cid failure chat
   n0=$(jq length "$HIST")
+  chat=$(basename "$HIST" .json)
   # Skills run in Anthropic's code-execution sandbox, so -s also adds the
   # code_execution tool and its beta; the container id comes back in the
   # reply and is kept in $HIST.container so files persist across turns.
@@ -308,22 +333,30 @@ call() {
     [ -s "$log" ] || {
       rm -f "$log"
       echo "ask-claude: no response (curl failed or timed out)" >&2
+      echo null | event messages $rounds $((SECONDS - t0)) no_response "$chat"
       rollback_to $((n0 - 1))
       return 1
     }
+    # each arm names the failure for the event log: the API's error.type when
+    # there is one, never its message
+    resp=null
     if ! grep -q '^data: ' "$log"; then
       # not SSE: an HTTP error body
       err=$(api_error "$(cat "$log")")
       [ -n "$err" ] || err="unreadable response"
+      failure=$(error_kind <"$log")
     elif ! resp=$(sse_data <"$log" | jq -s -f "$LIB/reassemble.jq"); then
       # a reply jq cannot fold is an error, not an empty turn that vanishes
       err="the reply could not be parsed"
+      resp=null failure=parse
     else
       err=$(printf '%s' "$resp" | jq -r "$SAFE"'.error.message // empty | safe')
+      [ -z "$err" ] || failure=$(printf '%s' "$resp" | error_kind)
     fi
     if [ -n "$err" ]; then
       rm -f "$log"
       echo "ask-claude: API error: $err" >&2
+      printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "$failure" "$chat"
       # a container the API no longer accepts (expired, deleted) would fail
       # every later turn of this chat: forget it, the next turn starts a new one
       [ -n "$cid" ] && case "$err" in *[Cc]ontainer*) rm -f "$HIST.container" ;; esac
@@ -343,6 +376,7 @@ call() {
       ([.usage.iterations[]? | select(.type == "advisor_message")]) as $a
       | (if ($a | length) > 0 then " advisor=\($a[0].model) in=\($a | map(.input_tokens // 0) | add) out=\($a | map(.output_tokens // 0) | add)" else "" end) as $adv
       | "[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens)\($adv) \($s)s]" | safe' >&2
+    printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "" "$chat"
     if [ "$stop" = "pause_turn" ] && [ $rounds -lt 8 ]; then
       rounds=$((rounds + 1))
       echo "[pause_turn: continuing, round $rounds]" >&2
@@ -409,10 +443,10 @@ ma_call() {
   fi
   if [ -n "$body" ]; then
     printf '%s' "$body" | curl -sS -g --max-time 120 -X "$method" "$BASE_URL/v1$path" -H @<(ma_headers) --data-binary @- ||
-      echo '{"error":{"message":"no response (curl failed or timed out)"}}'
+      echo '{"error":{"type":"no_response","message":"no response (curl failed or timed out)"}}'
   else
     curl -sS -g --max-time 120 -X "$method" "$BASE_URL/v1$path" -H @<(ma_headers) ||
-      echo '{"error":{"message":"no response (curl failed or timed out)"}}'
+      echo '{"error":{"type":"no_response","message":"no response (curl failed or timed out)"}}'
   fi
 }
 
@@ -517,7 +551,7 @@ session_answer() {
 # stops too.
 session_interrupted=""
 session_turn() {
-  local sesn=$1 events=${2:-} log fold err stop rounds=0 t0=$SECONDS resp
+  local sesn=$1 events=${2:-} log fold err stop rounds=0 t0=$SECONDS resp failure
   log="$STATE/.stream.$$"
   trap 'session_interrupted=1' INT
   while :; do
@@ -529,6 +563,9 @@ session_turn() {
       err=$(api_error "$resp")
       if [ -n "$err" ]; then
         echo "ask-claude: API error: $err" >&2
+        # ma_call's own curl-failure body says no_response
+        failure=$(error_kind <<<"$resp")
+        echo null | event session $rounds $((SECONDS - t0)) "$failure" "$sesn"
         session_cleanup "$log"
         return 1
       fi
@@ -536,23 +573,27 @@ session_turn() {
     session_stream_read "$log" | sse_data | jq --unbuffered -rj -f "$LIB/session.jq"
     if [ -n "$session_interrupted" ]; then
       echo "[interrupted: sending user.interrupt]" >&2
+      echo null | event session $rounds $((SECONDS - t0)) interrupted "$sesn"
       ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
       session_cleanup "$log"
       return 130
     fi
     if [ ! -s "$log" ] || ! grep -q '^data: ' "$log"; then
       echo "ask-claude: no response from the stream ($(head -c 200 "$log.err" "$log" 2>/dev/null | tr -d '\n' | jq -Rr "$SAFE"'safe' | cut -c1-200))" >&2
+      echo null | event session $rounds $((SECONDS - t0)) no_response "$sesn"
       session_cleanup "$log"
       return 1
     fi
     if ! fold=$(sse_data <"$log" | jq -s -c -f "$LIB/session-fold.jq"); then
       echo "ask-claude: the stream could not be parsed" >&2
+      echo null | event session $rounds $((SECONDS - t0)) parse "$sesn"
       session_cleanup "$log"
       return 1
     fi
     err=$(api_error "$fold")
     if [ -n "$err" ]; then
       echo "ask-claude: session error: $err" >&2
+      event session $rounds $((SECONDS - t0)) "$(jq -r '.error.type // "unknown"' <<<"$fold")" "$sesn" <<<"$fold"
       session_cleanup "$log"
       return 1
     fi
@@ -560,6 +601,7 @@ session_turn() {
     if [ "$stop" = requires_action ]; then
       if [ "$(jq '(.asks | length) + (.custom | length)' <<<"$fold")" -eq 0 ]; then
         echo "ask-claude: the session waits on something this version cannot answer ($(jq -r "$SAFE"'.event_ids | map(tostring) | join(" ") | safe' <<<"$fold")); interrupting" >&2
+        event session $rounds $((SECONDS - t0)) unanswerable "$sesn" <<<"$fold"
         ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
         session_cleanup "$log"
         return 1
@@ -577,6 +619,8 @@ session_turn() {
   session_cleanup "$log"
   jq -r --arg s "$sesn" --argjson t $((SECONDS - t0)) "$SAFE$DOLLARS"'.usage
     | "[\($s) in=\(.input_tokens) out=\(.output_tokens) cache_read=\(.cache_read) cache_write=\(.cache_write) cost=\(.list_cost | dollars) \($t)s]" | safe' <<<"$fold" >&2
+  # at the cap the last round was counted but not answered
+  event session $((rounds > 8 ? 8 : rounds)) $((SECONDS - t0)) "" "$sesn" <<<"$fold"
   case "$stop" in
   end_turn | "") ;;
   requires_action)
@@ -604,7 +648,7 @@ session_cleanup() {
 # session_create <prompt>: POST /v1/sessions with the prompt as the first
 # event; prints the new session id, or an API error and returns 1.
 session_create() {
-  local body resp sesn err
+  local body resp sesn err failure t0=$SECONDS
   # the prompt on stdin, not on jq's command line (see ask)
   body=$(printf '%s' "$1" | jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" --arg file "${session_file_id:-}" --arg file_name "$(basename "${usage_file:-}")" \
     --arg vaults "${usage_vault:-}" --arg repo "${usage_repo:-}" --arg memories "${usage_memory:-}" \
@@ -615,6 +659,8 @@ session_create() {
     err=$(api_error "$resp")
     [ -n "$err" ] || err="unreadable response"
     echo "ask-claude: API error: $err" >&2
+    failure=$(error_kind <<<"$resp")
+    echo null | event session 0 $((SECONDS - t0)) "$failure" ""
     return 1
   fi
   # the id names a file under sessions/ and goes into URL paths and the
@@ -622,6 +668,7 @@ session_create() {
   # outside sessions/)
   if ! session_id_ok "$sesn"; then
     echo "ask-claude: API error: the session id is not one (sesn_ and letters, digits, _ or -)" >&2
+    echo null | event session 0 $((SECONDS - t0)) unreadable ""
     return 1
   fi
   echo "$sesn"

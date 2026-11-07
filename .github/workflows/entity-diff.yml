@@ -14,8 +14,9 @@ permissions:
 jobs:
   entity-diff:
     name: Sem entity diff
-    # a fork's pull request runs with a read-only token, and the comment
-    # step would fail on it
+    # a fork's pull request runs with a read-only token; the action then only
+    # warns that it could not comment, so the job would compute a diff nobody
+    # sees
     if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:

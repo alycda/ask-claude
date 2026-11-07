@@ -546,7 +546,7 @@ session_answer() {
 # stops too.
 session_interrupted=""
 session_turn() {
-  local sesn=$1 events=${2:-} log fold err stop rounds=0 t0=$SECONDS resp
+  local sesn=$1 events=${2:-} log fold err stop rounds=0 t0=$SECONDS resp failure
   log="$STATE/.stream.$$"
   trap 'session_interrupted=1' INT
   while :; do
@@ -558,6 +558,9 @@ session_turn() {
       err=$(api_error "$resp")
       if [ -n "$err" ]; then
         echo "ask-claude: API error: $err" >&2
+        # ma_call's own curl-failure body has no type
+        failure=$(jq -r '.error.type // empty' <<<"$resp" 2>/dev/null)
+        echo null | event session $rounds $((SECONDS - t0)) "${failure:-no_response}" "$sesn"
         session_cleanup "$log"
         return 1
       fi
@@ -565,23 +568,27 @@ session_turn() {
     session_stream_read "$log" | sse_data | jq --unbuffered -rj -f "$LIB/session.jq"
     if [ -n "$session_interrupted" ]; then
       echo "[interrupted: sending user.interrupt]" >&2
+      echo null | event session $rounds $((SECONDS - t0)) interrupted "$sesn"
       ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
       session_cleanup "$log"
       return 130
     fi
     if [ ! -s "$log" ] || ! grep -q '^data: ' "$log"; then
       echo "ask-claude: no response from the stream ($(head -c 200 "$log.err" "$log" 2>/dev/null | tr -d '\n' | jq -Rr "$SAFE"'safe' | cut -c1-200))" >&2
+      echo null | event session $rounds $((SECONDS - t0)) no_response "$sesn"
       session_cleanup "$log"
       return 1
     fi
     if ! fold=$(sse_data <"$log" | jq -s -c -f "$LIB/session-fold.jq"); then
       echo "ask-claude: the stream could not be parsed" >&2
+      echo null | event session $rounds $((SECONDS - t0)) parse "$sesn"
       session_cleanup "$log"
       return 1
     fi
     err=$(api_error "$fold")
     if [ -n "$err" ]; then
       echo "ask-claude: session error: $err" >&2
+      event session $rounds $((SECONDS - t0)) "$(jq -r '.error.type // "unknown"' <<<"$fold")" "$sesn" <<<"$fold"
       session_cleanup "$log"
       return 1
     fi
@@ -589,6 +596,7 @@ session_turn() {
     if [ "$stop" = requires_action ]; then
       if [ "$(jq '(.asks | length) + (.custom | length)' <<<"$fold")" -eq 0 ]; then
         echo "ask-claude: the session waits on something this version cannot answer ($(jq -r "$SAFE"'.event_ids | map(tostring) | join(" ") | safe' <<<"$fold")); interrupting" >&2
+        event session $rounds $((SECONDS - t0)) unanswerable "$sesn" <<<"$fold"
         ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
         session_cleanup "$log"
         return 1
@@ -606,6 +614,7 @@ session_turn() {
   session_cleanup "$log"
   jq -r --arg s "$sesn" --argjson t $((SECONDS - t0)) "$SAFE$DOLLARS"'.usage
     | "[\($s) in=\(.input_tokens) out=\(.output_tokens) cache_read=\(.cache_read) cache_write=\(.cache_write) cost=\(.list_cost | dollars) \($t)s]" | safe' <<<"$fold" >&2
+  event session $rounds $((SECONDS - t0)) "" "$sesn" <<<"$fold"
   case "$stop" in
   end_turn | "") ;;
   requires_action)

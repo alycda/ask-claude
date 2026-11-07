@@ -10,6 +10,19 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.7 (micro) - 2026-11-07
+
+- An event log: every Messages request and every session turn appends one
+  JSON line to `events.jsonl` in the state directory, with model, tokens,
+  cache reads and writes, advisor usage, seconds, stop reason and host. It
+  never holds prompt, reply or error text. A `pause_turn` round is its own
+  line, and a session turn is one line carrying the session's usage so far. The README's
+  "Events on disk" has the fields and five `jq` queries: tokens per chat,
+  cache hit rate, seconds by model, refusals and advisor spend.
+- Adopting needs no change: the log is on by default and private like the
+  history. `ASK_CLAUDE_EVENTS=off` turns it off.
+- Known gap: Ctrl-C during a Messages request leaves no line.
+
 ## 0.2.6 (micro) - 2026-11-07
 
 - `--advisor <model>` lets the reply consult another model mid-turn, through

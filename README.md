@@ -19,6 +19,15 @@ costs $10 per 1,000, a fetch nothing beyond tokens). `--mcp <https url>`
 `-s`, in the one-shot and in the chat; the stream shows `(web_search) `,
 `(web_fetch) ` and `(mcp <server>) ` while the model uses them.
 
+`--advisor <model>` lets the model consult another model mid-reply (the
+advisor tool, a server tool in beta): at most 3 calls a turn, each billed at
+the advisor model's rates and shown in the footer as `advisor=<model> in=…
+out=…`. The advisor must be at least as capable as `-m`: with the default
+Opus 5.5 that is Opus 5.5 itself, or Fable 5.1; a Sonnet or Haiku reply can
+take Opus as its advisor. Most advisors return their advice encrypted, so the
+stream shows `(advisor) ` and the reply, not the advice. A chat that used an
+advisor can be resumed without `--advisor`.
+
 In the chat loop, `/new` starts a fresh chat, `/history` prints the current
 one, and `/quit` exits and prints the command to resume it.
 

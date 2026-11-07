@@ -4,6 +4,7 @@
 #     jq -n --arg m MODEL --argjson max N --arg sys SYSTEM --arg eff EFFORT \
 #           --arg skills SKILLS_JSON --arg cid CONTAINER_ID \
 #           --arg web 1-or-empty --arg mcp "https://a/mcp https://b/sse" \
+#           --arg advisor ADVISOR_MODEL \
 #           --slurpfile msgs history.json -f lib/request.jq
 #
 # -n means there is no input: everything comes from the variables.
@@ -14,6 +15,7 @@
 #   $skills                         JSON text from lib/skills.jq; fromjson parses it
 #   $web                            "" or anything: add the web search and fetch tools
 #   $mcp                            MCP server URLs, space-separated; "" means none
+#   $advisor                        the advisor tool's model; "" means no advisor
 #
 # The tests compare with tests/fixtures/request/*.json byte for byte, so key
 # order matters: `A + B` keeps A's keys first, then adds B's. Build the base
@@ -36,10 +38,11 @@
 #   cache_control  {type: "ephemeral"}   cache the growing conversation
 def words: split(" ") | map(select(length > 0));
 def host: capture("^[a-z]+://(?<h>[^/:]+)").h | gsub("[^A-Za-z0-9_-]"; "-");
-# $web and $mcp are newer than the other arguments: read through $ARGS.named so
+# $web, $mcp and $advisor are newer than the other arguments: read through $ARGS.named so
 # a caller that does not pass them (the goldens of 0.1.0) still works
 def web: $ARGS.named.web // "";
 def mcp: $ARGS.named.mcp // "";
+def advisor: $ARGS.named.advisor // "";
 
 {
     model: $m,
@@ -59,11 +62,13 @@ def mcp: $ARGS.named.mcp // "";
                                       + (if (env.ASK_CLAUDE_MCP_TOKEN // "") != "" then {authorization_token: env.ASK_CLAUDE_MCP_TOKEN} else {} end)]}
    else {} end)
 # tools, in this order: code_execution for skills, the web tools, one
-# mcp_toolset per server; the key is left out when there are none
+# mcp_toolset per server, the advisor (3 calls a turn at most: each is a
+# sub-inference at the advisor model's rates); the key is left out when there are none
 + (([ (if $skills != "" then {type: "code_execution_20260521", name: "code_execution"} else empty end),
       (if web != "" then {type: "web_search_20250305", name: "web_search", max_uses: 5},
                            {type: "web_fetch_20250910", name: "web_fetch", max_uses: 5} else empty end) ]
-    + (if mcp != "" then [mcp | words[] | {type: "mcp_toolset", mcp_server_name: (. | host)}] else [] end)) as $tools
+    + (if mcp != "" then [mcp | words[] | {type: "mcp_toolset", mcp_server_name: (. | host)}] else [] end)
+    + (if advisor != "" then [{type: "advisor_20260301", name: "advisor", model: advisor, max_uses: 3}] else [] end)) as $tools
    | if ($tools | length) > 0 then {tools: $tools} else {} end)
 + (if $skills != "" then
       {container: (({skills: ($skills | fromjson)}) + (if $cid != "" then {id: $cid} else {} end))}

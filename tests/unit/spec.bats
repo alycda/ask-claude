@@ -127,3 +127,9 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     grep -qE '^\s+flag\s+--mcp\s+https://a.example/mcp' <<<"$output"
     refute grep -q refused <<<"$output"
 }
+
+@test "spec: --advisor binds with its model" {
+    run explain --advisor claude-opus-5-5 "hi"
+    grep -qE '^\s+flag\s+--advisor\s+claude-opus-5-5' <<<"$output"
+    ! grep -q refused <<<"$output"
+}

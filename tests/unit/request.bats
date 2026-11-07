@@ -77,3 +77,18 @@ request2() { # sys eff skills cid web mcp
     request2 "" "" "" "" "" "" > "$TMP/out.json"
     assert_golden "$FIX/request/plain.json" "$TMP/out.json"
 }
+
+# the advisor tool (0.2.6)
+
+@test "request: --advisor adds the advisor tool, last, capped at 3 calls a turn" {
+    jq -n --arg m claude-haiku-5-5 --argjson max 16000 \
+        --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web 1 --arg mcp "" --arg advisor claude-sonnet-5 \
+        --slurpfile msgs "$FIX/request/history-one-turn.json" \
+        -f "$ROOT/lib/request.jq" > "$TMP/out.json"
+    assert_golden "$FIX/request/advisor.json" "$TMP/out.json"
+}
+
+@test "request: without --advisor the web golden is untouched" {
+    request2 "" "" "" "" 1 "" > "$TMP/out.json"
+    assert_golden "$FIX/request/web.json" "$TMP/out.json"
+}

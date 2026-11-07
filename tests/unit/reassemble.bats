@@ -42,3 +42,14 @@ reassemble() { events "$1" | jq -s -f "$ROOT/lib/reassemble.jq"; }
     done
     jq -e '.content[0].type=="mcp_tool_use" and (.content[0].input|type)=="object" and (.content[0]|has("partial")|not)' "$FIX/sse/mcp.message.json"
 }
+
+@test "reassemble: the advisor call and its result fold verbatim, iterations kept" {
+    for f in advisor advisor-redacted; do
+        events "$f" | jq -s -f "$ROOT/lib/reassemble.jq" > "$TMP/out.json"
+        assert_golden "$FIX/sse/$f.message.json" "$TMP/out.json"
+    done
+    jq -e '.content[0] == {type: "server_tool_use", id: "srvtoolu_FIXTURE", name: "advisor", input: {}}' "$FIX/sse/advisor.message.json"
+    jq -e '.content[1].content.type == "advisor_result" and (.content[1].content.text | length) > 0' "$FIX/sse/advisor.message.json"
+    jq -e '.content[1].content.type == "advisor_redacted_result" and .content[1].content.encrypted_content == "REDACTED"' "$FIX/sse/advisor-redacted.message.json"
+    jq -e '[.usage.iterations[].type] == ["message", "advisor_message", "message"]' "$FIX/sse/advisor.message.json"
+}

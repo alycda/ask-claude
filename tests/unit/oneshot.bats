@@ -111,3 +111,12 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     run --separate-stderr replay text "ping"
     ! grep -q 'advisor=' <<<"$stderr"
 }
+
+@test "one-shot: --advisor sends the advisor beta, and without it there is none" {
+    ASK_CLAUDE_BETA_LOG="$TMP/betas" replay advisor-redacted -m claude-haiku-5-5 --advisor claude-haiku-5-5 "ping" >/dev/null 2>&1
+    grep -q 'advisor-tool-2026-03-01' "$TMP/betas"
+    rm -f "$TMP/betas"
+    ASK_CLAUDE_BETA_LOG="$TMP/betas" replay text "ping" >/dev/null 2>&1
+    [ -s "$TMP/betas" ]
+    refute grep -q 'advisor' "$TMP/betas"
+}

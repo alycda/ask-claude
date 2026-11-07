@@ -242,12 +242,15 @@ chat_loop() {
 
 # transport: the request body on stdin, the raw SSE on stdout.
 # ASK_CLAUDE_REPLAY=<file.sse> replays a recording instead of calling curl;
-# ASK_CLAUDE_REQUEST_LOG=<file> appends each body that would have been sent.
+# ASK_CLAUDE_REQUEST_LOG=<file> appends each body that would have been sent,
+# and ASK_CLAUDE_BETA_LOG=<file> each request's anthropic-beta value, so a
+# replay test can see the header a recording never shows.
 # Neither the key nor the body goes on curl's command line, which other local
 # accounts can read: the headers come from a pipe and the body from stdin.
 transport() {
   local body
   body=$(cat)
+  [ -z "${ASK_CLAUDE_BETA_LOG:-}" ] || printf '%s\n' "$betas" >>"$ASK_CLAUDE_BETA_LOG"
   # The log line is written before anything is sent, as the sessions path
   # does it. The old `tee -a LOG | cat REPLAY` lost the line whenever the
   # replay side had already exited: GNU tee writes to the pipe first and dies

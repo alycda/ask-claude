@@ -39,6 +39,7 @@ one, and `/quit` exits and prints the command to resume it.
 | `XDG_STATE_HOME` | chats live in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/` |
 | `ASK_CLAUDE_REPLAY` | testing: read this recorded `.sse` file instead of calling the API |
 | `ASK_CLAUDE_REQUEST_LOG` | testing: append each request body to this file |
+| `ASK_CLAUDE_BETA_LOG` | testing: append each request's `anthropic-beta` header value to this file |
 | `ASK_CLAUDE_MCP_TOKEN` | authorization token for the `--mcp` servers |
 
 Nothing else is read.

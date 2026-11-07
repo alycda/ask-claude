@@ -22,3 +22,6 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: Ataraxy-Labs/sem/action@04f6990ca0c58fd01e9b78a48fee387596edc983 # v0.29.1
+        with:
+          # the binary the action downloads; without this it takes the latest release
+          sem-version: v0.29.1

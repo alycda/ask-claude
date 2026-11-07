@@ -14,8 +14,11 @@ permissions:
 jobs:
   entity-diff:
     name: Sem entity diff
+    # a fork's pull request runs with a read-only token, and the comment
+    # step would fail on it
+    if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - uses: Ataraxy-Labs/sem/action@v0.29.1
+      - uses: Ataraxy-Labs/sem/action@04f6990ca0c58fd01e9b78a48fee387596edc983 # v0.29.1

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2030,SC2031  # a variable set inside run's subshell, read back through $output
 load helpers
 
 # A session that stops with requires_action on a tool call: asked at a

@@ -1,9 +1,0 @@
-# The bats files are bash with bats idioms shellcheck reads as mistakes:
-#   SC2016  single quotes around a jq program that mentions $, on purpose
-#   SC2012  ls to count files in a test, where find would add nothing
-#   SC2059  a format string built from a test's own literal
-#   SC2030  a variable set inside `run`'s subshell, and
-#   SC2031  read after it, which bats hands back through $output anyway
-# Everything else applies. `! cmd` on a non-last line (SC2314) stays
-# enabled: helpers.bash's refute exists because of it.
-disable=SC2016,SC2012,SC2059,SC2030,SC2031

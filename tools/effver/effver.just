@@ -20,7 +20,9 @@ check-version-line:
 effort-floor:
     #!/usr/bin/env bash
     set -euo pipefail
-    # tips: the parents of the working copy (several when it is a merge) or HEAD
+    # tips: the parents of the jj working copy; in git, HEAD and, when HEAD is
+    # a merge, its parents, since a pull_request run checks out refs/pull/N/merge
+    # and a landing on main is a merge too
     if [ -d .jj ]; then
       tips='@-'
       last() { jj log --no-graph -r "latest(::($1) & files(\"VERSION\"))" -T 'commit_id'; }
@@ -31,7 +33,7 @@ effort-floor:
     else
       tips=HEAD
       last() { git log -1 --format=%H "$1" -- VERSION; }
-      is_tip() { [ "$(git rev-parse HEAD)" = "$1" ]; }
+      is_tip() { { git rev-parse HEAD; [ -z "$(git rev-list --no-walk --merges HEAD)" ] || git rev-parse "HEAD^@"; } | grep -qx "$1"; }
       before() { echo "$1~1"; }
       show() { git cat-file -e "$1:$2" 2>/dev/null && git show "$1:$2"; }
       subject() { git log -1 --format=%s "$1"; }

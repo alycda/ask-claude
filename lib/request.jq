@@ -43,6 +43,14 @@ def host: capture("^[a-z]+://(?<h>[^/:]+)").h | gsub("[^A-Za-z0-9_-]"; "-");
 def web: $ARGS.named.web // "";
 def mcp: $ARGS.named.mcp // "";
 def advisor: $ARGS.named.advisor // "";
+# the advisor calls already made this turn. A turn the API pauses (pause_turn)
+# is continued with a new request, and each request carries its own max_uses,
+# so the paused replies after the last user message count against the 3.
+def advisor_used:
+    $msgs[0] as $h
+    | ([$h | to_entries[] | select(.value.role == "user") | .key] | last // -1) as $u
+    | [$h[($u + 1):][] | .content | arrays | .[]
+       | select(.type == "server_tool_use" and .name == "advisor")] | length;
 
 {
     model: $m,
@@ -62,13 +70,14 @@ def advisor: $ARGS.named.advisor // "";
                                       + (if (env.ASK_CLAUDE_MCP_TOKEN // "") != "" then {authorization_token: env.ASK_CLAUDE_MCP_TOKEN} else {} end)]}
    else {} end)
 # tools, in this order: code_execution for skills, the web tools, one
-# mcp_toolset per server, the advisor (3 calls a turn at most: each is a
-# sub-inference at the advisor model's rates); the key is left out when there are none
+# mcp_toolset per server, the advisor (3 calls a turn at most, less what this
+# turn's paused replies used, and left out at 0: each call is a sub-inference
+# at the advisor model's rates); the key is left out when there are none
 + (([ (if $skills != "" then {type: "code_execution_20260521", name: "code_execution"} else empty end),
       (if web != "" then {type: "web_search_20250305", name: "web_search", max_uses: 5},
                            {type: "web_fetch_20250910", name: "web_fetch", max_uses: 5} else empty end) ]
     + (if mcp != "" then [mcp | words[] | {type: "mcp_toolset", mcp_server_name: (. | host)}] else [] end)
-    + (if advisor != "" then [{type: "advisor_20260301", name: "advisor", model: advisor, max_uses: 3}] else [] end)) as $tools
+    + (if advisor != "" and advisor_used < 3 then [{type: "advisor_20260301", name: "advisor", model: advisor, max_uses: (3 - advisor_used)}] else [] end)) as $tools
    | if ($tools | length) > 0 then {tools: $tools} else {} end)
 + (if $skills != "" then
       {container: (({skills: ($skills | fromjson)}) + (if $cid != "" then {id: $cid} else {} end))}

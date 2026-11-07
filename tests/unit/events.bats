@@ -192,3 +192,47 @@ agent() { ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE ASK_
     ASK_CLAUDE_EVENTS=off agent text.sse "ping" </dev/null >/dev/null 2>&1
     [ ! -e "$(LOG)" ]
 }
+
+# ---- the README's queries ------------------------------------------------
+# Each ```sh block under "## Events on disk" that starts with `jq` is run as
+# written, so the README is what these tests check.
+
+readme_queries() { # writes $TMP/q/1.sh ... and prints how many
+    mkdir -p "$TMP/q"
+    awk -v dir="$TMP/q" '
+        /^## / { in_section = ($0 == "## Events on disk") }
+        in_section && /^```sh$/ { block = 1; body = ""; next }
+        block && /^```$/ { block = 0; if (body ~ /^jq /) { n++; printf "%s", body > (dir "/" n ".sh") } next }
+        block { body = body $0 "\n" }
+        END { print n + 0 }' "$ROOT/README.md"
+}
+
+events_fixture_log() {
+    replay text "ping" >/dev/null 2>&1
+    replay text "pong" >/dev/null 2>&1
+    replay advisor -m claude-haiku-5-5 --advisor claude-haiku-5-5 "ping" >/dev/null 2>&1
+    replay refusal "ping" >/dev/null 2>&1
+    replay error "ping" >/dev/null 2>&1 || : # exits 1: a failed request is a line too
+    agent text.sse "ping" </dev/null >/dev/null 2>&1
+}
+
+@test "events: the README has exactly five queries" {
+    [ "$(readme_queries)" -eq 5 ]
+}
+
+@test "events: every README query runs and finds something" {
+    local f out
+    events_fixture_log
+    [ "$(readme_queries)" -eq 5 ]
+    for f in "$TMP"/q/*.sh; do
+        out=$(EVENTS="$(LOG)" bash "$f") || { echo "query failed: $f"; cat "$f"; return 1; }
+        [ -n "$out" ] && [ "$out" != "[]" ] || { echo "query found nothing: $f"; cat "$f"; return 1; }
+    done
+}
+
+@test "events: tokens per chat take the session's maximum, not the sum" {
+    events_fixture_log
+    agent text.sse "again" </dev/null >/dev/null 2>&1 # a second line for a session would double a sum
+    readme_queries >/dev/null
+    EVENTS="$(LOG)" bash "$TMP/q/1.sh" | jq -e 'map(select(.chat | startswith("sesn_"))) | all(.input_tokens == 4)'
+}

@@ -9,7 +9,7 @@ bump effort:
 # Check VERSION and CHANGELOG.md in every commit of REVSET (default: the stack not on trunk yet).
 # Without .jj, REVSET is a git range such as origin/main..HEAD, and there is no default.
 check-effver revset='':
-    if [ -d .jj ]; then tools/effver/check-effver --jj {{ quote(revset) }}; else tools/effver/check-effver {{ quote(revset) }}; fi
+    if [ -d .jj ]; then tools/effver/check-effver --jj {{ quote(revset) }}; elif [ -n {{ quote(revset) }} ]; then tools/effver/check-effver {{ quote(revset) }}; else echo 'usage: just check-effver <git range>, e.g. origin/main..HEAD' >&2; exit 2; fi
 
 # The script's copy of the version matches VERSION
 check-version-line:

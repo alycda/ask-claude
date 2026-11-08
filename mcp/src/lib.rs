@@ -262,7 +262,25 @@ pub mod reports {
     }
 
     /// tests/fixtures/mcp/reports/advisor_spend.jq
-    fn advisor_spend(_events: &[Value]) -> Vec<AdvisorSpend> {
-        todo!("U2: tests/fixtures/mcp/reports/advisor_spend.jq")
+    fn advisor_spend(events: &[Value]) -> Vec<AdvisorSpend> {
+        let advised = events.iter().filter(|e| !e["advisor"].is_null());
+        group_by(advised, |e| e["advisor"]["model"].as_str())
+            .into_iter()
+            .map(|(advisor, group)| {
+                // one of the advisor's counts, summed over the group
+                let sum = |field: &str| -> u64 {
+                    group
+                        .iter()
+                        .map(|e| e["advisor"][field].as_u64().unwrap_or(0))
+                        .sum()
+                };
+                AdvisorSpend {
+                    advisor: advisor.map(String::from),
+                    calls: sum("calls"),
+                    input_tokens: sum("input_tokens"),
+                    output_tokens: sum("output_tokens"),
+                }
+            })
+            .collect()
     }
 }

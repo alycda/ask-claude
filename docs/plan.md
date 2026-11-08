@@ -136,16 +136,18 @@ transport at R7.
 ## Phase 4: Rust port
 
 Crate `ask-claude` in `rust/` (own line, merged when it reaches parity).
-`rust/` is a Cargo workspace of three crates: `core` (SSE types, reassembler,
-request builder, history, event lines; no tokio, reqwest or terminal types),
-`net` (tokio, the HTTP transport, the stdio MCP child) and `cli` (the
-`ask-claude` binary). The split exists so a second frontend can use `core` and
-`net` without the terminal, and without pulling its own dependencies into the
-CLI's lockfile.
+`rust/` is a Cargo workspace of three crates under `rust/crates/`: `core`
+(package `ask-claude-core`: SSE types, reassembler, request builder, history,
+event lines; no tokio, reqwest or terminal types), `net` (package
+`ask-claude-net`: tokio, the HTTP transport, the stdio MCP child) and `cli`
+(package `ask-claude`, the binary). The packages are not named `core` or
+`net` because `core` is Rust's built-in library. The split exists so a second
+frontend can use `core` and `net` without the terminal, and without pulling
+its own dependencies into the CLI's lockfile.
 
 | # | Commit | Validation | Status |
 | --- | --- | --- | --- |
-| R0 | chore: cargo workspace (`core`, `net`, `cli`), clap + clap_usage 5 | `cargo run -- --usage-spec` prints a spec; `usage diff ask-claude.usage.kdl <(cargo run -q -- --usage-spec)` reports no interface change (the bash spec is exported with `usage generate` first); `cargo tree -p core -e normal` lists no tokio or reqwest | [ ] |
+| R0 | chore: cargo workspace (`core`, `net`, `cli`), clap + clap_usage 5 | `cargo run -- --usage-spec` prints a spec; `usage diff ask-claude.usage.kdl <(cargo run -q -- --usage-spec)` reports no interface change (the bash spec is exported with `usage generate` first); `cargo tree -p ask-claude-core -e normal` lists no tokio or reqwest | [ ] |
 | R1 | feat: SSE event types (serde), parsed from a stream of byte chunks | deserialize every line of every `sse/*.sse` fixture without `#[serde(other)]` swallowing anything; the parser takes byte chunks and does not depend on how they are read | [ ] |
 | R2 | feat: reassembler, an incremental fold | `Message::from_events(fixture) == fixture.message.json` (serde_json::Value equality); `from_events` is built on pushing one event at a time into a partial message, and pushing each fixture's events one by one gives the same message as the batch path | [ ] |
 | R3 | feat: request builder | `Request::new(args).to_json() == request/*.json` | [ ] |

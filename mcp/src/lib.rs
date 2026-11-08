@@ -204,8 +204,37 @@ pub mod reports {
     }
 
     /// tests/fixtures/mcp/reports/cache_hit_by_model.jq
-    fn cache_hit_by_model(_events: &[Value]) -> Vec<CacheHit> {
-        todo!("U2: tests/fixtures/mcp/reports/cache_hit_by_model.jq")
+    fn cache_hit_by_model(events: &[Value]) -> Vec<CacheHit> {
+        // map(select(.kind == "messages" and .error == null))
+        //   filter before grouping: e["kind"] == "messages" && e["error"].is_null()
+        //   (a missing `error` indexes as Null too, as jq's .error does)
+        // | group_by(.model)
+        //   group_by(filtered, |e| e["model"].as_str())
+        // | map({model: .[0].model, cache_hit: (map(.cache_read) | add) / ([...| add, 1] | max)})
+        //   the numerator sums cache_read; the denominator sums
+        //   input_tokens + cache_read + cache_write per event. Sum both as f64
+        //   (`e[f].as_f64().unwrap_or(0.0)`: jq's null + n is n), then divide by
+        //   denominator.max(1.0): that is the `[..., 1] | max` guard against 0.
+
+        let kept = events
+            .iter()
+            .filter(|e| e["kind"] == "messages" && e["error"].is_null());
+        group_by(kept, |e| e["model"].as_str())
+            .into_iter()
+            .map(|(model, group)| {
+                // a field as a number; missing or null is 0, as in jq's null + n
+                let n = |e: &Value, field: &str| e[field].as_f64().unwrap_or(0.0);
+                let read: f64 = group.iter().map(|e| n(e, "cache_read")).sum();
+                let input: f64 = group
+                    .iter()
+                    .map(|e| n(e, "input_tokens") + n(e, "cache_read") + n(e, "cache_write"))
+                    .sum();
+                CacheHit {
+                    model: model.map(String::from),
+                    cache_hit: read / input.max(1.0),
+                }
+            })
+            .collect()
     }
 
     /// tests/fixtures/mcp/reports/seconds_by_model.jq

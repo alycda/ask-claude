@@ -4,8 +4,9 @@
 //! docs/plans/2026-11-08-002-feat-mcp-server-plan.md; tests/protocol.rs
 //! and the files after it hold it to them.
 
+use ask_claude_mcp::{events, reports, state};
 use rmcp::ErrorData as McpError;
-use rmcp::model::CallToolResult;
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use tokio::io::{stdin, stdout};
@@ -16,7 +17,7 @@ use rmcp::handler::server::wrapper::Parameters;
 #[schemars(crate = "rmcp::schemars")]
 struct Since {
     /// only count activity on or after this date
-    _since: Option<String>,
+    since: Option<String>,
 }
 
 struct AskClaude;
@@ -29,11 +30,29 @@ impl AskClaude {
     )]
     fn tokens_by_chat(
         &self,
-        Parameters(Since { _since }): Parameters<Since>,
+        Parameters(Since { since }): Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
-        todo!();
-
-        // Ok(CallToolResult::default())
+        let Some(dir) = state::dir(
+            std::env::var("XDG_STATE_HOME").ok().as_deref(),
+            std::env::var("HOME").ok().as_deref(),
+        ) else {
+            return Ok(tool_error("neither XDG_STATE_HOME nor HOME is set"));
+        };
+        // read on every call: the script appends while the server runs
+        let text = match std::fs::read_to_string(dir.join("events.jsonl")) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Ok(tool_error(format!("events.jsonl: {e}"))),
+        };
+        let mut events = events::parse(&text);
+        if let Some(since) = since {
+            events = match events::since(events, &since) {
+                Ok(events) => events,
+                Err(why) => return Ok(tool_error(why)),
+            };
+        }
+        let report = reports::run("tokens_by_chat", &events).expect("tokens_by_chat is a report");
+        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
     #[tool(
@@ -42,9 +61,11 @@ impl AskClaude {
     )]
     fn cache_hit_by_model(
         &self,
-        Parameters(Since { _since }): Parameters<Since>,
+        Parameters(Since { since }): Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
         todo!()
+
+        // Ok(CallToolResult::default());
     }
 
     #[tool(
@@ -53,9 +74,11 @@ impl AskClaude {
     )]
     fn seconds_by_model(
         &self,
-        Parameters(Since { _since }): Parameters<Since>,
+        Parameters(Since { since }): Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
         todo!()
+
+        // Ok(CallToolResult::default());
     }
 
     #[tool(
@@ -64,9 +87,11 @@ impl AskClaude {
     )]
     fn refusals_by_category(
         &self,
-        Parameters(Since { _since }): Parameters<Since>,
+        Parameters(Since { since }): Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
         todo!()
+
+        // Ok(CallToolResult::default());
     }
 
     #[tool(
@@ -75,10 +100,18 @@ impl AskClaude {
     )]
     fn advisor_spend(
         &self,
-        Parameters(Since { _since }): Parameters<Since>,
+        Parameters(Since { since }): Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
         todo!()
+
+        // Ok(CallToolResult::default());
     }
+}
+
+/// A tool error: `isError: true` with the reason as text, so the model
+/// sees why (a JSON-RPC error would reach it as an opaque failure).
+fn tool_error(why: impl Into<String>) -> CallToolResult {
+    CallToolResult::error(vec![ContentBlock::text(why)])
 }
 
 #[tool_handler]

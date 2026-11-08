@@ -21,5 +21,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 
 [dev-dependencies]
+# src/lib.rs: unit tests as tables of cases
+rstest = "0.28.0"
 # tests/common: a state directory per test
 tempfile = "3.27.0"

@@ -87,7 +87,7 @@ pub mod events {
     /// The events at or after `since`, which is `YYYY-MM-DD` or
     /// `YYYY-MM-DDTHH:MM:SSZ`; compared with `ts` as strings, the way
     /// `map(select(.ts >= $since))` does. `Err` names the accepted forms.
-    pub fn since(_events: Vec<Value>, _since: &str) -> Result<Vec<Value>, String> {
+    pub fn since(events: Vec<Value>, since: &str) -> Result<Vec<Value>, String> {
         todo!("U3: the since filter")
     }
 }

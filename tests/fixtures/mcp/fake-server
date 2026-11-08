@@ -12,7 +12,9 @@
 #                   noisy (a notification, a server request and a non-JSON
 #                   line before each tool result) | mixed (every MCP content
 #                   type in one result, the shape github-mcp-server's
-#                   get_file_contents uses for a file)
+#                   get_file_contents uses for a file) | ignore-eof (at end of
+#                   input, ignore SIGTERM and keep running, as mcp-remote does
+#                   while it waits for an OAuth callback)
 # FAKE_MCP_SCHEMA_META  1: every inputSchema carries a $schema key, as
 #                   Supabase's and Cloudflare's servers send
 #
@@ -77,3 +79,9 @@ while IFS= read -r line; do
     *) [ "$id" = null ] || jq -nc --argjson id "$id" '{jsonrpc: "2.0", id: $id, error: {code: -32601, message: "method not found"}}' ;;
     esac
 done
+if [ "$mode" = ignore-eof ]; then
+    trap '' TERM
+    sleep 300 &
+    echo $! >"${FAKE_MCP_PIDFILE:-/dev/null}.child"
+    wait
+fi

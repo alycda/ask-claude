@@ -133,6 +133,32 @@ result() { request "$1" | jq -c '.events[0]'; }
     run ! kill -0 "$pid"
 }
 
+# gone <pid>...: none of these processes is still running. A survivor is
+# named and killed, every one of them, so a failure does not leave a process
+# holding bats' descriptors (bats waits for those, and the test would hang).
+gone() {
+    local p alive=0
+    for p in "$@"; do
+        if kill -0 "$p" 2>/dev/null; then
+            echo "still running: $(ps -o pid=,args= -p "$p")" >&2
+            kill -KILL "$p" 2>/dev/null
+            alive=1
+        fi
+    done
+    [ "$alive" -eq 0 ]
+}
+
+@test "local-mcp: a server behind sh's fork that ignores end of input and SIGTERM is still stopped, children too" {
+    # the redirect makes sh fork the server instead of exec'ing it, so the
+    # pid ask-claude started is sh's, not the server's
+    FAKE_MCP_MODE=ignore-eof FAKE_MCP_PIDFILE="$TMP/pid" ASK_CLAUDE_CONFIRM=allow \
+        run --separate-stderr replay --local-mcp "$SERVER 2>/dev/null" "weather?" </dev/null
+    [ "$status" -eq 0 ]
+    result 2 | jq -e '.is_error == false'
+    sleep 0.3
+    gone "$(cat "$TMP/pid")" "$(cat "$TMP/pid.child")"
+}
+
 @test "local-mcp: tool inputs and results never reach a jq command line" {
     local real
     real=$(command -v jq)

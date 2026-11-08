@@ -72,8 +72,8 @@ pub mod state {
 
 /// `events.jsonl`, one JSON object per line (README, "Events on disk").
 pub mod events {
+    use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
-    use chrono::NaiveDate;
 
     /// Every line that is a JSON object, in file order. A line that is not
     /// one is skipped: a torn last line from a write cut short, a blank, a
@@ -89,12 +89,42 @@ pub mod events {
     /// `YYYY-MM-DDTHH:MM:SSZ`; compared with `ts` as strings, the way
     /// `map(select(.ts >= $since))` does. `Err` names the accepted forms.
     pub fn since(events: Vec<Value>, since: &str) -> Result<Vec<Value>, String> {
-        Ok(events.into_iter().filter(|event| {
-          let date = NaiveDate::parse_from_str(event["ts"].as_str().unwrap(), "%Y-%m-%d").expect("Invalid date");
-          let since = NaiveDate::parse_from_str(since, "%Y-%m-%d").expect("Invalid date");
+        if !is_since(since) {
+            return Err(format!(
+                "since: {since:?} is not YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ (UTC)"
+            ));
+        }
+        // jq's order: null < booleans < numbers < strings < arrays < objects,
+        // so a ts that is not a string is dropped below a string and kept
+        // above one, as `.ts >= $since` does
+        Ok(events
+            .into_iter()
+            .filter(|event| match &event["ts"] {
+                Value::String(ts) => ts.as_str() >= since,
+                Value::Array(_) | Value::Object(_) => true,
+                _ => false,
+            })
+            .collect())
+    }
 
-          date >= since
-        }).collect())
+    /// Exactly one of the two forms, digit for digit, and a real date and
+    /// time. The shape is checked by hand first: chrono's parser takes more
+    /// than it is asked for (a sign, a fifth year digit, leading spaces).
+    fn is_since(since: &str) -> bool {
+        let shaped = |pattern: &str| {
+            since.len() == pattern.len()
+                && since.bytes().zip(pattern.bytes()).all(|(c, p)| match p {
+                    b'9' => c.is_ascii_digit(),
+                    _ => c == p,
+                })
+        };
+        if shaped("9999-99-99") {
+            NaiveDate::parse_from_str(since, "%Y-%m-%d").is_ok()
+        } else if shaped("9999-99-99T99:99:99Z") {
+            NaiveDateTime::parse_from_str(since, "%Y-%m-%dT%H:%M:%SZ").is_ok()
+        } else {
+            false
+        }
     }
 }
 

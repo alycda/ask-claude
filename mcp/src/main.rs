@@ -34,24 +34,32 @@ impl AskClaude {
         ) else {
             return Err("neither XDG_STATE_HOME nor HOME is set".into());
         };
-        // self._helper();
 
-        // read on every call: the script appends while the server runs
-        let text = match std::fs::read_to_string(dir.join("events.jsonl")) {
+        // read on every call: the script appends while the server runs.
+        // No state directory or no log is no events; neither is created.
+        let path = dir.join("events.jsonl");
+        let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Err(format!("events.jsonl: {e}")),
+            Err(e) => return Err(format!("{}: {e}", path.display())),
         };
-        let mut events = events::parse(&text);
-
-        if let Some(since) = since {
-            events = match events::since(events, &since) {
-                Ok(events) => events,
-                Err(why) => return Err(why),
-            };
+        let events = events::parse(&text);
+        match since {
+            Some(since) => events::since(events, &since),
+            None => Ok(events),
         }
+    }
 
-        Ok(events)
+    /// The report `name` over the events, or a tool error saying why there
+    /// are none to report on (an unreadable log, a bad since). Never a
+    /// panic: the next call reads again.
+    fn report(&self, name: &str, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
+        let events = match self.events(params) {
+            Ok(events) => events,
+            Err(why) => return Ok(tool_error(why)),
+        };
+        let report = reports::run(name, &events).expect("every tool here is a report");
+        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
     #[tool(
@@ -59,11 +67,7 @@ impl AskClaude {
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn tokens_by_chat(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
-        let report = reports::run(
-            "tokens_by_chat",
-            &self.events(params).expect("tokens_by_chat is a report"),
-        );
-        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
+        self.report("tokens_by_chat", params)
     }
 
     #[tool(
@@ -71,11 +75,7 @@ impl AskClaude {
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn cache_hit_by_model(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
-        let report = reports::run(
-            "cache_hit_by_model",
-            &self.events(params).expect("cache_hit_by_model is a report"),
-        );
-        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
+        self.report("cache_hit_by_model", params)
     }
 
     #[tool(
@@ -83,11 +83,7 @@ impl AskClaude {
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn seconds_by_model(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
-        let report = reports::run(
-            "seconds_by_model",
-            &self.events(params).expect("seconds_by_model is a report"),
-        );
-        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
+        self.report("seconds_by_model", params)
     }
 
     #[tool(
@@ -95,13 +91,7 @@ impl AskClaude {
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn refusals_by_category(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
-        let report = reports::run(
-            "refusals_by_category",
-            &self
-                .events(params)
-                .expect("refusals_by_category is a report"),
-        );
-        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
+        self.report("refusals_by_category", params)
     }
 
     #[tool(
@@ -109,17 +99,13 @@ impl AskClaude {
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn advisor_spend(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
-        let report = reports::run(
-            "advisor_spend",
-            &self.events(params).expect("advisor_spend is a report"),
-        );
-        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
+        self.report("advisor_spend", params)
     }
 }
 
 /// A tool error: `isError: true` with the reason as text, so the model
 /// sees why (a JSON-RPC error would reach it as an opaque failure).
-fn _tool_error(why: impl Into<String>) -> CallToolResult {
+fn tool_error(why: impl Into<String>) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(why)])
 }
 

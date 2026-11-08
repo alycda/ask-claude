@@ -52,6 +52,10 @@ One JSON array of turns per chat, named by its start time
 beside it in `<name>.json.container`, so the next turn reuses the container.
 An empty chat leaves no file.
 
+The state directory must be a real directory you own, mode 700. The script
+sets the mode and exits 2 when the directory is a symlink, cannot be created
+or made private, or is owned by another account.
+
 ## Events on disk
 
 Every Messages request and every Managed Agents session turn appends one

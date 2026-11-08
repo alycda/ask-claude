@@ -119,12 +119,20 @@ case "$usage_max_tokens" in
 "" | *[!0-9]* | 0*) die "--max-tokens must be a positive integer, got: $usage_max_tokens" ;;
 esac
 
-mkdir -p "$STATE" && chmod 700 "$STATE"
-# The script writes fixed names next to HIST (.tmp, .turn, .sse, .container).
-# In a directory other accounts can write, one of them could plant those
-# names as symlinks or files. Refuse such a directory.
-# shellcheck disable=SC2012  # ls -ldnL is portable to macOS; the path is ours, not user input
-case "$(ls -ldnL "$STATE" | cut -c6,9)" in
+# The script writes fixed names into $STATE (.tmp, .turn, .sse, .container,
+# .stream.<pid>, .always.<pid>), and an .always.<pid> file allows every tool
+# confirmation of that process. In a directory another account owns or can
+# write, that account could plant those names. Refuse such a directory: a
+# symlink (whose target is not ours to vouch for), one we cannot create or
+# make private, one another account owns, one others can write.
+mkdir -p "$STATE" || die "cannot create $STATE"
+[ ! -L "$STATE" ] || die "$STATE is a symlink; keep the history in a private directory, not a link to one"
+chmod 700 "$STATE" || die "cannot make $STATE private (chmod 700); keep the history in a directory you own"
+# shellcheck disable=SC2012  # ls -ldn is portable to macOS; the path is ours, not user input
+state_owner=$(ls -ldn "$STATE" | awk '{print $3}')
+[ "$state_owner" = "$(id -u)" ] || die "$STATE is owned by uid $state_owner, not you; keep the history in a directory you own"
+# shellcheck disable=SC2012
+case "$(ls -ldn "$STATE" | cut -c6,9)" in
 *w*) die "$STATE is writable by other accounts; keep the history in a private directory" ;;
 esac
 

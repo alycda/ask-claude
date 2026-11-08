@@ -52,9 +52,10 @@
 #USAGE }
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # usage_* vars are set by the usage runtime
+# shellcheck source-path=SCRIPTDIR/lib  # the modules: . "$LIB/<name>.bash"
 
 set -uo pipefail
-# The script ships as one file, so it carries its own copy of VERSION;
+# The script carries its own copy of VERSION, read by --version below;
 # `just bump` rewrites this line and `just check-version-line` compares them.
 readonly ASK_CLAUDE_VERSION=0.3.0
 # History holds whole conversations, including -f file contents: every file
@@ -62,8 +63,9 @@ readonly ASK_CLAUDE_VERSION=0.3.0
 # shell's umask.
 umask 077
 
-# The jq programs live next to the script, in lib/ (docs/plan.md: one shape
-# for the goldens, the bash script and the Rust port).
+# The jq programs and the bash modules live next to the script, in lib/
+# (docs/plan.md: one shape for the goldens, the bash script and the Rust
+# port; each module's header names the globals it reads and sets).
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude"
 
@@ -78,108 +80,15 @@ if [ "${usage_version:-}" = true ]; then
   exit 0
 fi
 
-# Providers. The bash version speaks the Messages API only; the OpenAI
-# chat-completions shape (OpenAI, Venice at its own base URL) is the Rust
-# port's (docs/plan.md, phase 3). Refused before any key check or request.
-case "${usage_provider:-anthropic}" in
-anthropic) ;;
-openai) die "--provider openai is not implemented in the bash version, see docs/plan.md" ;;
-*) die "unknown provider \"$usage_provider\" (anthropic|openai)" ;;
-esac
-
-# --base-url: the API root, https://api.anthropic.com unless given. Anything
-# but https goes to a loopback address only, so the key never travels in
-# clear over a network. The host is what curl will connect to, so the check
-# is on the whole authority: "http://localhost:@example.com" starts like
-# localhost, but curl reads "localhost:" as user info and connects to
-# example.com. No API root carries user info, so any "@" is refused.
-BASE_URL="${usage_base_url:-https://api.anthropic.com}"
-case "$BASE_URL" in
-*@*) die "--base-url must not carry user info (an @), got: $BASE_URL" ;;
-https://*) ;;
-*)
-  [[ $BASE_URL =~ ^http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/.*)?$ ]] ||
-    die "--base-url must be https:// (or http:// on localhost), got: $BASE_URL"
-  ;;
-esac
-API="${BASE_URL%/}/v1/messages"
-# the event log records where requests went, never the path or a query
-HOST="${BASE_URL#*://}"
-HOST="${HOST%%/*}"
-
-# --mcp: servers the model may call through the MCP connector; https only,
-# like the docs require, and checked here so a typo is exit 2, not a 400.
-mcp_count=0 mcp_vars=""
-for v in ${usage_mcp:-}; do
-  case "$v" in https://*) ;; *) die "--mcp takes https URLs, got: $v" ;; esac
-  mcp_count=$((mcp_count + 1))
-  # the variable lib/request.jq reads for this server's token: the host as
-  # its `host` cuts it, upper-cased, every other character an underscore
-  h=${v#https://}
-  h=${h%%[/:]*}
-  h=${h//[!A-Za-z0-9_]/_}
-  mcp_vars+=" ASK_CLAUDE_MCP_TOKEN_${h^^}"
+# The modules, in the order the single file had them: config runs the
+# flag and state-dir checks, the rest define state and functions. The
+# script runs without -e, so a missing module is caught here, not as
+# "command not found" later.
+for _mod in config common; do
+  [ -r "$LIB/$_mod.bash" ] || die "missing $LIB/$_mod.bash; the script needs every file in lib/"
 done
-# A token is one server's credential: sent to several, each server's operator
-# would receive the others'. Refuse rather than drop it in silence.
-if [ "$mcp_count" -gt 1 ] && [ -n "${ASK_CLAUDE_MCP_TOKEN:-}" ]; then
-  die "ASK_CLAUDE_MCP_TOKEN would go to all $mcp_count --mcp servers; unset it and give each server its own:$mcp_vars"
-fi
-
-# The key is checked where a request can happen (one shot, chat loop), so
-# `list` works without one.
-need_key() { [ -n "${ANTHROPIC_API_KEY:-}" ] || die "no key: export ANTHROPIC_API_KEY"; }
-command -v jq >/dev/null || die "jq not found"
-case "$usage_max_tokens" in
-"" | *[!0-9]* | 0*) die "--max-tokens must be a positive integer, got: $usage_max_tokens" ;;
-esac
-
-# The script writes fixed names into $STATE (.tmp, .turn, .sse, .container,
-# .stream.<pid>, .always.<pid>), and an .always.<pid> file allows every tool
-# confirmation of that process. In a directory another account owns or can
-# write, that account could plant those names. Refuse such a directory: a
-# symlink (whose target is not ours to vouch for), one we cannot create or
-# make private, one another account owns, one others can write.
-mkdir -p "$STATE" || die "cannot create $STATE"
-[ ! -L "$STATE" ] || die "$STATE is a symlink; keep the history in a private directory, not a link to one"
-chmod 700 "$STATE" || die "cannot make $STATE private (chmod 700); keep the history in a directory you own"
-# shellcheck disable=SC2012  # ls -ldn is portable to macOS; the path is ours, not user input
-state_owner=$(ls -ldn "$STATE" | awk '{print $3}')
-[ "$state_owner" = "$(id -u)" ] || die "$STATE is owned by uid $state_owner, not you; keep the history in a directory you own"
-# shellcheck disable=SC2012
-case "$(ls -ldn "$STATE" | cut -c6,9)" in
-*w*) die "$STATE is writable by other accounts; keep the history in a private directory" ;;
-esac
-
-# SAFE: prefix for every jq program that prints text to the terminal (the
-# live printer has its own copy in lib/stream.jq). Replies and error messages
-# may carry control characters; jq -r decodes \u001b etc. into raw bytes.
-SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode else . end; '
-# DOLLARS: cents as the API gives them (a string) to "$1.23", for the usage
-# line, `agent list` and `agent budget`
-# shellcheck disable=SC2016  # a jq program, not a shell string
-DOLLARS='def dollars: (tonumber / 100) as $d | "$" + ($d | floor | tostring) + "." + (($d * 100 | round) % 100 | tostring | if length < 2 then "0" + . else . end); '
-
-# event <kind> <round> <seconds> <error> <chat>: append one line to the event
-# log, built by lib/event.jq from the message, fold or null on stdin. Tokens,
-# timing and outcome only, never prompt, reply or error text. Off with
-# ASK_CLAUDE_EVENTS=off. A log that cannot be written is skipped in silence:
-# the redirect sits inside the group, because bash reports a failed >> open
-# before a trailing 2>/dev/null applies.
-event() {
-  local line
-  [ "${ASK_CLAUDE_EVENTS:-}" != off ] || return 0
-  line=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg version "$ASK_CLAUDE_VERSION" \
-    --arg kind "$1" --argjson round "$2" --argjson seconds "$3" --arg error "$4" \
-    --arg chat "$5" --arg host "$HOST" -f "$LIB/event.jq" 2>/dev/null) || return 0
-  # in a subshell: a signal from the write (SIGXFSZ at a ulimit -f) ends it,
-  # not the script
-  (printf "%s\n" "$line" >>"$STATE/events.jsonl") 2>/dev/null || :
-}
-
-# error_kind: the event-log category for an error body on stdin: its
-# error.type, unknown for JSON without one, unreadable for anything else
-error_kind() { jq -rs 'if (.[0] | type) == "object" then .[0].error.type // "unknown" else "unreadable" end' 2>/dev/null || echo unreadable; }
+. "$LIB/config.bash"
+. "$LIB/common.bash"
 
 # A fresh history path; the PID keeps two processes started in the same second
 # apart.
@@ -432,17 +341,7 @@ SESSIONS="$STATE/sessions"
 MA_BETA="managed-agents-2026-04-01"
 turn=0
 
-# headers <beta>: the request headers for a header file on a pipe
-headers() { printf 'content-type: application/json\nx-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: %s\n' "$ANTHROPIC_API_KEY" "$1"; }
 ma_headers() { headers "$MA_BETA"; }
-
-# api_error <json>: the API's error message, "unreadable response" for a body
-# that is not JSON, nothing for a body without .error
-api_error() { jq -r "$SAFE"'.error.message // empty | safe' <<<"$1" 2>/dev/null || echo "unreadable response"; }
-
-# sse_data: the JSON of every "data: " line, one per line (a shell loop, so
-# one jq handles the whole stream instead of one per event)
-sse_data() { while IFS= read -r l; do case "$l" in "data: "*) printf '%s\n' "${l#data: }" ;; esac done }
 
 # ma_call <method> <path> [body]: one request, the response body on stdout;
 # a transport failure prints an error body so callers see it through

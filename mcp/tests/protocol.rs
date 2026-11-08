@@ -62,7 +62,7 @@ fn u1_every_report_takes_an_optional_since() {
         let schema = &tool["inputSchema"];
         assert_eq!(schema["type"], "object", "{tool}");
         assert!(
-            is_string_schema(&schema["properties"]["since"]),
+            is_string_schema(&schema["properties"]["_since"]),
             "since is a string: {tool}"
         );
         let required = schema["required"].as_array().cloned().unwrap_or_default();

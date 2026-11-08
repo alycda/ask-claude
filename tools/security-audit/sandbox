@@ -3,7 +3,8 @@
 #
 # Runs one command of a security-audit run under the controls the Cloudflare
 # security-audit skill requires before target code may run
-# (docs/plans/2026-11-08-001-security-audit-run-2-plan.md):
+# (docs/plans/2026-11-08-001-security-audit-run-2-plan.md; run 2 itself ran on
+# macOS, so it used a Docker sandbox instead, see docs/security-audit/REPORT.md):
 #
 # - no external network: a new network namespace with loopback only
 # - writes only to <scratch dir>: a new mount namespace in which every mount

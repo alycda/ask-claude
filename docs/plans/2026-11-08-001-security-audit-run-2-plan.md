@@ -3,16 +3,31 @@ title: "security audit, run 2: a scoped re-run of the Cloudflare security-audit 
 type: security
 date: 2026-11-08
 origin: docs/security-audit/REPORT.md
-status: planned, not approved
+status: done, 2026-11-07
+result: docs/security-audit/
 ---
 
 # security audit, run 2: a scoped re-run of the Cloudflare security-audit skill
 
 ## Summary
 
-A second full-audit-mode run of the [Cloudflare security-audit skill](https://github.com/cloudflare/security-audit-skill), scoped to the source that changed since run 1 (`88afb08`) and to the work run 1 left open. It uses the `standard` profile with a budget of 25 agent invocations, the same as run 1. Target code runs only inside `tools/security-audit/sandbox`. The report replaces `docs/security-audit/` in place, so run 1 survives in git history. The run has not started: the owner chose "not now" on 2026-11-08.
+A second full-audit-mode run of the [Cloudflare security-audit skill](https://github.com/cloudflare/security-audit-skill), scoped to the source that changed since run 1 (`88afb08`) and to the work run 1 left open. The plan below is as written before the run. The run happened at `9c21790e`, and its report replaced `docs/security-audit/` in place, so run 1 survives in git history.
 
-The machine-readable plan the run starts from is `2026-11-08-001-security-audit-run-2.run-metadata.json`, next to this file.
+## Outcome
+
+The run reached the skill's `complete` state, with both validators passing (8 findings, 28 coverage units). `docs/security-audit/REPORT.md` is the record. It departed from this plan in three ways:
+
+- **Budget:** 25 was raised to 32 after wave 1, because 8 candidates needed about 18 more agents. 30 were spent.
+- **Sandbox:** the run was on macOS, so `tools/security-audit/sandbox` (Linux-only) was not used. Target code ran in a Docker sandbox instead: no network, read-only except a per-agent scratch directory, an allowlisted environment, and the same limits.
+- **Coverage:** the post-wave critic accepted one unit that the budget could not fund, the `effver.just` bump recipe and the `bump-effver` VERSION sink. It is deferred, so the run makes no clean-coverage claim.
+
+Results:
+
+- **3 confirmed, all low:** a jq 1.7 `tonumber` error that bypasses `safe`; the custom-tool round cap; per-host MCP token name collisions.
+- **5 needs_validation**, each with a blocker the source cannot settle.
+- **Run 1:** its 8 confirmed records and its shared-token lead are fixed in current source.
+
+The machine-readable plan that seeded the run (`*.run-metadata.json`) was removed after the run. The run's real metadata names local paths, and the report states its facts.
 
 ---
 

@@ -91,6 +91,24 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+@test "one-shot: ASK_CLAUDE_MCP_TOKEN with several --mcp exits 2 first, naming each server's own variable" {
+    run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+        "$BIN" --mcp https://mcp.deepwiki.com/mcp --mcp https://mcp.example.com/sse "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'ASK_CLAUDE_MCP_TOKEN_MCP_DEEPWIKI_COM' <<<"$stderr"
+    grep -q 'ASK_CLAUDE_MCP_TOKEN_MCP_EXAMPLE_COM' <<<"$stderr"
+    refute grep -q 'tok_SHARED' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: several --mcp with their own tokens each send their own" {
+    run --separate-stderr env ASK_CLAUDE_MCP_TOKEN_MCP_DEEPWIKI_COM=tok_A ASK_CLAUDE_MCP_TOKEN_MCP_EXAMPLE_COM=tok_B \
+        ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+        "$BIN" --mcp https://mcp.deepwiki.com/mcp --mcp https://mcp.example.com/sse "ping"
+    [ "$status" -eq 0 ]
+    jq -e '.mcp_servers | map(.authorization_token) == ["tok_A", "tok_B"]' "$TMP/requests.jsonl"
+}
+
 @test "one-shot: a request log that cannot be written fails the request before anything is sent" {
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/nodir/requests.jsonl" "$BIN" "ping"
     [ "$status" -eq 1 ]

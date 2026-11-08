@@ -1,0 +1,14 @@
+[
+  {
+    "model": "claude-haiku-5-5",
+    "requests": 2,
+    "mean_seconds": 2.5,
+    "max_seconds": 4
+  },
+  {
+    "model": "claude-opus-5-5",
+    "requests": 5,
+    "mean_seconds": 6,
+    "max_seconds": 10
+  }
+]

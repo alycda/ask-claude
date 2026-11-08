@@ -1,0 +1,31 @@
+: connected
+
+event: message
+data: {"content":[{"text":"(the report)","type":"text"}],"custom_tool_use_id":"sevt_FIXTURE04","id":"sevt_FIXTURE18","is_error":true,"processed_at":"2026-11-06T09:40:27.546822Z","type":"user.custom_tool_result"}
+
+event: message
+data: {"id":"sevt_FIXTURE19","processed_at":"2026-11-06T09:40:27.621635Z","type":"session.status_running"}
+
+event: message
+data: {"agent_name":"fixture","id":"sevt_FIXTURE20","processed_at":"2026-11-06T09:40:27.621636Z","session_thread_id":"sthr_FIXTURE01","type":"session.thread_status_running"}
+
+event: message
+data: {"id":"sevt_FIXTURE21","processed_at":"2026-11-06T09:40:27.683446Z","type":"span.model_request_start"}
+
+event: message
+data: {"id":"sevt_FIXTURE22","processed_at":"2026-11-06T09:40:28.967542Z","type":"agent.thinking"}
+
+event: message
+data: {"content":[{"text":"The agent session sesn_FIXTURE01 used the most.","type":"text"}],"id":"sevt_FIXTURE23","processed_at":"2026-11-06T09:40:29.064313Z","type":"agent.message"}
+
+event: message
+data: {"id":"sevt_FIXTURE24","is_error":false,"model_request_start_id":"sevt_FIXTURE21","model_usage":{"cache_creation_input_tokens":95,"cache_read_input_tokens":4476,"input_tokens":2,"output_tokens":182,"speed":"standard"},"processed_at":"2026-11-06T09:40:29.064314Z","type":"span.model_request_end"}
+
+event: message
+data: {"agent_name":"fixture","id":"sevt_FIXTURE25","processed_at":"2026-11-06T09:40:29.176927Z","session_thread_id":"sthr_FIXTURE01","stop_details":null,"stop_reason":{"type":"end_turn"},"type":"session.thread_status_idle"}
+
+event: message
+data: {"budget":{"max_list_cost":{"amount":"10","currency":"USD"},"type":"limit"},"id":"sevt_FIXTURE26","processed_at":"2026-11-06T09:40:29.176928Z","type":"session.usage","usage":{"active_seconds":3.627,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":4571},"cache_read_input_tokens":8875,"input_tokens":8,"list_cost":{"amount":"0","currency":"USD"},"output_tokens":282,"server_tool_use":{"web_fetch_requests":0,"web_search_requests":0}}}
+
+event: message
+data: {"id":"sevt_FIXTURE27","processed_at":"2026-11-06T09:40:29.176929Z","stop_details":null,"stop_reason":{"type":"end_turn"},"type":"session.status_idle"}

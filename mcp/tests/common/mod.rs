@@ -57,8 +57,13 @@ pub fn version() -> String {
         .to_string()
 }
 
+/// The server under test: this crate's binary, or ASK_CLAUDE_MCP_BIN (a
+/// release build, or a stand-in when checking the tests themselves), the
+/// variable tests/unit/mcp.bats reads too.
 pub fn server_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_ask-claude-mcp"))
+    std::env::var_os("ASK_CLAUDE_MCP_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_ask-claude-mcp")))
 }
 
 /// The five reports, in the order the README asks them.
@@ -69,6 +74,42 @@ pub const REPORTS: [&str; 5] = [
     "refusals_by_category",
     "advisor_spend",
 ];
+
+/// tests/fixtures/mcp/reports/<name>.json, or <name>.since.json with a
+/// suffix "since": what jq prints for the events fixture.
+pub fn golden(name: &str, suffix: Option<&str>) -> Value {
+    let file = match suffix {
+        Some(s) => format!("mcp/reports/{name}.{s}.json"),
+        None => format!("mcp/reports/{name}.json"),
+    };
+    read_json(&fixture(&file))
+}
+
+/// Equal the way jq sees JSON: a number is its value, so jq's `6` and the
+/// `6.0` an f64 serializes to are the same; object keys in any order;
+/// arrays in order. serde_json's own `==` tells 6 from 6.0.
+pub fn jq_eq(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| jq_eq(p, q))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| jq_eq(v, w)))
+        }
+        _ => a == b,
+    }
+}
+
+#[track_caller]
+pub fn assert_jq_eq(actual: &Value, expected: &Value, what: &str) {
+    assert!(
+        jq_eq(actual, expected),
+        "{what}\n--- expected (jq) ---\n{}\n--- actual ---\n{}",
+        serde_json::to_string_pretty(expected).unwrap(),
+        serde_json::to_string_pretty(actual).unwrap()
+    );
+}
 
 /// The names of a tools/list or resources/list array, in order.
 pub fn names(items: &[Value]) -> Vec<String> {

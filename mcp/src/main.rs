@@ -96,11 +96,10 @@ impl AskClaude {
     )]
     fn refusals_by_category(
         &self,
-        Parameters(Since { since }): Parameters<Since>,
+        params: Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
-        todo!()
-
-        // Ok(CallToolResult::default());
+        let report = reports::run("refusals_by_category", &self.events(params).expect("refusals_by_category is a report"));
+        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
     #[tool(

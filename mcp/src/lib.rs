@@ -250,8 +250,15 @@ pub mod reports {
     }
 
     /// tests/fixtures/mcp/reports/refusals_by_category.jq
-    fn refusals_by_category(_events: &[Value]) -> Vec<Refusals> {
-        todo!("U2: tests/fixtures/mcp/reports/refusals_by_category.jq")
+    fn refusals_by_category(events: &[Value]) -> Vec<Refusals> {
+        let refusals = events.iter().filter(|e| e["stop_reason"] == "refusal");
+        group_by(refusals, |e| e["stop_category"].as_str())
+            .into_iter()
+            .map(|(category, group)| Refusals {
+                category: category.map(String::from),
+                refusals: group.len(),
+            })
+            .collect()
     }
 
     /// tests/fixtures/mcp/reports/advisor_spend.jq

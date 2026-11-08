@@ -132,6 +132,19 @@ per-turn seam (`ASK_CLAUDE_REPLAY` as a directory of turns) is the bats
 seam for all of it, and the Rust `Provider` trait gains a `Sessions`
 transport at R7.
 
+## Phase 3c: the MCP server (0.4.x)
+
+Planned in `docs/plans/2026-11-08-002-feat-mcp-server-plan.md`; its units are
+the commits here, each a red test and an empty TODO the feat replaces.
+0.4.0, local state over stdio: U1 handshake and tool list, U2 the README's
+five event-log queries as tools (jq is the oracle), U3 `since`, U4 a
+missing, empty or torn log, U5 the state-dir gate on the read side, U6 the
+chats and the log as resources. 0.5.0, TODOs only: HTTP and its auth
+decision, `agent --detach` and `agent history` in the script, the agent
+tools over the script, a recording mode for `--mcp`, and `second_opinion`
+after R7. A crate of its own in `mcp/`, ahead of the port and not waiting
+for it.
+
 ## Phase 4: Rust port
 
 Crate `ask-claude` in `rust/` (own line, merged when it reaches parity).

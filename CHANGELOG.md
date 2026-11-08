@@ -10,6 +10,36 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.3.0 (macro) - 2026-11-07
+
+- `agent --local-mcp <command>` (or `ASK_CLAUDE_LOCAL_MCP`) runs a stdio MCP
+  server on this machine and answers the session's custom tool calls with
+  it. Each call goes through the same tool confirmation as the agent's
+  other tools and shows as `local <name>`. Text and embedded text
+  resources go back to the session; other content is named, not sent.
+  Custom-tool rounds are capped at 8 a turn. The server starts in its own
+  process group, and the whole group is stopped when ask-claude exits,
+  with SIGKILL if SIGTERM fails.
+- `agent tools --local-mcp <command>` prints the server's tools as custom
+  tool definitions to paste into the agent, with the top-level `$schema`
+  dropped. It needs no API key.
+- `--mcp` tokens are per server: a server gets `ASK_CLAUDE_MCP_TOKEN_<HOST>`.
+  The shared `ASK_CLAUDE_MCP_TOKEN` still works with one `--mcp`, and is
+  refused with more than one.
+- The state directory is refused, before any request, when it is a
+  symlink, when `chmod 700` fails, or when another account owns it.
+- `agent files` aligns its list without `column`, and exits 1 when it
+  cannot print one.
+- Security audit run 2 (`docs/security-audit/`) replaces run 1's report.
+  It confirmed 3 low findings, which are not fixed in this version.
+- Adopting needs:
+  - **More than one `--mcp` server with the shared `ASK_CLAUDE_MCP_TOKEN`:**
+    move the token to one `ASK_CLAUDE_MCP_TOKEN_<HOST>` per server.
+  - **A one-shot prompt starting with the word `tools` under `agent`:**
+    it now runs `agent tools`.
+  - **A state directory that is a symlink or another account's:** point
+    `XDG_STATE_HOME` at a directory of your own.
+
 ## 0.2.7 (micro) - 2026-11-07
 
 - An event log: every Messages request and every session turn appends one

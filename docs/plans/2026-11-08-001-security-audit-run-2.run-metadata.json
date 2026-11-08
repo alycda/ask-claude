@@ -1,0 +1,64 @@
+{
+  "run_id": "run-2",
+  "repo": "alycda/ask-claude",
+  "source_ref": {
+    "commit": "resolve at start (git rev-parse HEAD)",
+    "planned_at": "8cbbcd5",
+    "prior_run_ref": "88afb08"
+  },
+  "profile": "standard",
+  "scope": "scoped run: source changed since the run-1 audit (88afb08) plus every run-1 unit left deferred or carrying a changed-source record",
+  "scope_paths": [
+    "ask-claude",
+    "lib/request.jq",
+    "lib/event.jq",
+    "lib/session-fold.jq",
+    "lib/stream.jq",
+    "tools/effver/",
+    "justfile",
+    ".github/workflows/"
+  ],
+  "planned_units": [
+    "local-mcp: server start (sh -c), FIFO transport, lifecycle and cleanup",
+    "local-mcp: model-chosen custom tool calls reaching local execution; confirmation path; ASK_CLAUDE_CONFIRM; the always grant",
+    "local-mcp: tool results and server-controlled strings flowing to the API and the terminal (AI-AND-LLM companion)",
+    "agent tools: server-supplied definitions",
+    "STATE gate: revalidate run-1 state-dir record and the resolved needs_validation lead",
+    "--mcp tokens: revalidate the resolved needs_validation lead (per-host token naming, refusal)",
+    "event log: lib/event.jq and events.jsonl writes from endpoint-controlled strings",
+    "--advisor: request building and stream rendering",
+    "agent files: listing (changed) and download (run-1 fix)",
+    ".github/workflows: triggers, permissions, action pinning (SUPPLY-CHAIN-AND-RELEASE companion)",
+    "check-effver / effver.just: revalidate the run-1 medium finding and its fix",
+    "run-1 deferred: Messages --web --mcp -s -f tool composition",
+    "run-1 deferred: agent --repo --vault --memory session resources",
+    "run-1 deferred: session_stream_read stream framing",
+    "run-1 deferred: check-effver problem-report printing",
+    "run-1 confirmed records with changed source: revalidate each fix (8)"
+  ],
+  "out_of_scope": [
+    "tests/ (except as evidence)",
+    "docs/",
+    "unchanged-source units run-1 covered"
+  ],
+  "budget": 25,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "sandbox": "tools/security-audit/sandbox: user, network, mount and PID namespaces; every mount read-only except the agent scratch dir; env -i allowlist; 60 s wall, 30 s CPU, 512 MiB, 64 processes, 16 MiB files. Checked 2026-11-08: no network, no writes outside scratch.",
+  "skill": {
+    "repo": "cloudflare/security-audit-skill",
+    "commit": "c1c8a8c"
+  },
+  "companions": [
+    "AI-AND-LLM.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md",
+    "DESKTOP-MOBILE-AND-LOCAL-IPC.md"
+  ],
+  "prior_runs": [
+    "docs/security-audit/coverage-ledger.json",
+    "docs/security-audit/findings.json"
+  ],
+  "output_dir": "~/security-audit-skill/ask-claude/run-2 (outside the target); when both validators pass, the report files replace docs/security-audit/ in place",
+  "run_status": "planned, not approved",
+  "plan": "docs/plans/2026-11-08-001-security-audit-run-2-plan.md",
+  "target": "the repository root"
+}

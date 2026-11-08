@@ -10,7 +10,11 @@
 # FAKE_MCP_MODE     ok (default) | no-init (exit at initialize) |
 #                   crash-on-call | hang-on-call | rpc-error | error-result |
 #                   noisy (a notification, a server request and a non-JSON
-#                   line before each tool result)
+#                   line before each tool result) | mixed (every MCP content
+#                   type in one result, the shape github-mcp-server's
+#                   get_file_contents uses for a file)
+# FAKE_MCP_SCHEMA_META  1: every inputSchema carries a $schema key, as
+#                   Supabase's and Cloudflare's servers send
 #
 # Every jq call reads the message from stdin: the argv test shims jq and
 # fails if a tool input or result reaches any jq command line.
@@ -32,9 +36,10 @@ while IFS= read -r line; do
             capabilities: {tools: {}}, serverInfo: {name: "fake", version: "0"}}}'
         ;;
     tools/list)
-        jq -nc --argjson id "$id" --argjson t "$tools" '{jsonrpc: "2.0", id: $id, result: {tools: [$t[] |
+        jq -nc --argjson id "$id" --argjson t "$tools" --arg meta "${FAKE_MCP_SCHEMA_META:-}" '{jsonrpc: "2.0", id: $id, result: {tools: [$t[] |
             {name: ., description: "fixture tool \(.)",
-             inputSchema: {type: "object", properties: {city: {type: "string"}}, required: ["city"]}}]}}'
+             inputSchema: ((if $meta == "1" then {"$schema": "http://json-schema.org/draft-07/schema#"} else {} end)
+                           + {type: "object", properties: {city: {type: "string"}}, required: ["city"]})}]}}'
         ;;
     tools/call)
         case "$mode" in
@@ -49,6 +54,14 @@ while IFS= read -r line; do
         case "$mode" in
         rpc-error)
             jq -nc --argjson id "$id" '{jsonrpc: "2.0", id: $id, error: {code: -32602, message: "bad arguments"}}'
+            ;;
+        mixed)
+            jq -c '{jsonrpc: "2.0", id: .id, result: {content: [
+                {type: "text", text: "downloaded"},
+                {type: "resource", resource: {uri: "repo://o/r/contents/VERSION", mimeType: "text/plain", text: "0.2.7\n"}},
+                {type: "resource", resource: {uri: "repo://o/r/contents/logo.png", mimeType: "image/png", blob: "iVBORw0K"}},
+                {type: "resource_link", uri: "repo://o/r/contents/README.md", name: "README.md"},
+                {type: "image", data: "iVBORw0K", mimeType: "image/png"}]}}' <<<"$line"
             ;;
         error-result)
             jq -c '{jsonrpc: "2.0", id: .id, result: {content: [{type: "text",

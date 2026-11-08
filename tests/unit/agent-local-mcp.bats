@@ -73,6 +73,18 @@ result() { request "$1" | jq -c '.events[0]'; }
     result 2 | jq -e '.is_error == true and .content == [{type: "text", text: "no weather for Paris"}]'
 }
 
+@test "local-mcp: an embedded text resource goes back as text; binary content and links are named" {
+    FAKE_MCP_MODE=mixed ASK_CLAUDE_CONFIRM=allow run --separate-stderr replay --local-mcp "$SERVER" "weather?" </dev/null
+    [ "$status" -eq 0 ]
+    result 2 | jq -e '.is_error == false and (.content | length) == 5'
+    result 2 | jq -e '.content[0].text == "downloaded"'
+    result 2 | jq -e '.content[1].text == "Resource repo://o/r/contents/VERSION:\n0.2.7\n"'
+    result 2 | jq -e '.content[2].text | test("binary resource repo://o/r/contents/logo.png \\(image/png\\) not passed on")'
+    result 2 | jq -e '.content[3].text == "Resource link: repo://o/r/contents/README.md (README.md)"'
+    result 2 | jq -e '.content[4].text | test("image content not passed on")'
+    result 2 | jq -e 'all(.content[]; .type == "text")'
+}
+
 @test "local-mcp: a JSON-RPC error goes back as an error naming the code" {
     FAKE_MCP_MODE=rpc-error ASK_CLAUDE_CONFIRM=allow run --separate-stderr replay --local-mcp "$SERVER" "weather?" </dev/null
     [ "$status" -eq 0 ]
@@ -143,6 +155,13 @@ result() { request "$1" | jq -c '.events[0]'; }
     [ "$status" -eq 0 ]
     jq -e 'length == 2 and all(.[]; .type == "custom" and (.description | length > 0) and .input_schema.type == "object")' <<<"$output"
     jq -e 'map(.name) == ["get_weather", "get_time"]' <<<"$output"
+}
+
+@test "local-mcp: agent tools drops the \$schema key some servers put on every input schema" {
+    run --separate-stderr env FAKE_MCP_SCHEMA_META=1 "$BIN" agent tools --local-mcp "$SERVER"
+    [ "$status" -eq 0 ]
+    jq -e 'all(.[]; .input_schema | has("$schema") | not)' <<<"$output"
+    jq -e '.[0].input_schema.required == ["city"]' <<<"$output"
 }
 
 @test "local-mcp: agent tools needs no key, agent or environment, but needs a server" {

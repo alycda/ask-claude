@@ -37,6 +37,56 @@ request() { sed -n "$1p" "$TMP/requests.jsonl"; }
     grep -qE '^result.txt\s+4\s+file_FIXTURE02$' <<<"$output"
 }
 
+# no_column: a `column` first on PATH that fails the way a missing one does.
+# Debian and Ubuntu leave column (bsdextrautils) out of minimal images, so
+# the script aligns the list itself.
+no_column() {
+    mkdir -p "$TMP/bin"
+    printf '#!/bin/sh\necho "column: command not found" >&2\nexit 127\n' >"$TMP/bin/column"
+    chmod +x "$TMP/bin/column"
+    export PATH="$TMP/bin:$PATH"
+}
+
+# page <jq expr>: a replay directory whose files list is <jq expr>
+page() {
+    mkdir -p "$TMP/page"
+    jq -n "$1" >"$TMP/page/files.json"
+}
+
+@test "files: the list is aligned without column" {
+    no_column
+    run --separate-stderr replay files sesn_FIXTURE01
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    [ "$output" = "$(printf '%s\n' 'notes.txt   17  file_FIXTURE01' 'result.txt  4   file_FIXTURE02')" ]
+}
+
+@test "files: an empty list prints nothing and exits 0" {
+    no_column
+    page '{data: []}'
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/page" "$BIN" agent files sesn_FIXTURE01
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ -z "$stderr" ]
+}
+
+@test "files: a name with a tab, a newline or an escape stays on its own line" {
+    no_column
+    page '{data: [{id: "file_A", filename: "a\tb\nc\u001b[2Jd", size_bytes: 1},
+                  {id: "file_B", filename: "e", size_bytes: 22}]}'
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/page" "$BIN" agent files sesn_FIXTURE01
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf '%s\n' 'a\tb\nc[2Jd  1   file_A' 'e            22  file_B')" ]
+}
+
+@test "files: a list page the script cannot print exits 1, not 0 with nothing" {
+    page '{data: [{id: "file_A", filename: {"not": "a name"}, size_bytes: 1}]}'
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/page" "$BIN" agent files sesn_FIXTURE01
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+    grep -q 'file list' <<<"$stderr"
+}
+
 @test "files: downloads land in the current directory, mode 600" {
     cd "$TMP"
     run --separate-stderr replay files sesn_FIXTURE01 result.txt

@@ -288,3 +288,4 @@ optionally `OPENAI_MODEL` in `.env`; Venice is just a base URL).
 - [Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview)
 - [Justfile](https://github.com/casey/just)
 - [Security Audit](https://github.com/cloudflare/security-audit-skill)
+- [Shell Style Guide (Google)](https://google.github.io/styleguide/shellguide.html)

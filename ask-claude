@@ -783,7 +783,18 @@ session_files() {
   page=$(ma_call GET "/files?scope_id=$sesn")
   session_api_error "$page" && return 1
   if [ $# -eq 0 ]; then
-    jq -r "$SAFE"'.data[]? | [.filename, (.size_bytes | tostring), .id] | @tsv | safe' <<<"$page" | column -t -s $'\t'
+    # Aligned here, not by column(1): minimal Debian and Ubuntu images do not
+    # ship it. Same layout as `column -t`: each column but the last padded to
+    # its widest cell, two spaces between. Each cell is escaped as @tsv
+    # escapes it (tab, newline, backslash), then made safe. Width is counted
+    # in code points, so a name with wide characters can push its row over.
+    jq -r "$SAFE"'
+      [.data[]? | [.filename, .size_bytes, .id] | map([.] | @tsv | safe)] as $rows
+      | ($rows | map(map(length)) | transpose | map(max)) as $w
+      | $rows[]
+      | [to_entries[] | if .key < ($w | length) - 1 then .value + " " * ($w[.key] - (.value | length) + 1) else .value end]
+      | join(" ")' <<<"$page" 2>/dev/null ||
+      { echo "ask-claude: the session's file list is not in the shape the script reads" >&2; return 1; }
     return 0
   fi
   for name in "$@"; do

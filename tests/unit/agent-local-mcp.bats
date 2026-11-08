@@ -139,7 +139,9 @@ result() { request "$1" | jq -c '.events[0]'; }
 gone() {
     local p alive=0
     for p in "$@"; do
-        if kill -0 "$p" 2>/dev/null; then
+        # a zombie is gone: it waits only for a parent to reap it, and an
+        # orphan's parent is PID 1, which in a container may never reap
+        if kill -0 "$p" 2>/dev/null && [[ $(ps -o stat= -p "$p") != Z* ]]; then
             echo "still running: $(ps -o pid=,args= -p "$p")" >&2
             kill -KILL "$p" 2>/dev/null
             alive=1

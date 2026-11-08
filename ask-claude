@@ -597,8 +597,14 @@ local_mcp_start() {
   esac
   LOCAL_MCP_DIR=$(mktemp -d) || die "cannot make a directory for the local MCP server's pipes"
   mkfifo "$LOCAL_MCP_DIR/in" "$LOCAL_MCP_DIR/out" || die "cannot make the local MCP server's pipes"
+  # its own process group (job control on for this one job): sh forks a
+  # command with a redirect instead of exec'ing it, and a server may start
+  # children, so local_mcp_stop signals the group, not one pid. Ctrl-C at the
+  # terminal reaches only the foreground group, so it does not hit the server.
+  set -m
   sh -c "$cmd" <"$LOCAL_MCP_DIR/in" >"$LOCAL_MCP_DIR/out" &
   LOCAL_MCP_PID=$!
+  set +m
   # the background shell opens in, then out, before it runs the command, so
   # these opens complete even when the command does not exist
   exec 7>"$LOCAL_MCP_DIR/in" 8<"$LOCAL_MCP_DIR/out"
@@ -620,20 +626,32 @@ local_mcp_start() {
   done
 }
 
-# local_mcp_stop: close the pipes (a stdio server exits at end of input),
-# give the server a second, then SIGTERM it
+# local_mcp_stop: close the pipes (a stdio server exits at end of input);
+# a group still running a second later gets SIGTERM, and a second after that
+# SIGKILL
 # shellcheck disable=SC2329  # called from the EXIT traps
 local_mcp_stop() {
   [ -n "$LOCAL_MCP_PID" ] || return 0
   exec 7>&- 8<&-
-  local _
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    kill -0 "$LOCAL_MCP_PID" 2>/dev/null || break
-    sleep 0.1
+  local _ sig
+  for sig in TERM KILL; do
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      local_mcp_alive || break
+      sleep 0.1
+    done
+    local_mcp_alive || break
+    kill -s "$sig" -- "-$LOCAL_MCP_PID" 2>/dev/null
   done
-  kill "$LOCAL_MCP_PID" 2>/dev/null
+  wait "$LOCAL_MCP_PID" 2>/dev/null
   rm -rf "$LOCAL_MCP_DIR"
   LOCAL_MCP_PID=""
+}
+
+# local_mcp_alive: a process of the server's group is running. A zombie is
+# not: kill -0 counts one, and sh stays one until local_mcp_stop waits on it.
+# shellcheck disable=SC2329  # called from local_mcp_stop, which the EXIT traps call
+local_mcp_alive() {
+  ps -A -o pgid= -o stat= 2>/dev/null | awk -v g="$LOCAL_MCP_PID" '$1 == g && $2 !~ /^Z/ { found = 1 } END { exit !found }'
 }
 
 # local_mcp_has <name>: the server lists a tool of that name

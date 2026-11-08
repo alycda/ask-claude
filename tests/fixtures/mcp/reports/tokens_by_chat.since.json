@@ -1,0 +1,34 @@
+[
+  {
+    "chat": null,
+    "kind": "session",
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_read": 0,
+    "cache_write": 0
+  },
+  {
+    "chat": "20261105T120000-200",
+    "kind": "messages",
+    "input_tokens": 160,
+    "output_tokens": 60,
+    "cache_read": 200,
+    "cache_write": 0
+  },
+  {
+    "chat": "20261108T070000-300",
+    "kind": "messages",
+    "input_tokens": 56,
+    "output_tokens": 20,
+    "cache_read": 48,
+    "cache_write": 0
+  },
+  {
+    "chat": "sesn_FIXTURE01",
+    "kind": "session",
+    "input_tokens": 30,
+    "output_tokens": 15,
+    "cache_read": 1000,
+    "cache_write": 1000
+  }
+]

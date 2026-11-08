@@ -14,10 +14,9 @@ path = "src/main.rs"
 
 [dependencies]
 # exact: the SDK moves fast (3.x renamed the handshake around protocol
-# 2026-07-28), and the tests pin the wire, not this crate's types. Default
-# features carry server, macros and schemars; transport-io adds stdio.
-rmcp = { version = "=3.9.0", features = ["transport-io"] }
-tokio = { version = "1.54.1", features = ["macros", "rt", "io-std"] }
+# 2026-07-28), and the tests pin the wire, not this crate's types.
+rmcp = { version = "=3.9.0", features = ["schemars", "transport-io"] }
+tokio = { version = "1.54.1", features = ["macros", "rt", "rt-multi-thread", "io-std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 

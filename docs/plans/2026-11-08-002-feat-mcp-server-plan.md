@@ -76,7 +76,7 @@ starting shape: change one in the commit that needs it, and say why.
 | — | chore: rust 1.99.1 in the toolchain | `mise.toml`, `mise.lock` | the same change as the port's line, duplicated | [x] |
 | — | chore: mcp/ crate scaffold | `mcp/`, `justfile` (mcp-*), `.github/workflows/mcp.yml` | `just mcp-build` | [x] |
 | — | test: the MCP harness | `mcp/tests/common`, `mcp/tests/harness.rs` | green from the start, on the script's fake server | [x] |
-| U1 | test: introduces itself, lists the five reports | `mcp/tests/protocol.rs`, `tests/unit/mcp.bats` | handshake, tools/list, exit 0 at EOF; the script's client lists the tools | [t] |
+| U1 | test: introduces itself, lists the five reports | `mcp/tests/protocol.rs`, `tests/unit/mcp.bats` | handshake, tools/list, exit 0 at EOF; the script's client lists the tools | [x] |
 | U2 | test: five reports, jq as the oracle | `mcp/tests/reports.rs`, `tests/fixtures/mcp/**`, `tests/unit/mcp-reports.bats` | library and server equal the goldens; an agent's custom tool call reaches a report | [t] |
 | U3 | test: since | `mcp/tests/since.rs` | the `.since.json` goldens; a bad since is a tool error | [t] |
 | U4 | test: a missing, empty or torn log | `mcp/tests/log.rs` | `[]` with no log; torn and foreign lines skipped; unreadable is a tool error | [t] |

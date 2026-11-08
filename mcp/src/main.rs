@@ -24,34 +24,45 @@ struct AskClaude;
 
 #[tool_router]
 impl AskClaude {
+    fn events(
+        &self,
+        Parameters(Since { since }): Parameters<Since>,
+      ) -> Result<Vec<serde_json::Value>, String> {
+        let Some(dir) = state::dir(
+            std::env::var("XDG_STATE_HOME").ok().as_deref(),
+            std::env::var("HOME").ok().as_deref(),
+        ) else {
+            return Err("neither XDG_STATE_HOME nor HOME is set".into());
+        };
+        // self._helper();
+
+        // read on every call: the script appends while the server runs
+        let text = match std::fs::read_to_string(dir.join("events.jsonl")) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(format!("events.jsonl: {e}")),
+        };
+        let mut events = events::parse(&text);
+
+        if let Some(since) = since {
+            events = match events::since(events, &since) {
+                Ok(events) => events,
+                Err(why) => return Err(why),
+            };
+        }
+
+        Ok(events)
+      }
+
     #[tool(
         description = "tokens per chat; sessions take their last total",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn tokens_by_chat(
         &self,
-        Parameters(Since { since }): Parameters<Since>,
+        params: Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
-        let Some(dir) = state::dir(
-            std::env::var("XDG_STATE_HOME").ok().as_deref(),
-            std::env::var("HOME").ok().as_deref(),
-        ) else {
-            return Ok(tool_error("neither XDG_STATE_HOME nor HOME is set"));
-        };
-        // read on every call: the script appends while the server runs
-        let text = match std::fs::read_to_string(dir.join("events.jsonl")) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Ok(tool_error(format!("events.jsonl: {e}"))),
-        };
-        let mut events = events::parse(&text);
-        if let Some(since) = since {
-            events = match events::since(events, &since) {
-                Ok(events) => events,
-                Err(why) => return Ok(tool_error(why)),
-            };
-        }
-        let report = reports::run("tokens_by_chat", &events).expect("tokens_by_chat is a report");
+        let report = reports::run("tokens_by_chat", &self.events(params).expect("tokens_by_chat is a report"));
         Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
@@ -61,11 +72,10 @@ impl AskClaude {
     )]
     fn cache_hit_by_model(
         &self,
-        Parameters(Since { since }): Parameters<Since>,
+        params: Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
-        todo!()
-
-        // Ok(CallToolResult::default());
+        let report = reports::run("cache_hit_by_model", &self.events(params).expect("cache_hit_by_model is a report"));
+        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
     #[tool(
@@ -110,7 +120,7 @@ impl AskClaude {
 
 /// A tool error: `isError: true` with the reason as text, so the model
 /// sees why (a JSON-RPC error would reach it as an opaque failure).
-fn tool_error(why: impl Into<String>) -> CallToolResult {
+fn _tool_error(why: impl Into<String>) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(why)])
 }
 

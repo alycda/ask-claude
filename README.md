@@ -199,8 +199,9 @@ Each call is a tool confirmation like any other, asked at the terminal as
 `allow local <tool> <input>?`, denied when there is no terminal, and
 answered by `ASK_CLAUDE_CONFIRM` when it is set. An allowed call runs on
 this machine with your permissions, and its result goes to the API, so
-the agent reads whatever the tool returns. The server's text content goes
-back as text; other content types are named, not sent. A tool the server
+the agent reads whatever the tool returns. Text content, and an embedded
+text resource (how `github-mcp-server` returns a file), go back as text;
+binary resources, resource links and images are named, not sent. A tool the server
 does not list, a server that exits, an MCP error, or a call that takes longer
 than `ASK_CLAUDE_LOCAL_MCP_TIMEOUT` is an error result, and the turn goes on.
 A server that fails the handshake ends the run with exit 2 before any

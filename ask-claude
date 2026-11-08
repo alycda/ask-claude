@@ -635,8 +635,11 @@ custom_error() {
 }
 
 # local_mcp_call <custom tool use>: run it on the server as tools/call and
-# print the user.custom_tool_result. Text content goes back as text; other
-# content types are named, not sent; an empty result says so.
+# print the user.custom_tool_result. Text content goes back as text, and so
+# does an embedded text resource, under its URI (github-mcp-server returns a
+# file that way). Binary resources, resource links, images and audio are
+# named, not sent: the documented custom tool result is text. An empty
+# result says so.
 local_mcp_call() {
   local use=$1 id resp
   id=$(jq -r '.id' <<<"$use")
@@ -662,7 +665,12 @@ local_mcp_call() {
       {content: [{type: "text", text: "Tool failed: MCP error \(.error.code // "?"): \(.error.message // "no message" | tostring)"}], is_error: true}
     else
       (.result // {}) as $r
-      | {content: ([$r.content[]? | {type: "text", text: (if .type == "text" then (.text | tostring) else "[\(.type // "unknown") content not passed on by ask-claude]" end)}]
+      | {content: ([$r.content[]? | {type: "text", text: (
+                     if .type == "text" then (.text | tostring)
+                     elif .type == "resource" and (.resource.text | type) == "string" then "Resource \(.resource.uri // "(no uri)"):\n\(.resource.text)"
+                     elif .type == "resource" then "[binary resource \(.resource.uri // "(no uri)") (\(.resource.mimeType // "unknown type")) not passed on by ask-claude]"
+                     elif .type == "resource_link" then "Resource link: \(.uri // "(no uri)")" + (if .name then " (\(.name))" else "" end)
+                     else "[\(.type // "unknown") content not passed on by ask-claude]" end)}]
                    | map(select(.text != ""))
                    | if length > 0 then .
                      elif $r.structuredContent then [{type: "text", text: ($r.structuredContent | tojson)}]
@@ -1122,12 +1130,14 @@ agent)
   exit 0
   ;;
 "agent tools")
-  # no key, agent or environment: this only asks the local server
+  # no key, agent or environment: this only asks the local server. The
+  # top-level $schema some servers send (Supabase's, Cloudflare's) is
+  # dropped: a JSON Schema meta key the agent's tool definition does not need.
   [ -n "${usage_local_mcp:-}" ] || die "agent tools needs --local-mcp <command> (or ASK_CLAUDE_LOCAL_MCP)"
   trap local_mcp_stop EXIT
   local_mcp_start "$usage_local_mcp"
   jq '[.[] | {type: "custom", name, description: (.description // .title // .name),
-              input_schema: (.inputSchema // {type: "object", properties: {}})}]' <<<"$LOCAL_MCP_TOOLS"
+              input_schema: (.inputSchema // {type: "object", properties: {}} | del(."$schema"))}]' <<<"$LOCAL_MCP_TOOLS"
   exit 0
   ;;
 "agent resume")

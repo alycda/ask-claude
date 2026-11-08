@@ -31,12 +31,13 @@ completions shell *flags:
     usage generate completion {{ quote(shell) }} ask-claude -f ask-claude {{ flags }}
 
 # Skips the tests tagged pty, which need a terminal name readline reports
-# bracketed paste for (`just pty-test` runs them), and rust-only, behaviour the
-# script does not have.
+# bracketed paste for (`just pty-test` runs them), rust-only, behaviour the
+# script does not have, and mcp, which needs the MCP server built (`just
+# mcp-bats` builds it and runs them).
 
 # offline: bats over recorded fixtures (tests/unit), no key needed
 unit-tests:
-    bats --filter-tags '!pty,!rust-only' tests/unit
+    bats --filter-tags '!pty,!rust-only,!mcp' tests/unit
 
 # the pty-tagged tests alone, under a TERM readline reports bracketed paste for
 pty-test:
@@ -160,10 +161,44 @@ parity: build
     set -euo pipefail
     usage diff ask-claude <(rust/target/debug/ask-claude --usage-spec)
 
-# Skips pty like unit-tests, and bash-only: the tests that read the script as a
-# file or pin what only the script does.
+# Skips pty and mcp like unit-tests, and bash-only: the tests that read the
+# script as a file or pin what only the script does.
 
 # the bats suite against the Rust binary (R5 onwards; bash stays the oracle until R8)
 [group('rust')]
 test-rust: build
-    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats --filter-tags '!pty,!bash-only' tests/unit
+    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats --filter-tags '!pty,!bash-only,!mcp' tests/unit
+
+# ---- the MCP server (mcp/; docs/plans/2026-11-08-002-feat-mcp-server-plan.md)
+# cargo comes from mise's rust, through `mise exec`, so the shims need no
+# global version.
+
+# build the MCP server (debug)
+[group('mcp')]
+[working-directory: 'mcp']
+mcp-build:
+    cargo build
+
+# the MCP server's tests: the reports against the jq goldens, the protocol over stdio
+[group('mcp')]
+[working-directory: 'mcp']
+mcp-test:
+    cargo test
+
+# fmt --check and clippy over the MCP server and its tests
+[group('mcp')]
+[working-directory: 'mcp']
+mcp-lint:
+    cargo fmt --check
+    cargo clippy --all-targets -- -D warnings
+
+# the bats tests tagged mcp: the script's own --local-mcp client against the server
+[group('mcp')]
+mcp-bats: mcp-build
+    ASK_CLAUDE_MCP_BIN="{{ justfile_directory() }}/mcp/target/debug/ask-claude-mcp" bats --filter-tags mcp tests/unit
+
+# the server on this terminal's stdio; Claude Code: claude mcp add ask-claude -- <repo>/mcp/target/debug/ask-claude-mcp
+[group('mcp')]
+[working-directory: 'mcp/target/debug']
+mcp: mcp-build
+    ask-claude-mcp

@@ -27,7 +27,7 @@ impl AskClaude {
     fn events(
         &self,
         Parameters(Since { since }): Parameters<Since>,
-      ) -> Result<Vec<serde_json::Value>, String> {
+    ) -> Result<Vec<serde_json::Value>, String> {
         let Some(dir) = state::dir(
             std::env::var("XDG_STATE_HOME").ok().as_deref(),
             std::env::var("HOME").ok().as_deref(),
@@ -52,17 +52,17 @@ impl AskClaude {
         }
 
         Ok(events)
-      }
+    }
 
     #[tool(
         description = "tokens per chat; sessions take their last total",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn tokens_by_chat(
-        &self,
-        params: Parameters<Since>,
-    ) -> Result<CallToolResult, McpError> {
-        let report = reports::run("tokens_by_chat", &self.events(params).expect("tokens_by_chat is a report"));
+    fn tokens_by_chat(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
+        let report = reports::run(
+            "tokens_by_chat",
+            &self.events(params).expect("tokens_by_chat is a report"),
+        );
         Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
@@ -70,11 +70,11 @@ impl AskClaude {
         description = "share of input read from the cache, per model",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn cache_hit_by_model(
-        &self,
-        params: Parameters<Since>,
-    ) -> Result<CallToolResult, McpError> {
-        let report = reports::run("cache_hit_by_model", &self.events(params).expect("cache_hit_by_model is a report"));
+    fn cache_hit_by_model(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
+        let report = reports::run(
+            "cache_hit_by_model",
+            &self.events(params).expect("cache_hit_by_model is a report"),
+        );
         Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
@@ -82,11 +82,11 @@ impl AskClaude {
         description = "requests, mean and max seconds, per model",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn seconds_by_model(
-        &self,
-        params: Parameters<Since>,
-    ) -> Result<CallToolResult, McpError> {
-        let report = reports::run("seconds_by_model", &self.events(params).expect("seconds_by_model is a report"));
+    fn seconds_by_model(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
+        let report = reports::run(
+            "seconds_by_model",
+            &self.events(params).expect("seconds_by_model is a report"),
+        );
         Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
@@ -94,11 +94,13 @@ impl AskClaude {
         description = "refusals per stop category",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn refusals_by_category(
-        &self,
-        params: Parameters<Since>,
-    ) -> Result<CallToolResult, McpError> {
-        let report = reports::run("refusals_by_category", &self.events(params).expect("refusals_by_category is a report"));
+    fn refusals_by_category(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
+        let report = reports::run(
+            "refusals_by_category",
+            &self
+                .events(params)
+                .expect("refusals_by_category is a report"),
+        );
         Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
@@ -106,13 +108,12 @@ impl AskClaude {
         description = "calls and tokens per advisor model",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn advisor_spend(
-        &self,
-        Parameters(Since { since }): Parameters<Since>,
-    ) -> Result<CallToolResult, McpError> {
-        todo!()
-
-        // Ok(CallToolResult::default());
+    fn advisor_spend(&self, params: Parameters<Since>) -> Result<CallToolResult, McpError> {
+        let report = reports::run(
+            "advisor_spend",
+            &self.events(params).expect("advisor_spend is a report"),
+        );
+        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 }
 

@@ -73,6 +73,7 @@ pub mod state {
 /// `events.jsonl`, one JSON object per line (README, "Events on disk").
 pub mod events {
     use serde_json::Value;
+    use chrono::NaiveDate;
 
     /// Every line that is a JSON object, in file order. A line that is not
     /// one is skipped: a torn last line from a write cut short, a blank, a
@@ -88,7 +89,12 @@ pub mod events {
     /// `YYYY-MM-DDTHH:MM:SSZ`; compared with `ts` as strings, the way
     /// `map(select(.ts >= $since))` does. `Err` names the accepted forms.
     pub fn since(events: Vec<Value>, since: &str) -> Result<Vec<Value>, String> {
-        todo!("U3: the since filter")
+        Ok(events.into_iter().filter(|event| {
+          let date = NaiveDate::parse_from_str(event["ts"].as_str().unwrap(), "%Y-%m-%d").expect("Invalid date");
+          let since = NaiveDate::parse_from_str(since, "%Y-%m-%d").expect("Invalid date");
+
+          date >= since
+        }).collect())
     }
 }
 

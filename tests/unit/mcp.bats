@@ -18,7 +18,7 @@ MCP_BIN="${ASK_CLAUDE_MCP_BIN:-$ROOT/mcp/target/debug/ask-claude-mcp}"
     run --separate-stderr "$BIN" agent tools --local-mcp "$MCP_BIN"
     [ "$status" -eq 0 ]
     jq -e 'map(.name) | sort == ["advisor_spend", "cache_hit_by_model", "refusals_by_category", "seconds_by_model", "tokens_by_chat"]' <<<"$output"
-    jq -e 'all(.[]; .type == "custom" and .input_schema.type == "object" and (.input_schema.properties | has("_since")))' <<<"$output"
+    jq -e 'all(.[]; .type == "custom" and .input_schema.type == "object" and (.input_schema.properties | has("since")))' <<<"$output"
 }
 
 # The session in tests/fixtures/mcp/session: turn 1 calls the custom tool

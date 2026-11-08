@@ -43,6 +43,17 @@ def host: capture("^[a-z]+://(?<h>[^/:]+)").h | gsub("[^A-Za-z0-9_-]"; "-");
 def web: $ARGS.named.web // "";
 def mcp: $ARGS.named.mcp // "";
 def advisor: $ARGS.named.advisor // "";
+# mcp_token: the authorization_token for the server at this URL. A token is
+# one server's credential, so ASK_CLAUDE_MCP_TOKEN reaches a lone server
+# only; each server takes ASK_CLAUDE_MCP_TOKEN_<HOST>, the host upper-cased
+# with every other character an underscore, and only its own. Read from the
+# environment, so a token is never an argument. The script refuses the
+# shared token with several servers before it gets here.
+def mcp_token:
+  (env["ASK_CLAUDE_MCP_TOKEN_" + (host | ascii_upcase | gsub("-"; "_"))] // "") as $own
+  | if $own != "" then $own
+    elif (mcp | words | length) == 1 then env.ASK_CLAUDE_MCP_TOKEN // ""
+    else "" end;
 # the advisor calls already made this turn. A turn the API pauses (pause_turn)
 # is continued with a new request, and each request carries its own max_uses,
 # so the paused replies after the last user message count against the 3.
@@ -65,9 +76,9 @@ def advisor_used:
 + (if $sys != "" then {system: $sys} else {} end)
 + (if $eff != "" then {output_config: {effort: $eff}} else {} end)
 # mcp_servers: one per URL in $mcp (space-separated), named after its host
-# (dots to dashes), the token from the environment so it is never an argument
+# (dots to dashes), with its own token (mcp_token) when it has one
 + (if mcp != "" then {mcp_servers: [mcp | words[] | {type: "url", url: ., name: (. | host)}
-                                      + (if (env.ASK_CLAUDE_MCP_TOKEN // "") != "" then {authorization_token: env.ASK_CLAUDE_MCP_TOKEN} else {} end)]}
+                                      + (mcp_token as $t | if $t != "" then {authorization_token: $t} else {} end)]}
    else {} end)
 # tools, in this order: code_execution for skills, the web tools, one
 # mcp_toolset per server, the advisor (3 calls a turn at most, less what this

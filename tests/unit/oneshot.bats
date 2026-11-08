@@ -109,6 +109,18 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     jq -e '.mcp_servers | map(.authorization_token) == ["tok_A", "tok_B"]' "$TMP/requests.jsonl"
 }
 
+@test "one-shot: the variable the refusal names is the one the request reads, for an odd host too" {
+    url='https://user@Mcp.Example.com:8443/sse'
+    run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" "$BIN" --mcp "$url" --mcp https://mcp.deepwiki.com/mcp "ping"
+    [ "$status" -eq 2 ]
+    var=$(grep -oE 'ASK_CLAUDE_MCP_TOKEN_[A-Z0-9_]*EXAMPLE[A-Z0-9_]*' <<<"$stderr")
+    [ "$var" = ASK_CLAUDE_MCP_TOKEN_USER_MCP_EXAMPLE_COM ]
+    run --separate-stderr env "$var=tok_ODD" ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+        "$BIN" --mcp "$url" --mcp https://mcp.deepwiki.com/mcp "ping"
+    [ "$status" -eq 0 ]
+    jq -e '.mcp_servers[0].authorization_token == "tok_ODD" and (.mcp_servers[1] | has("authorization_token") | not)' "$TMP/requests.jsonl"
+}
+
 @test "one-shot: a request log that cannot be written fails the request before anything is sent" {
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/nodir/requests.jsonl" "$BIN" "ping"
     [ "$status" -eq 1 ]

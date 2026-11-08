@@ -13,7 +13,7 @@
 #USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" global=#true
 #USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000" global=#true
 #USAGE flag "--web" help="let the model search and fetch the web (server tools; searches cost extra)" global=#true
-#USAGE flag "--mcp <url>" help="an MCP server (https) the model may call; repeatable; ASK_CLAUDE_MCP_TOKEN for its auth" var=#true global=#true
+#USAGE flag "--mcp <url>" help="an MCP server (https) the model may call; repeatable; its token in ASK_CLAUDE_MCP_TOKEN_<HOST>, or ASK_CLAUDE_MCP_TOKEN for a lone server" var=#true global=#true
 #USAGE flag "--advisor <model>" help="a model the reply may consult mid-turn (server tool, at most 3 calls a turn, billed at that model's rates); must be at least as capable as -m" global=#true
 #USAGE flag "-V --version" help="print the version"
 #USAGE cmd "list" help="chats on disk, newest first"
@@ -109,9 +109,22 @@ HOST="${HOST%%/*}"
 
 # --mcp: servers the model may call through the MCP connector; https only,
 # like the docs require, and checked here so a typo is exit 2, not a 400.
+mcp_count=0 mcp_vars=""
 for v in ${usage_mcp:-}; do
   case "$v" in https://*) ;; *) die "--mcp takes https URLs, got: $v" ;; esac
+  mcp_count=$((mcp_count + 1))
+  # the variable lib/request.jq reads for this server's token: the host as
+  # its `host` cuts it, upper-cased, every other character an underscore
+  h=${v#https://}
+  h=${h%%[/:]*}
+  h=${h//[!A-Za-z0-9_]/_}
+  mcp_vars+=" ASK_CLAUDE_MCP_TOKEN_${h^^}"
 done
+# A token is one server's credential: sent to several, each server's operator
+# would receive the others'. Refuse rather than drop it in silence.
+if [ "$mcp_count" -gt 1 ] && [ -n "${ASK_CLAUDE_MCP_TOKEN:-}" ]; then
+  die "ASK_CLAUDE_MCP_TOKEN would go to all $mcp_count --mcp servers; unset it and give each server its own:$mcp_vars"
+fi
 
 # The key is checked where a request can happen (one shot, chat loop), so
 # `list` works without one.

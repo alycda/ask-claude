@@ -14,8 +14,13 @@ ask-claude --help                   every flag
 
 `--web` lets the model search and fetch the web (server tools; a search
 costs $10 per 1,000, a fetch nothing beyond tokens). `--mcp <https url>`
-(repeatable) lets it call an MCP server through the MCP connector;
-`ASK_CLAUDE_MCP_TOKEN` is sent as its authorization token. Both work with
+(repeatable) lets it call an MCP server through the MCP connector. A
+server's authorization token is `ASK_CLAUDE_MCP_TOKEN_<HOST>`, the host
+upper-cased with every other character an underscore
+(`ASK_CLAUDE_MCP_TOKEN_MCP_EXAMPLE_COM` for `https://mcp.example.com/mcp`),
+and each server gets only its own. `ASK_CLAUDE_MCP_TOKEN` is for a lone
+`--mcp`: with several, it would reach every server's operator, so the
+script exits 2 and names each server's variable. Both work with
 `-s`, in the one-shot and in the chat; the stream shows `(web_search) `,
 `(web_fetch) ` and `(mcp <server>) ` while the model uses them.
 
@@ -40,7 +45,8 @@ one, and `/quit` exits and prints the command to resume it.
 | `ASK_CLAUDE_REPLAY` | testing: read this recorded `.sse` file instead of calling the API |
 | `ASK_CLAUDE_REQUEST_LOG` | testing: append each request body to this file |
 | `ASK_CLAUDE_BETA_LOG` | testing: append each request's `anthropic-beta` header value to this file |
-| `ASK_CLAUDE_MCP_TOKEN` | authorization token for the `--mcp` servers |
+| `ASK_CLAUDE_MCP_TOKEN` | authorization token for a lone `--mcp` server; refused with several |
+| `ASK_CLAUDE_MCP_TOKEN_<HOST>` | authorization token for the `--mcp` server at that host only |
 | `ASK_CLAUDE_EVENTS` | `off` turns off the event log (see "Events on disk") |
 
 Nothing else is read.

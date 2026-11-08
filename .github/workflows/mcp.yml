@@ -1,0 +1,69 @@
+# Checks on the MCP server (mcp/, docs/plans/2026-11-08-002-feat-mcp-server-plan.md),
+# run only when its files, its fixtures or what it reads the shape of
+# change. The build must pass from the scaffold on. fmt, clippy and the
+# tests are allowed to fail until version(0.4.0): the tests are red on
+# todo!() by design until each unit lands. Turn continue-on-error off in
+# the version(0.4.0) commit, as its TODO says.
+name: MCP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mcp/**'
+      - 'tests/fixtures/mcp/**'
+      - 'tests/unit/mcp*.bats'
+      - 'ask-claude'
+      - 'lib/**'
+      - 'README.md'
+      - 'mise.toml'
+      - 'mise.lock'
+      - 'justfile'
+      - '.github/workflows/mcp.yml'
+  pull_request:
+    paths:
+      - 'mcp/**'
+      - 'tests/fixtures/mcp/**'
+      - 'tests/unit/mcp*.bats'
+      - 'ask-claude'
+      - 'lib/**'
+      - 'README.md'
+      - 'mise.toml'
+      - 'mise.lock'
+      - 'justfile'
+      - '.github/workflows/mcp.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  mcp:
+    name: build, then the soft checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: rust just jq usage bats
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mcp
+
+      - name: Build
+        run: just mcp-build
+
+      - name: fmt and clippy (soft until version 0.4.0)
+        continue-on-error: true
+        run: just mcp-lint
+
+      - name: Tests (soft until version 0.4.0)
+        continue-on-error: true
+        run: just mcp-test
+
+      # the script's --local-mcp client against the server: the two ends of
+      # this repository speaking to each other
+      - name: The script as the client (soft until version 0.4.0)
+        continue-on-error: true
+        run: just mcp-bats

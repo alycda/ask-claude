@@ -16,6 +16,7 @@ Owner: **A** = Alyssa writes the code, **C** = Claude writes tests/fixtures.
 | State dir | `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/` | tests point `XDG_STATE_HOME` at a temp dir |
 | Providers | contract tests now, implementation in Rust | OpenAI-style SSE is a second reassembler; not worth a bash twin |
 | History shape | merges for independent lines, chains for dependencies | see "Graph" |
+| Desktop frontend | GPUI, after R8, in its own `gui/` workspace (`docs/plans/2026-11-08-0938-feat-gpui-desktop-frontend-plan.md`) | the core the CLI ships at R8 must serve it unchanged: the R0, R2, R5, R6 and R7 rows below carry its guardrails |
 
 ## Known bugs carried from claude.sh
 
@@ -135,18 +136,33 @@ transport at R7.
 ## Phase 4: Rust port
 
 Crate `ask-claude` in `rust/` (own line, merged when it reaches parity).
+`rust/` is a Cargo workspace of three crates: `core` (SSE types, reassembler,
+request builder, history, event lines; no tokio, reqwest or terminal types),
+`net` (tokio, the HTTP transport, the stdio MCP child) and `cli` (the
+`ask-claude` binary). The split exists so a second frontend can use `core` and
+`net` without the terminal, and without pulling its own dependencies into the
+CLI's lockfile.
 
 | # | Commit | Validation | Status |
 | --- | --- | --- | --- |
-| R0 | chore: cargo scaffold, clap + clap_usage 5 | `cargo run -- --usage-spec` prints a spec; `usage diff ask-claude.usage.kdl <(cargo run -q -- --usage-spec)` reports no interface change (the bash spec is exported with `usage generate` first) | [ ] |
-| R1 | feat: SSE event types (serde) | deserialize every line of every `sse/*.sse` fixture without `#[serde(other)]` swallowing anything | [ ] |
-| R2 | feat: reassembler | `Message::from_events(fixture) == fixture.message.json` (serde_json::Value equality) | [ ] |
+| R0 | chore: cargo workspace (`core`, `net`, `cli`), clap + clap_usage 5 | `cargo run -- --usage-spec` prints a spec; `usage diff ask-claude.usage.kdl <(cargo run -q -- --usage-spec)` reports no interface change (the bash spec is exported with `usage generate` first); `cargo tree -p core -e normal` lists no tokio or reqwest | [ ] |
+| R1 | feat: SSE event types (serde), parsed from a stream of byte chunks | deserialize every line of every `sse/*.sse` fixture without `#[serde(other)]` swallowing anything; the parser takes byte chunks and does not depend on how they are read | [ ] |
+| R2 | feat: reassembler, an incremental fold | `Message::from_events(fixture) == fixture.message.json` (serde_json::Value equality); `from_events` is built on pushing one event at a time into a partial message, and pushing each fixture's events one by one gives the same message as the batch path | [ ] |
 | R3 | feat: request builder | `Request::new(args).to_json() == request/*.json` | [ ] |
 | R4 | feat: stream printer | same bytes as `*.stream.txt` | [ ] |
-| R5 | feat: transport trait, replay impl | the bats suite runs unchanged against the Rust binary via `ASK_CLAUDE_BIN` | [ ] |
-| R6 | feat: history, list, resume, chat loop, event log lines | same bats files, same `XDG_STATE_HOME` seam; the event log (`docs/plans/2026-11-07-001-feat-request-event-log-plan.md`) is `tests/unit/events.bats`, the same line shape as `lib/event.jq`'s goldens | [ ] |
-| R7 | feat: `Provider` trait with two impls: `Anthropic` and `OpenAiCompatible { base_url }`; openai and venice are rows in a table, not types | `tests/providers/openai-compatible.hurl` green for both rows; a recorded OpenAI-shape fixture gets its own goldens then | [ ] |
+| R5 | feat: transport trait, replay impl | the bats suite runs unchanged against the Rust binary via `ASK_CLAUDE_BIN`; the replay transport needs no async runtime and can deliver a fixture in arbitrary byte chunks: every `sse/*.sse` fixture, split at every byte offset (multi-byte characters and mid-event boundaries included), reassembles to its `*.message.json` | [ ] |
+| R6 | feat: history, list, resume, chat loop, event log lines | same bats files, same `XDG_STATE_HOME` seam; the event log (`docs/plans/2026-11-07-001-feat-request-event-log-plan.md`) is `tests/unit/events.bats`, the same line shape as `lib/event.jq`'s goldens; history is kept as raw JSON values, only appended to or truncated, and every `*.message.json` fixture round-trips through load, append and save as equal JSON values (typed views are read-only, so thinking signatures and unknown blocks survive) | [ ] |
+| R7 | feat: `Provider` trait with two impls: `Anthropic` and `OpenAiCompatible { base_url }`; openai and venice are rows in a table, not types; the `Sessions` transport, with tool confirmations and custom-tool calls answered by an async decider the frontend supplies | `tests/providers/openai-compatible.hurl` green for both rows; a recorded OpenAI-shape fixture gets its own goldens then; the decider returns a future with no tokio types, which the CLI resolves from the terminal prompt and `ASK_CLAUDE_CONFIRM`, and a `sessions/confirm/` replay completes when the answers arrive over a channel from a separate task after the turn has suspended, with `core` still free of tokio | [ ] |
 | R8 | chore: `just test-rust` runs the bats suite against both binaries | both green; bash stays the oracle until R8 is merged | [ ] |
 
 Parity gate before replacing the bash binary: every bats test green on both,
 `usage diff` empty, the three live hurl files green.
+
+## Phase 5: desktop frontend
+
+Planned in `docs/plans/2026-11-08-0938-feat-gpui-desktop-frontend-plan.md`.
+A GPUI app in its own Cargo workspace at `gui/`, sharing the CLI's chats,
+sessions and event log. Nothing is built before R8 except one throwaway spike
+after R5: render a replayed fixture in a GPUI window, to check that `core`
+stays runtime-agnostic before R6 to R8 harden it. Its findings go back into
+the R rows above, not into the repository as code.

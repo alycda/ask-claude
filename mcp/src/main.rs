@@ -84,11 +84,10 @@ impl AskClaude {
     )]
     fn seconds_by_model(
         &self,
-        Parameters(Since { since }): Parameters<Since>,
+        params: Parameters<Since>,
     ) -> Result<CallToolResult, McpError> {
-        todo!()
-
-        // Ok(CallToolResult::default());
+        let report = reports::run("seconds_by_model", &self.events(params).expect("seconds_by_model is a report"));
+        Ok(CallToolResult::success(vec![ContentBlock::json(report)?]))
     }
 
     #[tool(

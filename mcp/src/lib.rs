@@ -205,17 +205,6 @@ pub mod reports {
 
     /// tests/fixtures/mcp/reports/cache_hit_by_model.jq
     fn cache_hit_by_model(events: &[Value]) -> Vec<CacheHit> {
-        // map(select(.kind == "messages" and .error == null))
-        //   filter before grouping: e["kind"] == "messages" && e["error"].is_null()
-        //   (a missing `error` indexes as Null too, as jq's .error does)
-        // | group_by(.model)
-        //   group_by(filtered, |e| e["model"].as_str())
-        // | map({model: .[0].model, cache_hit: (map(.cache_read) | add) / ([...| add, 1] | max)})
-        //   the numerator sums cache_read; the denominator sums
-        //   input_tokens + cache_read + cache_write per event. Sum both as f64
-        //   (`e[f].as_f64().unwrap_or(0.0)`: jq's null + n is n), then divide by
-        //   denominator.max(1.0): that is the `[..., 1] | max` guard against 0.
-
         let kept = events
             .iter()
             .filter(|e| e["kind"] == "messages" && e["error"].is_null());
@@ -238,8 +227,26 @@ pub mod reports {
     }
 
     /// tests/fixtures/mcp/reports/seconds_by_model.jq
-    fn seconds_by_model(_events: &[Value]) -> Vec<ModelSeconds> {
-        todo!("U2: tests/fixtures/mcp/reports/seconds_by_model.jq")
+    fn seconds_by_model(events: &[Value]) -> Vec<ModelSeconds> {
+        let kept = events
+            .iter()
+            .filter(|e| e["kind"] == "messages" && e["error"].is_null());
+        group_by(kept, |e| e["model"].as_str())
+            .into_iter()
+            .map(|(model, group)| {
+                let seconds: Vec<f64> = group
+                    .iter()
+                    .map(|e| e["seconds"].as_f64().unwrap_or(0.0))
+                    .collect();
+                ModelSeconds {
+                    model: model.map(String::from),
+                    requests: group.len(),
+                    mean_seconds: seconds.iter().sum::<f64>() / seconds.len() as f64,
+                    // f64 is not Ord, so no Iterator::max; a group is never empty
+                    max_seconds: seconds.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                }
+            })
+            .collect()
     }
 
     /// tests/fixtures/mcp/reports/refusals_by_category.jq

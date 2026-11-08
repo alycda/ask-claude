@@ -73,6 +73,33 @@ request2() { # sys eff skills cid web mcp
     assert_golden "$FIX/request/everything.json" "$TMP/out.json"
 }
 
+# One ASK_CLAUDE_MCP_TOKEN is one server's credential. Sent to every server,
+# the operator of each would receive the token issued for the others
+# (docs/security-audit/NEEDS-VALIDATION.md, mcp_servers:shared-authorization-
+# token). The shared variable reaches a lone server only; each server of
+# several takes ASK_CLAUDE_MCP_TOKEN_<HOST>, the host upper-cased with every
+# other character an underscore.
+
+@test "request: with several servers the shared token reaches none of them" {
+    ASK_CLAUDE_MCP_TOKEN=tok_SHARED request2 "" "" "" "" "" "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" > "$TMP/out.json"
+    jq -e 'all(.mcp_servers[]; has("authorization_token") | not)' "$TMP/out.json"
+}
+
+@test "request: each server takes its own ASK_CLAUDE_MCP_TOKEN_<HOST>, and only its own" {
+    ASK_CLAUDE_MCP_TOKEN_MCP_DEEPWIKI_COM=tok_A ASK_CLAUDE_MCP_TOKEN_MCP_EXAMPLE_COM=tok_B \
+        request2 "" "" "" "" "" "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" > "$TMP/out.json"
+    jq -e '.mcp_servers | map(.authorization_token) == ["tok_A", "tok_B"]' "$TMP/out.json"
+    ASK_CLAUDE_MCP_TOKEN_MCP_DEEPWIKI_COM=tok_A \
+        request2 "" "" "" "" "" "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" > "$TMP/out.json"
+    jq -e '.mcp_servers[0].authorization_token == "tok_A" and (.mcp_servers[1] | has("authorization_token") | not)' "$TMP/out.json"
+}
+
+@test "request: a lone server's own token wins over the shared one" {
+    ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_MCP_TOKEN_MCP_DEEPWIKI_COM=tok_A \
+        request2 "" "" "" "" "" "https://mcp.deepwiki.com/mcp" > "$TMP/out.json"
+    jq -e '.mcp_servers[0].authorization_token == "tok_A"' "$TMP/out.json"
+}
+
 @test "request: without --web or --mcp the old goldens are untouched" {
     request2 "" "" "" "" "" "" > "$TMP/out.json"
     assert_golden "$FIX/request/plain.json" "$TMP/out.json"

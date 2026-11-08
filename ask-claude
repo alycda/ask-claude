@@ -29,7 +29,9 @@
 #USAGE   flag "--repo <url>" help="GitHub repository to mount, owner/name[@branch]; GITHUB_TOKEN" global=#true
 #USAGE   flag "--memory <id>" help="memory store to attach, <id>[:ro]; repeatable, up to 8" var=#true global=#true
 #USAGE   flag "--force" help="files: overwrite what exists" global=#true
+#USAGE   flag "--local-mcp <command>" help="a stdio MCP server on this machine that answers the agent's custom tools, e.g. 'tb --mcp'" env="ASK_CLAUDE_LOCAL_MCP" global=#true
 #USAGE   cmd "list" help="sessions, newest first"
+#USAGE   cmd "tools" help="the --local-mcp server's tools as custom tool definitions, for the agent"
 #USAGE   cmd "resume" help="continue a session" {
 #USAGE     arg "<session>" help="session id or unique prefix"
 #USAGE   }
@@ -525,11 +527,155 @@ session_confirm() {
   esac
 }
 
+# --local-mcp: a stdio MCP server on this machine that answers the agent's
+# custom tools. The main shell starts it once per session (session_answer runs
+# in a command substitution, a subshell, so it could not keep a server it
+# started) and talks to it over two FIFOs on fixed descriptors: 7 writes to
+# the server, 8 reads from it. Subshells inherit both; `read -u 8` reads a
+# byte at a time from a pipe, so a subshell never takes more than its line.
+# Tool inputs and results reach jq on stdin only, never on a command line.
+LOCAL_MCP_PID="" LOCAL_MCP_DIR="" LOCAL_MCP_TOOLS="[]"
+LOCAL_MCP_TIMEOUT="${ASK_CLAUDE_LOCAL_MCP_TIMEOUT:-120}"
+
+# local_mcp_send: write the JSON line on stdin to the server; fails, instead
+# of killing the script with SIGPIPE, when the server has exited
+local_mcp_send() {
+  (
+    trap '' PIPE
+    cat >&7
+  ) 2>/dev/null
+}
+
+# local_mcp_read <id>: print the server's response to <id>. Notifications and
+# lines that are not JSON are skipped; a request from the server is answered
+# with method-not-found, since ask-claude offers the server nothing. Returns
+# 1 when the server has exited, 2 when it does not answer in time.
+local_mcp_read() {
+  local want=$1 line kind
+  while :; do
+    IFS= read -r -t "$LOCAL_MCP_TIMEOUT" -u 8 line
+    case $? in
+    0) ;;
+    1) return 1 ;;
+    *) return 2 ;;
+    esac
+    kind=$(jq -r --arg id "$want" '
+      if type != "object" then "skip"
+      elif has("method") then (if has("id") then "request" else "skip" end)
+      elif (.id | tostring) == $id then "mine"
+      else "skip" end' <<<"$line" 2>/dev/null) || kind=skip
+    case "$kind" in
+    mine)
+      printf '%s\n' "$line"
+      return 0
+      ;;
+    request) jq -c '{jsonrpc: "2.0", id: .id, error: {code: -32601, message: "ask-claude answers no server requests"}}' <<<"$line" | local_mcp_send ;;
+    esac
+  done
+}
+
+# local_mcp_start <command>: start the server with sh -c, run the handshake
+# (initialize, notifications/initialized) and keep its tools/list in
+# LOCAL_MCP_TOOLS. Dies, exit 2, when the server does not complete it.
+local_mcp_start() {
+  local cmd=$1 resp page=1 cursor=""
+  case "$LOCAL_MCP_TIMEOUT" in
+  "" | *[!0-9]* | 0*) die "ASK_CLAUDE_LOCAL_MCP_TIMEOUT must be whole seconds, got: $LOCAL_MCP_TIMEOUT" ;;
+  esac
+  LOCAL_MCP_DIR=$(mktemp -d) || die "cannot make a directory for the local MCP server's pipes"
+  mkfifo "$LOCAL_MCP_DIR/in" "$LOCAL_MCP_DIR/out" || die "cannot make the local MCP server's pipes"
+  sh -c "$cmd" <"$LOCAL_MCP_DIR/in" >"$LOCAL_MCP_DIR/out" &
+  LOCAL_MCP_PID=$!
+  # the background shell opens in, then out, before it runs the command, so
+  # these opens complete even when the command does not exist
+  exec 7>"$LOCAL_MCP_DIR/in" 8<"$LOCAL_MCP_DIR/out"
+  jq -nc --arg v "$ASK_CLAUDE_VERSION" '{jsonrpc: "2.0", id: "ask-claude-initialize", method: "initialize",
+    params: {protocolVersion: "2025-06-18", capabilities: {}, clientInfo: {name: "ask-claude", version: $v}}}' | local_mcp_send
+  resp=$(local_mcp_read ask-claude-initialize) || die "the local MCP server ($cmd) did not answer initialize"
+  jq -e 'has("result")' <<<"$resp" >/dev/null ||
+    die "the local MCP server ($cmd) refused initialize: $(jq -r "$SAFE"'.error.message // "no reason" | tostring | safe' <<<"$resp")"
+  echo '{"jsonrpc":"2.0","method":"notifications/initialized"}' | local_mcp_send
+  while :; do
+    jq -nc --arg id "ask-claude-tools-$page" --arg c "$cursor" \
+      '{jsonrpc: "2.0", id: $id, method: "tools/list"} + (if $c == "" then {} else {params: {cursor: $c}} end)' | local_mcp_send
+    resp=$(local_mcp_read "ask-claude-tools-$page") || die "the local MCP server ($cmd) did not answer tools/list"
+    jq -e '.result.tools | type == "array"' <<<"$resp" >/dev/null || die "the local MCP server ($cmd) sent no tools"
+    LOCAL_MCP_TOOLS=$(printf '%s\n%s\n' "$LOCAL_MCP_TOOLS" "$resp" | jq -sc '.[0] + .[1].result.tools')
+    cursor=$(jq -r '.result.nextCursor // empty | tostring' <<<"$resp")
+    [ -n "$cursor" ] && [ "$page" -lt 20 ] || break
+    page=$((page + 1))
+  done
+}
+
+# local_mcp_stop: close the pipes (a stdio server exits at end of input),
+# give the server a second, then SIGTERM it
+# shellcheck disable=SC2329  # called from the EXIT traps
+local_mcp_stop() {
+  [ -n "$LOCAL_MCP_PID" ] || return 0
+  exec 7>&- 8<&-
+  local _
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 "$LOCAL_MCP_PID" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill "$LOCAL_MCP_PID" 2>/dev/null
+  rm -rf "$LOCAL_MCP_DIR"
+  LOCAL_MCP_PID=""
+}
+
+# local_mcp_has <name>: the server lists a tool of that name
+local_mcp_has() {
+  [ -n "$LOCAL_MCP_PID" ] && jq -e --arg n "$1" 'any(.[]; .name == $n)' <<<"$LOCAL_MCP_TOOLS" >/dev/null
+}
+
+# custom_error <id> <text>: a user.custom_tool_result that reports an error
+custom_error() {
+  jq -nc --arg id "$1" --arg t "$2" '{type: "user.custom_tool_result", custom_tool_use_id: $id,
+    content: [{type: "text", text: $t}], is_error: true}'
+}
+
+# local_mcp_call <custom tool use>: run it on the server as tools/call and
+# print the user.custom_tool_result. Text content goes back as text; other
+# content types are named, not sent; an empty result says so.
+local_mcp_call() {
+  local use=$1 id resp
+  id=$(jq -r '.id' <<<"$use")
+  if ! jq -c '{jsonrpc: "2.0", id: .id, method: "tools/call", params: {name: .name, arguments: (.input // {})}}' <<<"$use" | local_mcp_send; then
+    custom_error "$id" "Tool failed: the local MCP server has exited."
+    return
+  fi
+  resp=$(local_mcp_read "$id")
+  case $? in
+  0) ;;
+  1)
+    custom_error "$id" "Tool failed: the local MCP server has exited."
+    return
+    ;;
+  *)
+    custom_error "$id" "Tool failed: the local MCP server did not answer within ${LOCAL_MCP_TIMEOUT}s."
+    return
+    ;;
+  esac
+  jq -c --arg id "$id" '
+    {type: "user.custom_tool_result", custom_tool_use_id: $id} +
+    if has("error") then
+      {content: [{type: "text", text: "Tool failed: MCP error \(.error.code // "?"): \(.error.message // "no message" | tostring)"}], is_error: true}
+    else
+      (.result // {}) as $r
+      | {content: ([$r.content[]? | {type: "text", text: (if .type == "text" then (.text | tostring) else "[\(.type // "unknown") content not passed on by ask-claude]" end)}]
+                   | map(select(.text != ""))
+                   | if length > 0 then .
+                     elif $r.structuredContent then [{type: "text", text: ($r.structuredContent | tojson)}]
+                     else [{type: "text", text: "(the tool returned no content)"}] end),
+         is_error: ($r.isError == true)}
+    end' <<<"$resp"
+}
+
 # session_answer <fold>: the events that answer what the session waits on;
 # nothing when it waits on something this version cannot answer
 session_tty="" # set per answer round, outside the loop that redirects stdin
 session_answer() {
-  local fold=$1 answers="[]" ask id name input result
+  local fold=$1 answers="[]" ask id name shown input result use results=""
   if [ -t 0 ]; then session_tty=1; else session_tty=""; fi
   # One compact JSON line per ask (JSON escapes newlines, so a line is an
   # ask). The input is shown as jq -c renders it, encoded exactly once: going
@@ -547,9 +693,33 @@ session_answer() {
     [ "$result" = deny ] && [ -n "${ASK_CLAUDE_CONFIRM:-}" ] && echo "ask-claude: denied $name ($input): ASK_CLAUDE_CONFIRM=$ASK_CLAUDE_CONFIRM" >&2
     answers=$(jq -c --arg id "$id" --arg r "$result" '. + [{type: "user.tool_confirmation", tool_use_id: $id, result: $r}]' <<<"$answers")
   done < <(jq -c '.asks[]' <<<"$fold")
-  jq -c --argjson a "$answers" --arg msg "Tool unavailable: ask-claude $ASK_CLAUDE_VERSION runs no local tools (see docs/plan.md). Do not call it again; answer the user without it." '
-    {events: ($a + [.custom[] | {type: "user.custom_tool_result", custom_tool_use_id: .id,
-                                 content: [{type: "text", text: $msg}], is_error: true}])}' <<<"$fold"
+  # Custom tools: run on the --local-mcp server when it lists the tool and
+  # the call is allowed (the same confirmation as above: it runs on this
+  # machine). The results carry tool output, so they reach jq on stdin.
+  while IFS= read -r use; do
+    id=$(jq -r '.id // empty' <<<"$use")
+    [ -n "$id" ] || continue
+    name=$(jq -r '.name | tostring' <<<"$use")
+    if [ -z "$LOCAL_MCP_PID" ]; then
+      results+="$(custom_error "$id" "Tool unavailable: ask-claude $ASK_CLAUDE_VERSION runs no local tools without --local-mcp. Do not call it again; answer the user without it.")"$'\n'
+      continue
+    fi
+    if ! local_mcp_has "$name"; then
+      results+="$(custom_error "$id" "Tool unavailable: the local MCP server has no tool named $name. Do not call it again; answer the user without it.")"$'\n'
+      continue
+    fi
+    shown=$(jq -r "$SAFE"'.name | tostring | safe' <<<"$use")
+    input=$(jq -r "$SAFE"'.input | tojson | safe' <<<"$use")
+    result=$(session_confirm "local $shown" "$input")
+    if [ "$result" = allow ]; then
+      echo "ask-claude: allowed local $shown ($input)" >&2
+      results+="$(local_mcp_call "$use")"$'\n'
+    else
+      [ -z "${ASK_CLAUDE_CONFIRM:-}" ] || echo "ask-claude: denied local $shown ($input): ASK_CLAUDE_CONFIRM=$ASK_CLAUDE_CONFIRM" >&2
+      results+="$(custom_error "$id" "Tool call denied by the user: $name did not run.")"$'\n'
+    fi
+  done < <(jq -c '.custom[]' <<<"$fold")
+  { printf '%s\n' "$answers"; printf '%s' "$results"; } | jq -sc '{events: (.[0] + .[1:])}'
 }
 
 # session_turn <sesn> [events]: one user turn, however many streams it takes.
@@ -902,7 +1072,9 @@ session_prereqs() {
   # killed before its EXIT trap ran, must not answer for this one.
   ALWAYS="$STATE/.always.$$"
   rm -f "$ALWAYS"
-  trap 'rm -f "$ALWAYS"' EXIT
+  trap 'rm -f "$ALWAYS"; local_mcp_stop' EXIT
+  # last, so a bad flag or a missing key fails before a server starts
+  [ -z "${usage_local_mcp:-}" ] || local_mcp_start "$usage_local_mcp"
 }
 
 case "${usage_cmd:-}" in
@@ -947,6 +1119,15 @@ agent)
 "agent list")
   need_key
   session_list
+  exit 0
+  ;;
+"agent tools")
+  # no key, agent or environment: this only asks the local server
+  [ -n "${usage_local_mcp:-}" ] || die "agent tools needs --local-mcp <command> (or ASK_CLAUDE_LOCAL_MCP)"
+  trap local_mcp_stop EXIT
+  local_mcp_start "$usage_local_mcp"
+  jq '[.[] | {type: "custom", name, description: (.description // .title // .name),
+              input_schema: (.inputSchema // {type: "object", properties: {}})}]' <<<"$LOCAL_MCP_TOOLS"
   exit 0
   ;;
 "agent resume")

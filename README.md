@@ -156,6 +156,7 @@ ask-claude agent files <sesn> [name]... what the agent wrote; download the named
 ask-claude agent budget <sesn> <cents>  change the cap (0 removes it, for good)
 ask-claude agent archive <sesn>          archive an idle session
 ask-claude agent trace <sesn>            its page in the Console
+ask-claude agent tools --local-mcp <cmd> that server's tools as custom tool definitions
 ```
 
 Once, in the Console (platform.claude.com): an **environment** (start with
@@ -169,13 +170,41 @@ trust it). `just environments` and `just agents` print their ids. Put them in
 | `ASK_CLAUDE_AGENT` | the agent id, `--agent` overrides |
 | `ASK_CLAUDE_ENVIRONMENT` | the environment id, `--environment` overrides |
 | `ASK_CLAUDE_CONFIRM` | `ask` (default), `allow`, or `deny` for tool confirmations |
+| `ASK_CLAUDE_LOCAL_MCP` | the `--local-mcp` command, `--local-mcp` overrides |
+| `ASK_CLAUDE_LOCAL_MCP_TIMEOUT` | seconds to wait for one local tool call, 120 by default |
 
 Every session gets a budget, 100 cents at list price unless `--budget` says
 otherwise (`0` for none). Session time bills at $0.08 per active hour on top
 of tokens, and web searches at $10 per 1,000; the usage line shows cost so far. When the agent wants to run a
 tool its policy marks *ask*, ask-claude asks you (`y`, `n`, `a` for the rest
 of the run) and denies when there is no terminal. A custom tool on the
-agent is answered with an error: nothing runs on this machine yet.
+agent is answered with an error unless `--local-mcp` runs it (below).
+
+### Local tools: `--local-mcp`
+
+An agent's MCP servers are called from Anthropic's side, so they must be
+public https URLs. A custom tool is the other way round: the session pauses,
+this machine runs the tool, and the result goes back. `--local-mcp <command>`
+starts a stdio MCP server on this machine (with `sh -c`, once per session)
+and answers each custom tool call that the server lists:
+
+```sh
+ask-claude agent tools --local-mcp 'tb --mcp' > tools.json   # once
+# add the entries of tools.json to the agent's tools, in the Console or with
+# POST /v1/agents/<id>; the names must match the server's
+ask-claude agent --local-mcp 'tb --mcp' "what is due this week?"
+```
+
+Each call is a tool confirmation like any other, asked at the terminal as
+`allow local <tool> <input>?`, denied when there is no terminal, and
+answered by `ASK_CLAUDE_CONFIRM` when it is set. An allowed call runs on
+this machine with your permissions, and its result goes to the API, so
+the agent reads whatever the tool returns. The server's text content goes
+back as text; other content types are named, not sent. A tool the server
+does not list, a server that exits, an MCP error, or a call that takes longer
+than `ASK_CLAUDE_LOCAL_MCP_TIMEOUT` is an error result, and the turn goes on.
+A server that fails the handshake ends the run with exit 2 before any
+request. The server's stderr is yours; it is not captured.
 
 What else a session can carry, each made once in the Console:
 

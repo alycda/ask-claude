@@ -8,7 +8,8 @@
 #           --slurpfile msgs history.json -f lib/request.jq
 #
 # -n means there is no input: everything comes from the variables.
-#   $m, $sys, $eff, $skills, $cid   strings; "" means "not given"
+#   $m, $sys, $eff, $skills, $cid   strings; "" means "not given"; $cid without
+#                                   $skills goes out as the plain container id
 #   $max                            a number (--argjson parses it)
 #   $msgs                           an ARRAY of the file's JSON values
 #                                   (--slurpfile), so the history is $msgs[0]
@@ -124,4 +125,7 @@ def advisor_used:
    | if ($tools | length) > 0 then {tools: $tools} else {} end)
 + (if $skills != "" then
       {container: (({skills: ($skills | fromjson)}) + (if $cid != "" then {id: $cid} else {} end))}
+    # without skills, a container id is a pause_turn continuation's (the
+    # caller sends one only then): the plain string form the API takes
+    elif $cid != "" then {container: $cid}
     else {} end)

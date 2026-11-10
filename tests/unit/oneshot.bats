@@ -148,6 +148,30 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# A pause_turn continuation without skills sends back the container the
+# previous round ran in (dynamic web filtering runs code there); the first
+# request of a turn sends none.
+
+# with_container <fixture> <out>: the fixture's stream, its reply carrying container_FIXTURE
+with_container() {
+    sed 's/"container":null/"container":{"id":"container_FIXTURE","expires_at":"2026-11-10T01:00:00Z"}/g' "$FIX/sse/$1.sse" >"$2"
+}
+
+@test "one-shot: a pause_turn continuation without skills sends back its round's container" {
+    with_container pause-turn "$TMP/paused.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/paused.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" --web "ping"
+    grep -q 'pause_turn: continuing, round 1' <<<"$stderr"
+    jq -s -e '.[0] | has("container") | not' "$TMP/requests.jsonl"
+    jq -s -e 'length > 1 and (.[1:] | all(.container == "container_FIXTURE"))' "$TMP/requests.jsonl"
+}
+
+@test "chat: without skills a new turn does not reuse the last turn's container" {
+    with_container text "$TMP/text-container.sse"
+    printf 'hi\nagain\n/quit\n' | ASK_CLAUDE_REPLAY="$TMP/text-container.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" >/dev/null 2>&1
+    [ "$(jq -s length "$TMP/requests.jsonl")" -eq 2 ]
+    jq -s -e 'all(has("container") | not)' "$TMP/requests.jsonl"
+}
+
 @test "one-shot: a request log that cannot be written fails the request before anything is sent" {
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/nodir/requests.jsonl" "$BIN" "ping"
     [ "$status" -eq 1 ]

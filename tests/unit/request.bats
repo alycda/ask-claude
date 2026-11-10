@@ -206,3 +206,8 @@ request_mcptools() { # mcp mcptools
     request_mcptools "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" "" > "$TMP/out.json"
     assert_golden "$FIX/request/mcp.json" "$TMP/out.json"
 }
+
+@test "request: a container id without skills goes out as the plain id (a pause_turn continuation)" {
+    request "" "" "" container_FIXTURE | jq -e '.container == "container_FIXTURE"'
+    request "" "" "" "" | jq -e 'has("container") | not'
+}

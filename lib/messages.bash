@@ -50,7 +50,7 @@ transport() {
 # with the history rolled back to before this ask. A pause_turn (server tool
 # still working) is continued automatically, up to 8 rounds.
 call() {
-  local body resp err stop rounds=0 n0 log t0 skills cid failure chat rtools
+  local body resp err stop rounds=0 n0 log t0 skills cid failure chat rtools turn_cid=""
   n0=$(jq length "$HIST")
   chat=$(basename "$HIST" .json)
   # Skills run in Anthropic's code-execution sandbox, so -s also adds the
@@ -66,8 +66,17 @@ call() {
     betas="$betas,advisor-tool-2026-03-01"
   fi
   while :; do
+    # the container to run in. With skills, the chat's container, so files
+    # persist across turns. Without, only a pause_turn continuation sends one
+    # back: the container the previous round of this turn ran in (dynamic web
+    # filtering runs code there), so the paused work continues where it was
+    # instead of in a new container. A new turn starts without one.
     cid=""
-    [ -n "$skills" ] && [ -s "$HIST.container" ] && cid=$(cat "$HIST.container")
+    if [ -n "$skills" ]; then
+      [ -s "$HIST.container" ] && cid=$(cat "$HIST.container")
+    else
+      cid=$turn_cid
+    fi
     body=$(jq -n -c --arg m "$usage_model" --argjson max "$usage_max_tokens" \
       --arg sys "${usage_system:-}" --arg eff "${usage_effort:-}" \
       --arg skills "$skills" --arg cid "$cid" --arg web "${usage_web:+1}" --arg mcp "${usage_mcp:-}" --arg advisor "${usage_advisor:-}" --arg mcptools "${usage_mcp_tool:-}" \
@@ -118,6 +127,7 @@ call() {
     # keep the full content array (thinking blocks included) for the next turn
     printf '%s' "$resp" | jq '{role:"assistant", content:.content}' >"$HIST.turn"
     jq --slurpfile t "$HIST.turn" '. + $t' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST" && rm -f "$HIST.turn"
+    turn_cid=$(printf '%s' "$resp" | jq -r '.container.id // empty')
     printf '%s' "$resp" | jq -r '.container.id // empty' >"$HIST.container.tmp"
     if [ -s "$HIST.container.tmp" ]; then mv "$HIST.container.tmp" "$HIST.container"; else rm -f "$HIST.container.tmp"; fi
     rm -f "$log"

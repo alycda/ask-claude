@@ -40,8 +40,8 @@ stream() { events "$1" | jq --unbuffered -rj -f "$ROOT/lib/stream.jq"; }
     LC_ALL=C refute grep -q $'[\x01-\x08\x0b-\x1f\x7f]' "$TMP/out.txt"
 }
 
-@test "stream: web search, web fetch and MCP calls print their markers" {
-    for f in web-search web-fetch mcp; do
+@test "stream: web search, web fetch, dynamic filtering and MCP calls print their markers" {
+    for f in web-search web-fetch web-dynamic mcp; do
         events "$f" | jq --unbuffered -rj -f "$ROOT/lib/stream.jq" > "$TMP/out.txt"
         assert_golden "$FIX/sse/$f.stream.txt" "$TMP/out.txt"
     done

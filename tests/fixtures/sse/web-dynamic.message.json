@@ -1,0 +1,297 @@
+{
+  "model": "claude-opus-5-5",
+  "stop_reason": "end_turn",
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 3545,
+    "cache_read_input_tokens": 30168,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 568,
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard",
+    "output_tokens_details": {
+      "thinking_tokens": 110
+    },
+    "server_tool_use": {
+      "web_search_requests": 1,
+      "web_fetch_requests": 2
+    },
+    "iterations": [
+      {
+        "input_tokens": 4,
+        "output_tokens": 173,
+        "cache_read_input_tokens": 7046,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message",
+        "model": null
+      },
+      {
+        "input_tokens": 2,
+        "output_tokens": 62,
+        "cache_read_input_tokens": 7046,
+        "cache_creation_input_tokens": 548,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 548,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message",
+        "model": null
+      },
+      {
+        "input_tokens": 2,
+        "output_tokens": 154,
+        "cache_read_input_tokens": 7594,
+        "cache_creation_input_tokens": 888,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 888,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message",
+        "model": null
+      },
+      {
+        "input_tokens": 2,
+        "output_tokens": 179,
+        "cache_read_input_tokens": 8482,
+        "cache_creation_input_tokens": 2109,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 2109,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message",
+        "model": null
+      }
+    ]
+  },
+  "container": {
+    "id": "container_FIXTURE",
+    "expires_at": "2026-11-10T03:19:29.041520Z"
+  },
+  "error": null,
+  "content": [
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "code_execution",
+      "input": {
+        "code": "import json\nr = await web_search({\"query\": \"jq latest release github jqlang\"})\nfor x in r[:5]: print(x.get('title'), x.get('url'), x.get('page_age'))\nf = json.loads(await web_fetch({\"url\":\"https://github.com/jqlang/jq/releases/latest\"}))[0]\nprint(f.get('error_code') or f['content'][:2500])"
+      }
+    },
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "web_search",
+      "input": {},
+      "caller": {
+        "type": "code_execution_20260120",
+        "tool_id": "srvtoolu_FIXTURE"
+      }
+    },
+    {
+      "type": "web_search_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": [
+        {
+          "type": "web_search_result",
+          "title": "Releases · jqlang/jq · GitHub",
+          "url": "https://github.com/jqlang/jq/releases",
+          "encrypted_content": "REDACTED",
+          "page_age": "497 days ago"
+        },
+        {
+          "type": "web_search_result",
+          "title": "jqlang/jq jq-1.8.2 on GitHub",
+          "url": "https://newreleases.io/project/github/jqlang/jq/release/jq-1.8.2",
+          "encrypted_content": "REDACTED",
+          "page_age": "142 days ago"
+        },
+        {
+          "type": "web_search_result",
+          "title": "Release jq 1.7.1 · jqlang/jq · GitHub",
+          "url": "https://github.com/jqlang/jq/releases/tag/jq-1.7.1",
+          "encrypted_content": "REDACTED",
+          "page_age": null
+        },
+        {
+          "type": "web_search_result",
+          "title": "Release jq 1.8.2 · jqlang/jq · GitHub",
+          "url": "https://github.com/jqlang/jq/releases/tag/jq-1.8.2",
+          "encrypted_content": "REDACTED",
+          "page_age": null
+        },
+        {
+          "type": "web_search_result",
+          "title": "Package jq · GitHub",
+          "url": "https://github.com/jqlang/jq/pkgs/container/jq",
+          "encrypted_content": "REDACTED",
+          "page_age": "1198 days ago"
+        },
+        {
+          "type": "web_search_result",
+          "title": "Jq (programming language)",
+          "url": "https://en.wikipedia.org/wiki/Jq_(programming_language)",
+          "encrypted_content": "REDACTED",
+          "page_age": null
+        },
+        {
+          "type": "web_search_result",
+          "title": "jq/NEWS.md at master · jqlang/jq · GitHub",
+          "url": "https://github.com/jqlang/jq/blob/master/NEWS.md",
+          "encrypted_content": "REDACTED",
+          "page_age": null
+        },
+        {
+          "type": "web_search_result",
+          "title": "jq",
+          "url": "https://jqlang.github.io/jq/",
+          "encrypted_content": "REDACTED",
+          "page_age": "1418 days ago"
+        },
+        {
+          "type": "web_search_result",
+          "title": "JSDoc",
+          "url": "https://en.wikipedia.org/wiki/JSDoc",
+          "encrypted_content": "REDACTED",
+          "page_age": null
+        }
+      ],
+      "caller": {
+        "type": "code_execution_20260120",
+        "tool_id": "srvtoolu_FIXTURE"
+      }
+    },
+    {
+      "type": "code_execution_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": {
+        "type": "encrypted_code_execution_result",
+        "encrypted_stdout": "Eo4BCioIFRgCIiQyZTdiYjk0Mi1lNDM0LTRkNzYtYWU3MS05ODA2OTc0MTVlZDQSDGDIz2vAy6yDSc6yOxoMBK+5I5Y4ob6k1c85IjDpTWmoJuGdq8mboM2skL/19xq3NIgryW+NsOCaMlYTuQfT7EFKsYZVqUkkqldPjuMqEo2IyoBY7r9Eg7JYhuesY3NAURgD",
+        "stderr": "Traceback (most recent call last):\n  File \"/usr/local/lib/python3.11/asyncio/runners.py\", line 190, in run\n    return runner.run(main)\n           ^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/asyncio/runners.py\", line 118, in run\n    return self._loop.run_until_complete(task)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/asyncio/base_events.py\", line 654, in run_until_complete\n    return future.result()\n           ^^^^^^^^^^^^^^^\n  File \"/tmp/srvtoolu_015Cx39CnyLbD3o7V1M5RnBJ/cell.py\", line 14, in <module>\n    for x in r[:5]: print(x.get('title'), x.get('url'), x.get('page_age'))\n                          ^^^^^\nAttributeError: 'str' object has no attribute 'get'\n",
+        "return_code": 1,
+        "content": []
+      }
+    },
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "code_execution",
+      "input": {
+        "code": "print(type(r), str(r)[:1500])"
+      }
+    },
+    {
+      "type": "code_execution_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": {
+        "type": "code_execution_result",
+        "stdout": "<class 'str'> [{\"type\": \"web_search_result\", \"title\": \"Releases \\u00b7 jqlang/jq \\u00b7 GitHub\", \"url\": \"https://github.com/jqlang/jq/releases\", \"content\": \"## jq 1.8.2\\n\\njq 1.8.2 Latest\\n\\nLatest\\n\\n@github-actions github-actions released this 20 Jun 14:11\\n\\njq-1.8.2\\n\\n## jq 1.8.1\\n\\njq 1.8.1\\n\\n@github-actions github-actions released this 01 Jul 11:50\\n\\njq-1.8.1\\n\\nFull commit log can be found at jq-1.8.0...jq-1.8.1.\\n\\n## jq 1.8.0\\n\\njq 1.8.0\\n\\n@github-actions github-actions released this 01 Jun 06:05\\n\\njq-1.8.0\\n\\nWe are pleased to announce the release of version 1.8.0. This release includes a number of improvements since the last version.\\n\\nFull commit log can be found at jq-1.7.1...jq-1.8.0.\\n\\ngh attestation verify --repo jqlang/jq jq-linux-amd64\\ngh attestation verify --repo jqlang/jq oci://ghcr.io/jqlang/jq:1.8.0\\n\\n- Generate provenance attestations for release artifacts and docker image.\\n\\n## jq 1.7.1\\n\\njq 1.7.1\\n\\n@github-actions github-actions released this 13 Dec 19:56\\n\\njq-1.7.1\\n\\n**Full Changelog**: jq-1.7...jq-1.7.1\\n\\n## jq 1.7\\n\\njq 1.7\\n\\n@github-actions github-actions released this 06 Sep 22:54\\n\\njq-1.7\\n\\n## jq 1.7rc2\\n\\njq 1.7rc2 Pre-release\\n\\nPre-release\\n\\n@github-actions github-actions released this 27 Aug 18:10\\n\\njq-1.7rc2\\n\\nNote that this is a pre-release.\\n\\n## jq 1.7rc1\\n\\njq 1.7rc1 Pre-release\\n\\nPre-release\\n\\n@github-actions github-actions released this 31 Jul 23:04\\n\\njq-1.7rc1\\n\\nNote that this is a pre-release.\\n\\n## jq 1.6\\n\\njq 1.6\\n\\njq\n",
+        "stderr": "",
+        "return_code": 0,
+        "content": [],
+        "abort_reason": null
+      }
+    },
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "code_execution",
+      "input": {
+        "code": "for u in [\"https://github.com/jqlang/jq/releases/tag/jq-1.8.2\",\"https://github.com/jqlang/jq/releases\"]:\n    f = json.loads(await web_fetch({\"url\":u}))[0]\n    print(u, f.get('error_code') or f['content'][:2000]); print('----')"
+      }
+    },
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "web_fetch",
+      "input": {},
+      "caller": {
+        "type": "code_execution_20260120",
+        "tool_id": "srvtoolu_FIXTURE"
+      }
+    },
+    {
+      "type": "web_fetch_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": {
+        "type": "web_fetch_result",
+        "url": "https://github.com/jqlang/jq/releases/tag/jq-1.8.2",
+        "retrieved_at": "2026-10-27T22:54:55+00:00",
+        "content": {
+          "type": "document",
+          "source": {
+            "type": "text",
+            "media_type": "text/plain",
+            "data": "---\nmeta-analytics-location: /<user-name>/<repo-name>/releases/show\nmeta-apple-itunes-app: app-id=1477376905, app-argument=https://github.com/jqlang/jq/releases/tag/jq-1.8.2\nmeta-browser-errors-url: https://api.github.com/_private/browser/errors\nmeta-browser-stats-url: https://api.github.com/_private/browser/stats\nmeta-color-scheme: light dark\nmeta-current-catalog-service-hash: 6f13f31f798a93a6b08d3be0727120e9af35851fac7b9c620d6cf9a70068c136\nmeta-description: Command-line JSON processor. Contrib\n[truncated for the fixture]"
+          },
+          "title": "Release jq 1.8.2 · jqlang/jq"
+        }
+      },
+      "caller": {
+        "type": "code_execution_20260120",
+        "tool_id": "srvtoolu_FIXTURE"
+      }
+    },
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "web_fetch",
+      "input": {},
+      "caller": {
+        "type": "code_execution_20260120",
+        "tool_id": "srvtoolu_FIXTURE"
+      }
+    },
+    {
+      "type": "web_fetch_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": {
+        "type": "web_fetch_result",
+        "url": "https://github.com/jqlang/jq/releases",
+        "retrieved_at": "2026-11-05T06:32:36+00:00",
+        "content": {
+          "type": "document",
+          "source": {
+            "type": "text",
+            "media_type": "text/plain",
+            "data": "---\nmeta-analytics-location: /<user-name>/<repo-name>/releases/index\nmeta-apple-itunes-app: app-id=1477376905, app-argument=https://github.com/jqlang/jq/releases\nmeta-browser-errors-url: https://api.github.com/_private/browser/errors\nmeta-browser-stats-url: https://api.github.com/_private/browser/stats\nmeta-color-scheme: light dark\nmeta-current-catalog-service-hash: 6f13f31f798a93a6b08d3be0727120e9af35851fac7b9c620d6cf9a70068c136\nmeta-description: Command-line JSON processor. Contribute to jqlan\n[truncated for the fixture]"
+          },
+          "title": "Releases · jqlang/jq"
+        }
+      },
+      "caller": {
+        "type": "code_execution_20260120",
+        "tool_id": "srvtoolu_FIXTURE"
+      }
+    },
+    {
+      "type": "code_execution_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": {
+        "type": "code_execution_result",
+        "stdout": "https://github.com/jqlang/jq/releases/tag/jq-1.8.2 ---\nmeta-analytics-location: /<user-name>/<repo-name>/releases/show\nmeta-apple-itunes-app: app-id=1477376905, app-argument=https://github.com/jqlang/jq/releases/tag/jq-1.8.2\nmeta-browser-errors-url: https://api.github.com/_private/browser/errors\nmeta-browser-stats-url: https://api.github.com/_private/browser/stats\nmeta-color-scheme: light dark\nmeta-current-catalog-service-hash: 6f13f31f798a93a6b08d3be0727120e9af35851fac7b9c620d6cf9a70068c136\nmeta-description: Command-line JSON processor. Contribute to jqlang/jq development by creating an account on GitHub.\nmeta-disable-turbo: false\nmeta-expected-hostname: github.com\nmeta-fb:app_id: 1401488693436528\nmeta-fetch-nonce: v2:69f97771-9c6b-4bd5-b725-5ddf2acd6fd4\nmeta-github-keyboard-shortcuts: repository,copilot\nmeta-go-import: github.com/jqlang/jq git https://github.com/jqlang/jq.git\nmeta-google-site-verification: Apib7-x98H0j5cPqHWwSMm6dNU4GmODRoqxLiDzdx9I\nmeta-hostname: github.com\nmeta-hovercard-subject-tag: repository:5101141\nmeta-html-safe-nonce: bdb58704e34ddfe27954032943c3bfc61822d83d0edb19adfd4fd49df654a9ab\nmeta-octolytics-dimension-repository_id: 5101141\nmeta-octolytics-dimension-repository_is_fork: false\nmeta-octolytics-dimension-repository_network_root_id: 5101141\nmeta-octolytics-dimension-repository_network_root_nwo: jqlang/jq\nmeta-octolytics-dimension-repository_nwo: jqlang/jq\nmeta-octolytics-dimension-repository_public: true\nmeta-octolytics-dimension-user_id: 104800540\nmeta-octolytics-dimension-user_login: jqlang\nmeta-octolytics-url: https://collector.github.com/github/collect\nmeta-og:description: This is a patch release with security fixes and bug fixes since 1.8.1, along with new builds for Windows arm64 and Docker arm/v7. Full commit log can be found at jq-1.8.1...jq-1.8.2. Security fixes...\nmeta-og:image: https://opengraph.githubassets.com/79fcb3b34e2581e7f8a20a451b244203af62fff336d0f674bbe0e9f740c47319/jqlang/jq/releases/tag/jq-1.8.2\nmeta-og:image:alt: This is a patch release with security fixes and bug \n----\nhttps://github.com/jqlang/jq/releases ---\nmeta-analytics-location: /<user-name>/<repo-name>/releases/index\nmeta-apple-itunes-app: app-id=1477376905, app-argument=https://github.com/jqlang/jq/releases\nmeta-browser-errors-url: https://api.github.com/_private/browser/errors\nmeta-browser-stats-url: https://api.github.com/_private/browser/stats\nmeta-color-scheme: light dark\nmeta-current-catalog-service-hash: 6f13f31f798a93a6b08d3be0727120e9af35851fac7b9c620d6cf9a70068c136\nmeta-description: Command-line JSON processor. Contribute to jqlang/jq development by creating an account on GitHub.\nmeta-disable-turbo: false\nmeta-expected-hostname: github.com\nmeta-fb:app_id: 1401488693436528\nmeta-fetch-nonce: v2:9347aa72-8d83-3708-a17d-526824dbeb2e\nmeta-github-keyboard-shortcuts: repository,copilot\nmeta-go-import: github.com/jqlang/jq git https://github.com/jqlang/jq.git\nmeta-google-site-verification: Apib7-x98H0j5cPqHWwSMm6dNU4GmODRoqxLiDzdx9I\nmeta-hostname: github.com\nmeta-hovercard-subject-tag: repository:5101141\nmeta-html-safe-nonce: fa2f279639c61c37f19be49cd8a58c637c4cab3f632a4e6c9865d5142fefb13f\nmeta-octolytics-dimension-repository_id: 5101141\nmeta-octolytics-dimension-repository_is_fork: false\nmeta-octolytics-dimension-repository_network_root_id: 5101141\nmeta-octolytics-dimension-repository_network_root_nwo: jqlang/jq\nmeta-octolytics-dimension-repository_nwo: jqlang/jq\nmeta-octolytics-dimension-repository_public: true\nmeta-octolytics-dimension-user_id: 104800540\nmeta-octolytics-dimension-user_login: jqlang\nmeta-octolytics-url: https://collector.github.com/github/collect\nmeta-og:description: Command-line JSON processor. Contribute to jqlang/jq development by creating an account on GitHub.\nmeta-og:image: https://opengraph.githubassets.com/94b716d418c60ce796f9cc8de6ce5feae146d4a1451727d05e4bc8ae01e45e40/jqlang/jq\nmeta-og:image:alt: Command-line JSON processor. Contribute to jqlang/jq development by creating an account on GitHub.\nmeta-og:image:height: 600\nmeta-og:image:width: 1200\nmeta-og:site_name: GitHub\nmeta-og:tit\n----\n",
+        "stderr": "",
+        "return_code": 0,
+        "content": [],
+        "abort_reason": null
+      }
+    },
+    {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "CAQS2gcKEAgTGAI4AUIIdGhpbmtpbmcSDMU7qWdVxCVE+lvCJBoMCXbS4/RGjX/e9BLSIjDqMQKl/vSg80kpA18uxEtAbbWUSH+cb9Y1mwRNEsp9iV070c2rvDaUtIvbQFRLDfMq9waWlUAKiUEBUBpCANt1+cgWqLVUJf1CjjNQZ0lfksVUzbD/LYSEqzynHhrKNMQVYI1oBjPdbe8DcNL0Tk0YLYsQAFq7mKvlNDp4Cj3n13/eTG+T83t+f+N9itP3cCFgsQwKFbGKG6Rq2AIBi6wSF9duOdQPc18Zmpv2u4D7fMBQqDLkKRx3KgsiJPVvQNlJnqCQ+fq3Z2n2M2BTjADpcCBbvtAQNLtQR66LxQ2IYh2D2GYo4kP5VatPM0pKCCL/4kN7sWqO3j70NF2ll42Rw26WaSk3pk9hOInjJqd2WcKywoNVbnTyXBcdV/3Eh0lemof6w+JXt5JVlpPAJh1tQnmlxs8YUxkOrmYAwSzr/SMucID3RP3YHX3qCKshMYFNnBFxeB3hc6jmPfmYeLbmY+KNlt1rQWlRvy8R2Bp1pysYMuYh2yMiKY4ZMqgevHBo0+AHAto4U3Wbf8DcBxYKdYhAEZlUqnAmz/voW96LUc6NVVl9D9aAbvAC0OoDe9E7LcgrHgqmorN3rKWmdNjQkKWOaEWfkyLOZP92Q7KJTyJ9MQkamlnVVe/w+K2/VaeECLrQVflyTvRM+ms9Ln/vPjOPecD6u8uR27kM8xnxAKop6ueC+1F2XHlvOR8DzyqoAaOgE5JisNRePR3We9SmJv8A2G8oP1NcQmszlaKc31zB3jo3WpZb5vXB3a7Xatt5h2hl0ZYHY92J8kc6U0PDm5KmkYZ+QQScD+KVuvyp3OgV9gaQJNT2/sybefENHI2S773EQyBkzcq/8qhT8lyl7E//F2d1rjtoA0JttCoZXAXuvKgztHEIKMurE2gdlARpCqvMs6xZA45emcClyldLyAzDOPoSDSgKxRrT6ISeWWYb5simvu+kCL3qhIQeBT4U6ATDJZrRkudPJOr1ES4NYD8UfAlxQ3BL1u6if1BKxpWEz1HAKc897GftpfrfUikwg24VgeDwrQc3XEY7Q7/6OQyIgabBbXHpEyhuSlUdtAZZ3w7r+5hLE667K5C/23xK3gC5Qz9LwPJe6YPE8kPAEckwJLbHVBIf7PKtfy4QPSggan6yZY1zw8KT8K+xtT52j2mOC7X385CIVudpQLJaA6YoyPAaWUyNCMeueLTXkjIhnQ67t/MWw5Z2BiZH2FB9iqNUjUpmBH0QURbTvX+IQrx4LkwZgO4dRxgB"
+    },
+    {
+      "type": "text",
+      "text": "The latest jq release is 1.8.2, which its GitHub release notes call a patch release with security and bug fixes since 1.8.1, plus new builds for Windows arm64 and Docker arm/v7."
+    }
+  ]
+}

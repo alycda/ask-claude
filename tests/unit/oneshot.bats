@@ -80,7 +80,7 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
 
 @test "one-shot: --web and --mcp reach the request; a non-https MCP URL exits 2 first" {
     replay web-search --web "ping" >/dev/null 2>&1
-    jq -e '.tools[0].type=="web_search_20250305" and .tools[1].type=="web_fetch_20250910"' "$TMP/requests.jsonl"
+    jq -e '.tools[0].type=="web_search_20260318" and .tools[1].type=="web_fetch_20260318"' "$TMP/requests.jsonl"
     rm -f "$TMP/requests.jsonl"
     replay mcp --mcp https://mcp.deepwiki.com/mcp "ping" >/dev/null 2>&1
     jq -e '.mcp_servers[0].url=="https://mcp.deepwiki.com/mcp" and .tools[0].type=="mcp_toolset"' "$TMP/requests.jsonl"

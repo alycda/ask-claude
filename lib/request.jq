@@ -14,6 +14,8 @@
 #                                   (--slurpfile), so the history is $msgs[0]
 #   $skills                         JSON text from lib/skills.jq; fromjson parses it
 #   $web                            "" or anything: add the web search and fetch tools
+#                                   (the dynamic-filtering versions, or the basic ones
+#                                   for a model older than Claude 4.6: basic_web)
 #   $mcp                            MCP server URLs, space-separated; "" means none
 #   $advisor                        the advisor tool's model; "" means no advisor
 #   $mcptools                       --mcp-tool entries, host:tool, space-separated;
@@ -49,6 +51,11 @@ def web: $ARGS.named.web // "";
 def mcp: $ARGS.named.mcp // "";
 def advisor: $ARGS.named.advisor // "";
 def mcptools: $ARGS.named.mcptools // "";
+# basic_web: true for a model id older than Claude 4.6 (the 3.x family, and
+# Opus, Sonnet and Haiku 4 through 4.5, with or without a date). Dynamic
+# filtering needs 4.6 or later; on an older model the _20260318 web tools are
+# a 400. Every alias and every other id gets the dynamic versions.
+def basic_web: $m | test("\\Aclaude-3|\\Aclaude-(opus|sonnet|haiku)-4(-[0-5])?(-[0-9]{8})?\\z");
 # toolset: the mcp_toolset for the server at this URL. With no --mcp-tool for
 # its host the server offers every tool it lists. With one or more, it is an
 # allowlist: every tool off by default, the named ones on. The script refuses
@@ -98,13 +105,20 @@ def advisor_used:
 + (if mcp != "" then {mcp_servers: [mcp | words[] | {type: "url", url: ., name: (. | host)}
                                       + (mcp_token as $t | if $t != "" then {authorization_token: $t} else {} end)]}
    else {} end)
-# tools, in this order: code_execution for skills, the web tools, one
+# tools, in this order: code_execution for skills, the web tools (basic_web picks the version), one
 # mcp_toolset per server (an allowlist when --mcp-tool names it), the advisor (3 calls a turn at most, less what this
 # turn's paused replies used, and left out at 0: each call is a sub-inference
 # at the advisor model's rates); the key is left out when there are none
 + (([ (if $skills != "" then {type: "code_execution_20260521", name: "code_execution"} else empty end),
-      (if web != "" then {type: "web_search_20250305", name: "web_search", max_uses: 5},
-                           {type: "web_fetch_20250910", name: "web_fetch", max_uses: 5} else empty end) ]
+      (if web == "" then empty
+       elif basic_web then {type: "web_search_20250305", name: "web_search", max_uses: 5},
+                           {type: "web_fetch_20250910", name: "web_fetch", max_uses: 5}
+       # dynamic filtering: the model filters results in code before they
+       # reach its context. The API provisions that code execution itself and
+       # shares one container with the skills' code_execution (20260120 or
+       # later is accepted alongside); not ZDR-eligible.
+       else {type: "web_search_20260318", name: "web_search", max_uses: 5},
+            {type: "web_fetch_20260318", name: "web_fetch", max_uses: 5} end) ]
     + (if mcp != "" then [mcp | words[] | toolset] else [] end)
     + (if advisor != "" and advisor_used < 3 then [{type: "advisor_20260301", name: "advisor", model: advisor, max_uses: (3 - advisor_used)}] else [] end)) as $tools
    | if ($tools | length) > 0 then {tools: $tools} else {} end)

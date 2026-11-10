@@ -10,7 +10,14 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
-## 0.3.1 (micro) - 2026-11-10
+## 0.3.1 (meso) - 2026-11-10
+
+- `--web` sends `web_search_20260318` and `web_fetch_20260318`, the
+  dynamic-filtering versions, in place of `web_search_20250305` and
+  `web_fetch_20250910`: the model filters results in code before they reach
+  its context. A model id older than Claude 4.6 keeps the basic versions,
+  because the newer ones are a 400 there. Aliases (`haiku`, `opus`, ...)
+  get the dynamic versions.
 
 - `--mcp-tool <host>:<tool>` (repeatable) limits an `--mcp` server to the
   tools named. Its `mcp_toolset` goes out as an allowlist
@@ -26,8 +33,13 @@ adds one, and `just check-effver` checks it against `VERSION`.
 
   Both are `null` for a session turn. The line format stays `v: 1`: the
   existing keys and their order are unchanged.
-- Adopting needs nothing. A reader that compares whole event lines byte for
-  byte sees the two new keys.
+- Adopting needs:
+  - **An organization under Zero Data Retention using `--web`:** the
+    dynamic-filtering versions are not ZDR-eligible. Pass an older model
+    with `-m` to get the basic versions; this version has no flag to keep
+    them on a 4.6+ model.
+  - **A reader that compares whole event lines byte for byte:** it sees
+    the two new keys.
 
 ## 0.3.0 (macro) - 2026-11-07
 

@@ -57,9 +57,34 @@ request2() { # sys eff skills cid web mcp
         -f "$ROOT/lib/request.jq"
 }
 
-@test "request: --web adds the basic web search and web fetch server tools" {
+@test "request: --web adds the web search and web fetch server tools, with dynamic filtering" {
     request2 "" "" "" "" 1 "" > "$TMP/out.json"
     assert_golden "$FIX/request/web.json" "$TMP/out.json"
+    jq -e '[.tools[].type] == ["web_search_20260318", "web_fetch_20260318"]' "$TMP/out.json"
+}
+
+# dynamic filtering needs Claude 4.6 or later: an older model id gets the
+# basic versions, which every model takes (0.3.1)
+web_types() { # model
+    jq -n -c --arg m "$1" --argjson max 16000 --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web 1 \
+        --slurpfile msgs "$FIX/request/history-one-turn.json" -f "$ROOT/lib/request.jq" | jq -c '[.tools[].type]'
+}
+
+@test "request: --web on a model older than 4.6 sends the basic versions" {
+    jq -n --arg m claude-haiku-4-5 --argjson max 16000 --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web 1 --arg mcp "" \
+        --slurpfile msgs "$FIX/request/history-one-turn.json" -f "$ROOT/lib/request.jq" > "$TMP/out.json"
+    assert_golden "$FIX/request/web-basic.json" "$TMP/out.json"
+    local m
+    for m in claude-haiku-4-5 claude-haiku-4-5-20251001 claude-sonnet-4-5-20250929 claude-opus-4-1 claude-opus-4-20250514 claude-sonnet-4-0 claude-3-7-sonnet-20250219; do
+        [ "$(web_types "$m")" = '["web_search_20250305","web_fetch_20250910"]' ] || { echo "basic expected for $m"; return 1; }
+    done
+}
+
+@test "request: --web on 4.6 and later, and on every alias, sends the dynamic versions" {
+    local m
+    for m in claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5 claude-fable-5-1 claude-opus-4-6 claude-sonnet-4-6 claude-opus-4-8 haiku sonnet opus fable; do
+        [ "$(web_types "$m")" = '["web_search_20260318","web_fetch_20260318"]' ] || { echo "dynamic expected for $m"; return 1; }
+    done
 }
 
 @test "request: --mcp adds a server per URL, named after its host, and one toolset each" {

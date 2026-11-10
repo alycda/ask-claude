@@ -52,11 +52,20 @@ def web: $ARGS.named.web // "";
 def mcp: $ARGS.named.mcp // "";
 def advisor: $ARGS.named.advisor // "";
 def mcptools: $ARGS.named.mcptools // "";
-# basic_web: true for a model id older than Claude 4.6 (the 3.x family, and
-# Opus, Sonnet and Haiku 4 through 4.5, with or without a date). Dynamic
-# filtering needs 4.6 or later; on an older model the _20260318 web tools are
-# a 400. Every alias and every other id gets the dynamic versions.
-def basic_web: $m | test("\\Aclaude-3|\\Aclaude-(opus|sonnet|haiku)-4(-[0-5])?(-[0-9]{8})?\\z");
+# basic_web: true for a model id older than Claude 4.6: the 3.x family, and
+# Opus, Sonnet and Haiku 4 through 4.5. Haiku 4.5 rejects the _20260318 web
+# tools with a 400 (no programmatic tool calling); Opus and Sonnet 4.5 accept
+# them, but stay basic so `-m` is a route to the ZDR-eligible versions. The
+# match ignores case and where the id sits, so provider spellings count
+# (anthropic.claude-haiku-4-5-20251001-v1:0, claude-opus-4-5@20251101). The
+# minor version is one or two digits; an 8-digit date in its place means .0.
+# Every alias and every other id gets the dynamic versions.
+def basic_web:
+  ($m | ascii_downcase) as $id
+  | ($id | test("claude-3"))
+    or ([$id | capture("claude-(opus|sonnet|haiku)-(?<major>[0-9]+)(-(?<minor>[0-9]{1,2})(?![0-9]))?")]
+        | first // null
+        | . != null and .major == "4" and ((.minor // "0") | tonumber) <= 5);
 # toolset: the mcp_toolset for the server at this URL. With no --mcp-tool for
 # its host the server offers every tool it lists. With one or more, it is an
 # allowlist: every tool off by default, the named ones on. The script refuses

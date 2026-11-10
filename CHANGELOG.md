@@ -16,8 +16,10 @@ adds one, and `just check-effver` checks it against `VERSION`.
   dynamic-filtering versions, in place of `web_search_20250305` and
   `web_fetch_20250910`: the model filters results in code before they reach
   its context. A model id older than Claude 4.6 keeps the basic versions,
-  because the newer ones are a 400 there. Aliases (`haiku`, `opus`, ...)
-  get the dynamic versions. A one-line notice on stderr, once per run,
+  in any spelling (provider prefixes, `@date` suffixes, any case): Haiku
+  4.5 rejects the newer ones with a 400, and Opus and Sonnet 4.5 stay
+  basic so `-m` is a route to the ZDR-eligible versions. Aliases (`haiku`,
+  `opus`, ...) get the dynamic versions. A one-line notice on stderr, once per run,
   says they are not eligible for Zero Data Retention. Without `-s`, a `pause_turn` continuation sends
   back the container the paused round ran in, so filtering that was in
   progress resumes there. A new turn starts without one.

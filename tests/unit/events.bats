@@ -24,7 +24,7 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
 
 @test "events: the line records the request's tools and the reply's calls" {
     replay web-fetch --web "ping" >/dev/null 2>&1
-    jq -e '.tools == ["web_search", "web_fetch"] and .tool_calls == {web_search: 0, web_fetch: 1, mcp: 0}' "$(LOG)"
+    jq -e '.tools == ["web_search_20260318", "web_fetch_20260318"] and .tool_calls == {web_search: 0, web_fetch: 1, mcp: 0}' "$(LOG)"
     rm -f "$(LOG)"
     replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool mcp.deepwiki.com:ask_question "ping" >/dev/null 2>&1
     jq -e '.tools == ["mcp:mcp-deepwiki-com:ask_question"] and .tool_calls.mcp == 1' "$(LOG)"
@@ -39,14 +39,14 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     printf 'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n' >>"$TMP/midstream.sse"
     run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/midstream.sse" "$BIN" --web "ping"
     [ "$status" -eq 1 ]
-    jq -e '.error == "overloaded_error" and .tools == ["web_search", "web_fetch"]
+    jq -e '.error == "overloaded_error" and .tools == ["web_search_20260318", "web_fetch_20260318"]
         and .tool_calls == {web_search: 0, web_fetch: 1, mcp: 0}' "$(LOG)"
 }
 
 @test "events: an HTTP error body has no tool_calls" {
     run --separate-stderr replay error --web "ping"
     [ "$status" -eq 1 ]
-    jq -e '.tools == ["web_search", "web_fetch"] and .tool_calls == null' "$(LOG)"
+    jq -e '.tools == ["web_search_20260318", "web_fetch_20260318"] and .tool_calls == null' "$(LOG)"
 }
 
 @test "events: the timestamp is UTC ISO 8601 and the version is the script's" {

@@ -64,7 +64,9 @@ def cents: if . == null then null elif type == "number" then tostring
                   output_tokens: ($a | map(.output_tokens | num // 0) | add) }
               else null end),
     error: (if $error == "" then null else $error | ident end),
-    # what the request let the model reach: the server tools by name, an MCP
+    # what the request let the model reach: each server tool by its versioned
+    # type (web_search_20260318 and web_search_20250305 differ in what they
+    # run and in ZDR eligibility, so the log must tell them apart), an MCP
     # server as mcp:<server> when it offers every tool, or one
     # mcp:<server>:<tool> per tool of an --mcp-tool allowlist. Recorded on a
     # failed request too: the tool set was decided before the reply.
@@ -76,7 +78,7 @@ def cents: if . == null then null elif type == "number" then tostring
                        | if .default_config.enabled? == false then
                            (.configs // {} | to_entries[] | select(.value.enabled? == true) | "mcp:\($srv):\(.key)")
                          else "mcp:\($srv)" end
-                     else .name // .type end
+                     else .type // .name end
                    | toolname ]
                else null end),
     # how often the model used them in this reply: web searches and fetches as

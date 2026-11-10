@@ -29,7 +29,9 @@ adds one, and `just check-effver` checks it against `VERSION`.
   before any request.
 - Each event-log line has two more keys, at the end:
   - `tools`: what the request let the model reach, failed requests
-    included.
+    included. Server tools are recorded by versioned type, so the
+    dynamic-filtering web tools (`web_search_20260318`) are told apart
+    from the basic ones (`web_search_20250305`).
   - `tool_calls`: web searches and fetches from `usage.server_tool_use`,
     MCP calls counted from the reply.
 

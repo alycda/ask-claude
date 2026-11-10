@@ -145,9 +145,14 @@ event_tools() {
     jq -e '.tool_calls == {web_search: 0, web_fetch: 0, mcp: 1}' "$TMP/out.jsonl"
 }
 
-@test "event: the web tools and the advisor are named, in request order" {
+@test "event: the web tools and the advisor are recorded by versioned type, in request order" {
     event_tools "$FIX/sse/text.message.json" "$(jq -c .tools "$FIX/request/advisor.json")" |
-        jq -e '.tools == ["web_search", "web_fetch", "advisor"]'
+        jq -e '.tools == ["web_search_20260318", "web_fetch_20260318", "advisor_20260301"]'
+}
+
+@test "event: the basic web tools are told apart from the dynamic ones" {
+    event_tools "$FIX/sse/text.message.json" "$(jq -c .tools "$FIX/request/web-basic.json")" |
+        jq -e '.tools == ["web_search_20250305", "web_fetch_20250910"]'
 }
 
 @test "event: tool_calls counts web fetches from usage.server_tool_use" {
@@ -157,7 +162,7 @@ event_tools() {
 
 @test "event: a failed request keeps its tools, and has no tool_calls" {
     event_tools - "$(jq -c .tools "$FIX/request/web.json")" overloaded_error |
-        jq -e '.tools == ["web_search", "web_fetch"] and .tool_calls == null and .error == "overloaded_error"'
+        jq -e '.tools == ["web_search_20260318", "web_fetch_20260318"] and .tool_calls == null and .error == "overloaded_error"'
 }
 
 @test "event: a tool name outside the identifier set is unknown, never written as given" {

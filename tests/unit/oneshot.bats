@@ -198,8 +198,11 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
 # request of a turn sends none.
 
 # with_container <fixture> <out>: the fixture's stream, its reply carrying container_FIXTURE
+# Fails when the fixture no longer has the "container":null it replaces: a
+# test asserting no container is sent would then pass without testing anything.
 with_container() {
     sed 's/"container":null/"container":{"id":"container_FIXTURE","expires_at":"2026-11-10T01:00:00Z"}/g' "$FIX/sse/$1.sse" >"$2"
+    grep -q '"container":{"id":"container_FIXTURE"' "$2" || { echo "with_container: no container injected into $1.sse"; return 1; }
 }
 
 @test "one-shot: a pause_turn continuation without skills sends back its round's container" {

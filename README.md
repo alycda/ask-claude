@@ -18,7 +18,8 @@ later (every alias, and the default) these are the dynamic-filtering
 versions, `web_search_20260318` and `web_fetch_20260318`: the model runs
 code that filters results before they reach its context, and the stream
 shows `(running code) ` while it does. They are not eligible for Zero Data
-Retention. An older model id (`claude-haiku-4-5`, `claude-sonnet-4-5-…`,
+Retention, and ask-claude says so on stderr once per run when it sends
+them. An older model id (`claude-haiku-4-5`, `claude-sonnet-4-5-…`,
 the 3.x family) gets the basic versions, which are. `--mcp <https url>`
 (repeatable) lets it call an MCP server through the MCP connector. A
 server's authorization token is `ASK_CLAUDE_MCP_TOKEN_<HOST>`, the host

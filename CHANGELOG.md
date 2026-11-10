@@ -17,7 +17,8 @@ adds one, and `just check-effver` checks it against `VERSION`.
   `web_fetch_20250910`: the model filters results in code before they reach
   its context. A model id older than Claude 4.6 keeps the basic versions,
   because the newer ones are a 400 there. Aliases (`haiku`, `opus`, ...)
-  get the dynamic versions. Without `-s`, a `pause_turn` continuation sends
+  get the dynamic versions. A one-line notice on stderr, once per run,
+  says they are not eligible for Zero Data Retention. Without `-s`, a `pause_turn` continuation sends
   back the container the paused round ran in, so filtering that was in
   progress resumes there. A new turn starts without one.
 
@@ -39,9 +40,10 @@ adds one, and `just check-effver` checks it against `VERSION`.
   existing keys and their order are unchanged.
 - Adopting needs:
   - **An organization under Zero Data Retention using `--web`:** the
-    dynamic-filtering versions are not ZDR-eligible. Pass an older model
-    with `-m` to get the basic versions; this version has no flag to keep
-    them on a 4.6+ model.
+    dynamic-filtering versions are not ZDR-eligible, and the stderr notice
+    and the event log's `tools` now show when they were sent. Pass an older
+    model with `-m` to get the basic versions; this version has no flag to
+    keep them on a 4.6+ model.
   - **A reader that compares whole event lines byte for byte:** it sees
     the two new keys.
 

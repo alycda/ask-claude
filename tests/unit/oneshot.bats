@@ -91,6 +91,32 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# The dynamic-filtering web tools are not ZDR-eligible: --web says so on
+# stderr, once per run, and only when it sends them (0.3.1).
+@test "one-shot: --web on a 4.6+ model prints the ZDR notice once on stderr, never on stdout" {
+    run --separate-stderr replay web-search --web "ping"
+    [ "$(grep -c 'not eligible for Zero Data Retention' <<<"$stderr")" -eq 1 ]
+    refute grep -q 'Zero Data Retention' <<<"$output"
+}
+
+@test "one-shot: --web on an older model, or without --web, prints no ZDR notice" {
+    run --separate-stderr replay web-search --web -m claude-haiku-4-5 "ping"
+    refute grep -q 'Zero Data Retention' <<<"$stderr"
+    run --separate-stderr replay text "ping"
+    refute grep -q 'Zero Data Retention' <<<"$stderr"
+}
+
+@test "one-shot: the ZDR notice is printed once for a run with several pause_turn rounds" {
+    run --separate-stderr replay pause-turn --web "ping"
+    grep -q 'pause_turn: continuing, round 2' <<<"$stderr"
+    [ "$(grep -c 'not eligible for Zero Data Retention' <<<"$stderr")" -eq 1 ]
+}
+
+@test "chat: the ZDR notice is printed once for the whole chat" {
+    run --separate-stderr bash -c "printf 'hi\nagain\n/quit\n' | ASK_CLAUDE_REPLAY='$FIX/sse/text.sse' '$BIN' --web"
+    [ "$(grep -c 'not eligible for Zero Data Retention' <<<"$stderr")" -eq 1 ]
+}
+
 @test "one-shot: ASK_CLAUDE_MCP_TOKEN with several --mcp exits 2 first, naming each server's own variable" {
     run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
         "$BIN" --mcp https://mcp.deepwiki.com/mcp --mcp https://mcp.example.com/sse "ping"

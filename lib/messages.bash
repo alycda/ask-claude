@@ -120,7 +120,9 @@ call() {
       printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "$failure" "$chat" "$rtools"
       # a container the API no longer accepts (expired, deleted) would fail
       # every later turn of this chat: forget it, the next turn starts a new one
-      [ -n "$cid" ] && case "$err" in *[Cc]ontainer*) rm -f "$HIST.container" ;; esac
+      # only the skills container is a file: a pause_turn continuation's
+      # in-memory id (no -s) must not delete the chat's skills container
+      [ -n "$skills" ] && [ -n "$cid" ] && case "$err" in *[Cc]ontainer*) rm -f "$HIST.container" ;; esac
       rollback_to $((n0 - 1))
       return 1
     fi
@@ -128,8 +130,14 @@ call() {
     printf '%s' "$resp" | jq '{role:"assistant", content:.content}' >"$HIST.turn"
     jq --slurpfile t "$HIST.turn" '. + $t' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST" && rm -f "$HIST.turn"
     turn_cid=$(printf '%s' "$resp" | jq -r '.container.id // empty')
-    printf '%s' "$resp" | jq -r '.container.id // empty' >"$HIST.container.tmp"
-    if [ -s "$HIST.container.tmp" ]; then mv "$HIST.container.tmp" "$HIST.container"; else rm -f "$HIST.container.tmp"; fi
+    # $HIST.container is the skills container, kept across turns. A reply
+    # without -s can carry a container too (dynamic web filtering), and
+    # writing it here would replace the skills container of a chat that used
+    # -s earlier, orphaning its files: that id lives in turn_cid alone.
+    if [ -n "$skills" ]; then
+      printf '%s' "$turn_cid" >"$HIST.container.tmp"
+      if [ -s "$HIST.container.tmp" ]; then mv "$HIST.container.tmp" "$HIST.container"; else rm -f "$HIST.container.tmp"; fi
+    fi
     rm -f "$log"
     stop=$(printf '%s' "$resp" | jq -r "$SAFE"'.stop_reason | safe')
     # the top-level usage is the executor's alone; an advisor's tokens are in

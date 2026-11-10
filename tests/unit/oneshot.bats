@@ -138,6 +138,25 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# The check in config.bash and the match in request.jq must fold case the
+# same way. Bash ${h,,} follows the locale, and in a UTF-8 locale it folds
+# the Kelvin sign (U+212A) to k, which jq's ascii_downcase does not: the
+# entry passed the check, matched nothing in the request, and the server
+# went out with every tool on. Both now fold ASCII only (0.3.1).
+@test "one-shot: an --mcp-tool for a host that only matches under locale case folding exits 2" {
+    local k=$'\xe2\x84\xaa' # U+212A as UTF-8 bytes, whatever the test's own locale
+    run --separate-stderr env LC_ALL=C.UTF-8 ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+        "$BIN" --mcp "https://mcp.example.${k}om/mcp" --mcp-tool mcp.example.kom:search "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'names no --mcp server' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: --mcp-tool still matches an ASCII host whatever its case" {
+    replay mcp --mcp https://MCP.DeepWiki.com/mcp --mcp-tool mcp.deepwiki.COM:ask_question "ping" >/dev/null 2>&1
+    jq -e '.tools[0].configs == {ask_question: {enabled: true}}' "$TMP/requests.jsonl"
+}
+
 @test "one-shot: an --mcp-tool that is not <host>:<tool> exits 2 before any request" {
     local bad
     for bad in ask_question mcp.deepwiki.com: :ask_question 'mcp.deepwiki.com:ask question' mcp.deepwiki.com:a:b; do

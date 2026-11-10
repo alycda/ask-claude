@@ -8,7 +8,7 @@
 #          ASK_CLAUDE_MCP_TOKEN ANTHROPIC_API_KEY; STATE (ask-claude)
 # sets:    BASE_URL API HOST (read by common, messages, agent-api, agent-turn),
 #          mcp_count mcp_vars mcp_hosts h t state_owner
-# defines: need_key
+# defines: need_key ascii_lower
 # calls:   die (ask-claude)
 
 # Providers. The bash version speaks the Messages API only; the OpenAI
@@ -59,18 +59,24 @@ done
 # would match nothing, and a rule that matches nothing reads like a rule while
 # every tool stays on: exit 2 instead. The tool part is an MCP tool name,
 # letters, digits and _ . - (the MCP spec's set), so it cannot carry a colon.
+# Hosts fold case ASCII only, exactly as request.jq's ascii_downcase does:
+# bash ${h,,} follows the locale and folds characters jq does not (U+212A,
+# the Kelvin sign, to k), so an entry could pass here, match nothing in the
+# request, and leave that server with every tool on.
+# shellcheck disable=SC2018,SC2019  # ASCII only, on purpose: the classes would follow the locale
+ascii_lower() { LC_ALL=C tr 'A-Z' 'a-z' <<<"$1"; }
 mcp_hosts=" "
 for v in ${usage_mcp:-}; do
   h=${v#https://}
   h=${h%%[/:]*}
-  mcp_hosts+="${h,,} "
+  mcp_hosts+="$(ascii_lower "$h") "
 done
 for t in ${usage_mcp_tool:-}; do
   [[ $t =~ ^[A-Za-z0-9.-]+:[A-Za-z0-9_.-]{1,128}$ ]] ||
     die "--mcp-tool takes <host>:<tool>, e.g. mcp.example.com:search, got: $t"
   h=${t%%:*}
   case "$mcp_hosts" in
-  *" ${h,,} "*) ;;
+  *" $(ascii_lower "$h") "*) ;;
   *) die "--mcp-tool $t names no --mcp server (hosts:${mcp_hosts% }); it would allow every tool, not only $h's ${t#*:}" ;;
   esac
 done

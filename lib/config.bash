@@ -4,10 +4,10 @@
 # state directory's. Top-level code: sourced by ask-claude, it runs in place,
 # as it did in the single file.
 #
-# reads:   usage_provider usage_base_url usage_mcp usage_max_tokens
+# reads:   usage_provider usage_base_url usage_mcp usage_mcp_tool usage_max_tokens
 #          ASK_CLAUDE_MCP_TOKEN ANTHROPIC_API_KEY; STATE (ask-claude)
 # sets:    BASE_URL API HOST (read by common, messages, agent-api, agent-turn),
-#          mcp_count mcp_vars h state_owner
+#          mcp_count mcp_vars mcp_hosts h t state_owner
 # defines: need_key
 # calls:   die (ask-claude)
 
@@ -53,6 +53,26 @@ for v in ${usage_mcp:-}; do
   h=${h%%[/:]*}
   h=${h//[!A-Za-z0-9_]/_}
   mcp_vars+=" ASK_CLAUDE_MCP_TOKEN_${h^^}"
+done
+# --mcp-tool host:tool: that server offers only the tools named (lib/request.jq
+# turns its toolset into an allowlist). An entry whose host is no --mcp server
+# would match nothing, and a rule that matches nothing reads like a rule while
+# every tool stays on: exit 2 instead. The tool part is an MCP tool name,
+# letters, digits and _ . - (the MCP spec's set), so it cannot carry a colon.
+mcp_hosts=" "
+for v in ${usage_mcp:-}; do
+  h=${v#https://}
+  h=${h%%[/:]*}
+  mcp_hosts+="${h,,} "
+done
+for t in ${usage_mcp_tool:-}; do
+  [[ $t =~ ^[A-Za-z0-9.-]+:[A-Za-z0-9_.-]{1,128}$ ]] ||
+    die "--mcp-tool takes <host>:<tool>, e.g. mcp.example.com:search, got: $t"
+  h=${t%%:*}
+  case "$mcp_hosts" in
+  *" ${h,,} "*) ;;
+  *) die "--mcp-tool $t names no --mcp server (hosts:${mcp_hosts% }); it would allow every tool, not only $h's ${t#*:}" ;;
+  esac
 done
 # A token is one server's credential: sent to several, each server's operator
 # would receive the others'. Refuse rather than drop it in silence.

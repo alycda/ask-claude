@@ -24,6 +24,22 @@ script exits 2 and names each server's variable. Both work with
 `-s`, in the one-shot and in the chat; the stream shows `(web_search) `,
 `(web_fetch) ` and `(mcp <server>) ` while the model uses them.
 
+`--mcp-tool <host>:<tool>` (repeatable) limits that `--mcp` server to the
+tools named: its toolset goes out as an allowlist, every tool off but
+those. Anthropic calls an MCP server from its side, so ask-claude cannot
+ask before a call; what the model passes to a tool reaches that server's
+operator, and that can include `-f` file contents. The allowlist decides
+before the reply which tools the model can call at all. A server no
+`--mcp-tool` names keeps all its tools, as before. An entry whose host is
+no `--mcp` server exits 2: it would match nothing, and the server it was
+meant for would keep every tool.
+
+```sh
+ask-claude --mcp https://mcp.deepwiki.com/mcp \
+  --mcp-tool mcp.deepwiki.com:read_wiki_structure \
+  --mcp-tool mcp.deepwiki.com:ask_question "how does tokio schedule tasks?"
+```
+
 `--advisor <model>` lets the model consult another model mid-reply (the
 advisor tool, a server tool in beta): at most 3 calls a turn, each billed at
 the advisor model's rates and shown in the footer as `advisor=<model> in=…
@@ -66,7 +82,8 @@ or made private, or is owned by another account.
 
 Every Messages request and every Managed Agents session turn appends one
 JSON line to `events.jsonl` in the same directory. It holds what the footer
-shows: tokens, timing and outcome. It never holds prompt or reply text, file
+shows (tokens, timing and outcome), plus which tools the request enabled
+and how often the reply used them. It never holds prompt or reply text, file
 contents, tool inputs, error messages or the key. Strings that come from the
 API (model, error type, stop category, session id) are kept only when they
 look like identifiers, and anything else is written as `"unknown"`. Token
@@ -101,8 +118,10 @@ turn interrupted with Ctrl-C writes `interrupted`.
 | `list_cost` | sessions only: the API's cost so far, in cents, as a string |
 | `advisor` | `{model, calls, input_tokens, output_tokens}`, or `null` |
 | `error` | `null`, the API's error type, `unknown` (an error without one), or `no_response`, `parse`, `unreadable`; sessions also `interrupted` (Ctrl-C) and `unanswerable` |
+| `tools` | what the request let the model reach: `web_search`, `web_fetch`, `code_execution`, `advisor`, `mcp:<server>` for a server with all its tools, one `mcp:<server>:<tool>` per tool of an `--mcp-tool` allowlist; `null` for no tools and for sessions (the agent's tools live on the agent). Kept on a failed request: the tool set was decided before it. |
+| `tool_calls` | `{web_search, web_fetch, mcp}`: searches and fetches as the API's `usage.server_tool_use` counts them, MCP calls as `mcp_tool_use` blocks in the reply; `null` for a failed request and for sessions |
 
-Five questions, each answered with `jq` alone:
+Six questions, each answered with `jq` alone:
 
 ```sh
 EVENTS="${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/events.jsonl"
@@ -137,6 +156,14 @@ Refusals by category:
 ```sh
 jq -s 'map(select(.stop_reason == "refusal")) | group_by(.stop_category)
   | map({category: .[0].stop_category, refusals: length})' "$EVENTS"
+```
+
+Requests that could reach an MCP server, and the calls they made, by tool set:
+
+```sh
+jq -s 'map(select(.kind == "messages" and any(.tools[]?; startswith("mcp:"))))
+  | group_by(.tools) | map({tools: .[0].tools, requests: length,
+    mcp_calls: (map(.tool_calls.mcp // 0) | add)})' "$EVENTS"
 ```
 
 Advisor spend by advisor model:

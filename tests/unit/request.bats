@@ -152,3 +152,32 @@ advisor_request() {
     advisor_history 0 3
     advisor_request | jq -e '.tools[0].max_uses == 3'
 }
+
+# --mcp-tool: a server named by one or more entries offers only those tools
+# (0.3.1). The toolset becomes an allowlist: every tool off, the named ones on.
+
+request_mcptools() { # mcp mcptools
+    jq -n --arg m claude-opus-5-5 --argjson max 16000 \
+        --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web "" --arg mcp "$1" --arg advisor "" \
+        --arg mcptools "$2" \
+        --slurpfile msgs "$FIX/request/history-one-turn.json" -f "$ROOT/lib/request.jq"
+}
+
+@test "request: --mcp-tool makes that server's toolset an allowlist; a server it does not name keeps every tool" {
+    request_mcptools "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" \
+        "mcp.deepwiki.com:read_wiki_structure mcp.deepwiki.com:ask_question" > "$TMP/out.json"
+    assert_golden "$FIX/request/mcp-tool.json" "$TMP/out.json"
+    jq -e '.tools[0].default_config == {enabled: false}
+        and .tools[0].configs == {read_wiki_structure: {enabled: true}, ask_question: {enabled: true}}' "$TMP/out.json"
+    jq -e '.tools[1] == {type: "mcp_toolset", mcp_server_name: "mcp-example-com"}' "$TMP/out.json"
+}
+
+@test "request: --mcp-tool matches the host whatever its case, and ignores the URL's port and path" {
+    request_mcptools "https://MCP.Example.com:8443/sse" "mcp.EXAMPLE.com:search" |
+        jq -e '.tools[0].configs == {search: {enabled: true}}'
+}
+
+@test "request: without --mcp-tool the MCP golden is untouched" {
+    request_mcptools "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" "" > "$TMP/out.json"
+    assert_golden "$FIX/request/mcp.json" "$TMP/out.json"
+}

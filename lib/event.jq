@@ -3,7 +3,8 @@
 # Invocation (see tests/unit/event.bats):
 #     jq -c --arg ts ISO8601 --arg version X.Y.Z --arg kind messages|session \
 #           --arg chat NAME --arg host HOST --argjson round N \
-#           --argjson seconds N --arg error CATEGORY -f lib/event.jq
+#           --argjson seconds N --arg error CATEGORY [--argjson tools TOOLS] \
+#           -f lib/event.jq
 #
 # Input: the reassembled message (kind messages), the session fold (kind
 # session, lib/session-fold.jq), or null when the request failed before
@@ -11,6 +12,8 @@
 #   $error    the failure's category ("" means none): the API's error.type,
 #             or no_response | parse | unreadable | interrupted | unanswerable
 #   $round    the pause_turn round (messages) or custom-tool rounds (session)
+#   $tools    the request's tools array (messages), or null; optional, read
+#             through $ARGS.named so the callers of 0.3.0 still work
 #
 # Never written: prompt or reply text, tool inputs, error messages. Every
 # string that came from the endpoint (or from the shell) is kept only when it
@@ -24,6 +27,9 @@ def ident: if . == null then null
   elif type == "string" and test("\\A[A-Za-z0-9._:-]{1,64}\\z") then .
   else "unknown" end;
 def hostname: if type == "string" and test("\\A[A-Za-z0-9.:\\[\\]-]{1,255}\\z") then . else "unknown" end;
+# a tool's entry in .tools: built from our own request, so not endpoint text,
+# but bounded the same way (an MCP tool name runs to 128 characters)
+def toolname: if type == "string" and test("\\A[A-Za-z0-9._:-]{1,255}\\z") then . else "unknown" end;
 # token counts: a number, or null; a string here could be anything
 def num: if type == "number" then . else null end;
 # cents, as the API gives them (a string), or a number made into one
@@ -57,4 +63,25 @@ def cents: if . == null then null elif type == "number" then tostring
                   input_tokens: ($a | map(.input_tokens | num // 0) | add),
                   output_tokens: ($a | map(.output_tokens | num // 0) | add) }
               else null end),
-    error: (if $error == "" then null else $error | ident end) }
+    error: (if $error == "" then null else $error | ident end),
+    # what the request let the model reach: the server tools by name, an MCP
+    # server as mcp:<server> when it offers every tool, or one
+    # mcp:<server>:<tool> per tool of an --mcp-tool allowlist. Recorded on a
+    # failed request too: the tool set was decided before the reply.
+    tools: ($ARGS.named.tools // null
+             | if type == "array" then
+                 [ .[] | objects
+                   | if .type == "mcp_toolset" then
+                       (.mcp_server_name // "?") as $srv
+                       | if .default_config.enabled? == false then
+                           (.configs // {} | to_entries[] | select(.value.enabled? == true) | "mcp:\($srv):\(.key)")
+                         else "mcp:\($srv)" end
+                     else .name // .type end
+                   | toolname ]
+               else null end),
+    # how often the model used them in this reply: web searches and fetches as
+    # usage.server_tool_use counts them, MCP calls as mcp_tool_use blocks
+    tool_calls: (if $s or $in == null then null
+                 else { web_search: ($u.server_tool_use.web_search_requests? | num),
+                        web_fetch: ($u.server_tool_use.web_fetch_requests? | num),
+                        mcp: ([$in.content[]? | objects | select(.type == "mcp_tool_use")] | length) } end) }

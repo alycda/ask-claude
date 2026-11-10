@@ -19,9 +19,11 @@ SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 
 # shellcheck disable=SC2034  # read by lib/agent-api.bash and lib/agent-turn.bash
 DOLLARS='def dollars: (tonumber / 100) as $d | "$" + ($d | floor | tostring) + "." + (($d * 100 | round) % 100 | tostring | if length < 2 then "0" + . else . end); '
 
-# event <kind> <round> <seconds> <error> <chat>: append one line to the event
-# log, built by lib/event.jq from the message, fold or null on stdin. Tokens,
-# timing and outcome only, never prompt, reply or error text. Off with
+# event <kind> <round> <seconds> <error> <chat> [tools]: append one line to
+# the event log, built by lib/event.jq from the message, fold or null on
+# stdin. [tools] is the request's tools array as JSON (a Messages request),
+# "null" or nothing for a session turn. Tokens, timing, outcome and the tool
+# set only, never prompt, reply or error text. Off with
 # ASK_CLAUDE_EVENTS=off. A log that cannot be written is skipped in silence:
 # the redirect sits inside the group, because bash reports a failed >> open
 # before a trailing 2>/dev/null applies.
@@ -30,7 +32,7 @@ event() {
   [ "${ASK_CLAUDE_EVENTS:-}" != off ] || return 0
   line=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg version "$ASK_CLAUDE_VERSION" \
     --arg kind "$1" --argjson round "$2" --argjson seconds "$3" --arg error "$4" \
-    --arg chat "$5" --arg host "$HOST" -f "$LIB/event.jq" 2>/dev/null) || return 0
+    --arg chat "$5" --arg host "$HOST" --argjson tools "${6:-null}" -f "$LIB/event.jq" 2>/dev/null) || return 0
   # in a subshell: a signal from the write (SIGXFSZ at a ulimit -f) ends it,
   # not the script
   (printf "%s\n" "$line" >>"$STATE/events.jsonl") 2>/dev/null || :

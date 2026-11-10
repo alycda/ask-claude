@@ -10,6 +10,25 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.3.1 (micro) - 2026-11-10
+
+- `--mcp-tool <host>:<tool>` (repeatable) limits an `--mcp` server to the
+  tools named. Its `mcp_toolset` goes out as an allowlist
+  (`default_config: {enabled: false}`, the named tools enabled in
+  `configs`). A server no entry names keeps all its tools. An entry whose
+  host is no `--mcp` server, or that is not `<host>:<tool>`, exits 2
+  before any request.
+- Each event-log line has two more keys, at the end:
+  - `tools`: what the request let the model reach, failed requests
+    included.
+  - `tool_calls`: web searches and fetches from `usage.server_tool_use`,
+    MCP calls counted from the reply.
+
+  Both are `null` for a session turn. The line format stays `v: 1`: the
+  existing keys and their order are unchanged.
+- Adopting needs nothing. A reader that compares whole event lines byte for
+  byte sees the two new keys.
+
 ## 0.3.0 (macro) - 2026-11-07
 
 - `agent --local-mcp <command>` (or `ASK_CLAUDE_LOCAL_MCP`) runs a stdio MCP

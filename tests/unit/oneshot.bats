@@ -121,6 +121,33 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     jq -e '.mcp_servers[0].authorization_token == "tok_ODD" and (.mcp_servers[1] | has("authorization_token") | not)' "$TMP/requests.jsonl"
 }
 
+@test "one-shot: --mcp-tool sends that server's toolset as an allowlist" {
+    replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool mcp.deepwiki.com:ask_question "ping" >/dev/null 2>&1
+    jq -e '.tools[0] == {type: "mcp_toolset", mcp_server_name: "mcp-deepwiki-com",
+        default_config: {enabled: false}, configs: {ask_question: {enabled: true}}}' "$TMP/requests.jsonl"
+}
+
+@test "one-shot: an --mcp-tool that names no --mcp server exits 2 before any request" {
+    run --separate-stderr replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool mcp.example.com:search "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'names no --mcp server' <<<"$stderr"
+    grep -q 'mcp.deepwiki.com' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+    run --separate-stderr replay mcp --mcp-tool mcp.deepwiki.com:ask_question "ping"
+    [ "$status" -eq 2 ]
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: an --mcp-tool that is not <host>:<tool> exits 2 before any request" {
+    local bad
+    for bad in ask_question mcp.deepwiki.com: :ask_question 'mcp.deepwiki.com:ask question' mcp.deepwiki.com:a:b; do
+        run --separate-stderr replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool "$bad" "ping"
+        [ "$status" -eq 2 ]
+        grep -q '<host>:<tool>' <<<"$stderr"
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
 @test "one-shot: a request log that cannot be written fails the request before anything is sent" {
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/nodir/requests.jsonl" "$BIN" "ping"
     [ "$status" -eq 1 ]

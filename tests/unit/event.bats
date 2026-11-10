@@ -92,7 +92,7 @@ event() {
 @test "event: one compact line, keys in a fixed order" {
     event messages "$FIX/sse/text.message.json" 0 "" >"$TMP/out.jsonl"
     [ "$(wc -l <"$TMP/out.jsonl")" -eq 1 ]
-    [ "$(jq -c 'keys_unsorted' "$TMP/out.jsonl")" = '["v","ask_claude","ts","kind","chat","host","model","round","seconds","stop_reason","stop_category","usage_scope","input_tokens","output_tokens","cache_read","cache_write","list_cost","advisor","error"]' ]
+    [ "$(jq -c 'keys_unsorted' "$TMP/out.jsonl")" = '["v","ask_claude","ts","kind","chat","host","model","round","seconds","stop_reason","stop_category","usage_scope","input_tokens","output_tokens","cache_read","cache_write","list_cost","advisor","error","tools","tool_calls"]' ]
 }
 
 @test "event: usage that is not a number is null, and never written as given" {
@@ -124,4 +124,50 @@ event() {
     echo null | jq -c --arg ts 2026-11-07T00:00:00Z --arg version 0.2.7 --arg kind session --arg chat "" \
         --arg host api.anthropic.com --argjson round 0 --argjson seconds 0 --arg error unreadable \
         -f "$ROOT/lib/event.jq" | jq -e '.chat==null'
+}
+
+# tools and tool_calls (0.3.1): what the request let the model reach, and how
+# often it did. tools comes from our own request body, tool_calls from the reply.
+
+# event_tools <input-file|-> <tools-json> [error]
+event_tools() {
+    if [ "$1" = - ]; then echo null; else cat "$1"; fi |
+        jq -c --arg ts 2026-11-07T00:00:00Z --arg version 0.3.1 --arg kind messages \
+            --arg chat 20260102T150405-1234 --arg host api.anthropic.com \
+            --argjson round 0 --argjson seconds 2 --arg error "${3:-}" --argjson tools "$2" \
+            -f "$ROOT/lib/event.jq"
+}
+
+@test "event: tools names the server tools, a whole MCP server, and each tool of an allowlist" {
+    event_tools "$FIX/sse/mcp.message.json" "$(jq -c .tools "$FIX/request/mcp-tool.json")" >"$TMP/out.jsonl"
+    assert_golden "$FIX/events/mcp-tool.jsonl" "$TMP/out.jsonl"
+    jq -e '.tools == ["mcp:mcp-deepwiki-com:read_wiki_structure", "mcp:mcp-deepwiki-com:ask_question", "mcp:mcp-example-com"]' "$TMP/out.jsonl"
+    jq -e '.tool_calls == {web_search: 0, web_fetch: 0, mcp: 1}' "$TMP/out.jsonl"
+}
+
+@test "event: the web tools and the advisor are named, in request order" {
+    event_tools "$FIX/sse/text.message.json" "$(jq -c .tools "$FIX/request/advisor.json")" |
+        jq -e '.tools == ["web_search", "web_fetch", "advisor"]'
+}
+
+@test "event: tool_calls counts web fetches from usage.server_tool_use" {
+    event_tools "$FIX/sse/web-fetch.message.json" "$(jq -c .tools "$FIX/request/web.json")" |
+        jq -e '.tool_calls == {web_search: 0, web_fetch: 1, mcp: 0}'
+}
+
+@test "event: a failed request keeps its tools, and has no tool_calls" {
+    event_tools - "$(jq -c .tools "$FIX/request/web.json")" overloaded_error |
+        jq -e '.tools == ["web_search", "web_fetch"] and .tool_calls == null and .error == "overloaded_error"'
+}
+
+@test "event: a tool name outside the identifier set is unknown, never written as given" {
+    event_tools "$FIX/sse/text.message.json" \
+        '[{"type":"mcp_toolset","mcp_server_name":"a","default_config":{"enabled":false},"configs":{"my secret\u001b[31m":{"enabled":true},"ok":{"enabled":false}}}]' >"$TMP/out.jsonl"
+    jq -e '.tools == ["unknown"]' "$TMP/out.jsonl"
+    refute grep -q 'secret' "$TMP/out.jsonl"
+}
+
+@test "event: without tools (a session, or a caller of 0.3.0) tools is null" {
+    event messages "$FIX/sse/text.message.json" 0 "" | jq -e '.tools == null'
+    event session "$FIX/sessions/text.fold.json" 0 "" sesn_FIXTURE01 | jq -e '.tools == null and .tool_calls == null'
 }

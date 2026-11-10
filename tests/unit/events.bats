@@ -22,6 +22,17 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     refute grep -q 'secret' "$(LOG)"
 }
 
+@test "events: the line records the request's tools and the reply's calls" {
+    replay web-fetch --web "ping" >/dev/null 2>&1
+    jq -e '.tools == ["web_search", "web_fetch"] and .tool_calls == {web_search: 0, web_fetch: 1, mcp: 0}' "$(LOG)"
+    rm -f "$(LOG)"
+    replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool mcp.deepwiki.com:ask_question "ping" >/dev/null 2>&1
+    jq -e '.tools == ["mcp:mcp-deepwiki-com:ask_question"] and .tool_calls.mcp == 1' "$(LOG)"
+    rm -f "$(LOG)"
+    replay text "ping" >/dev/null 2>&1
+    jq -e '.tools == null' "$(LOG)"
+}
+
 @test "events: the timestamp is UTC ISO 8601 and the version is the script's" {
     replay text "ping" >/dev/null 2>&1
     jq -e '.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")' "$(LOG)"
@@ -212,18 +223,19 @@ events_fixture_log() {
     replay text "pong" >/dev/null 2>&1
     replay advisor -m claude-haiku-5-5 --advisor claude-haiku-5-5 "ping" >/dev/null 2>&1
     replay refusal "ping" >/dev/null 2>&1
+    replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool mcp.deepwiki.com:ask_question "ping" >/dev/null 2>&1
     replay error "ping" >/dev/null 2>&1 || : # exits 1: a failed request is a line too
     agent text.sse "ping" </dev/null >/dev/null 2>&1
 }
 
-@test "events: the README has exactly five queries" {
-    [ "$(readme_queries)" -eq 5 ]
+@test "events: the README has exactly six queries" {
+    [ "$(readme_queries)" -eq 6 ]
 }
 
 @test "events: every README query runs and finds something" {
     local f out
     events_fixture_log
-    [ "$(readme_queries)" -eq 5 ]
+    [ "$(readme_queries)" -eq 6 ]
     for f in "$TMP"/q/*.sh; do
         out=$(EVENTS="$(LOG)" bash "$f") || { echo "query failed: $f"; cat "$f"; return 1; }
         [ -n "$out" ] && [ "$out" != "[]" ] || { echo "query found nothing: $f"; cat "$f"; return 1; }

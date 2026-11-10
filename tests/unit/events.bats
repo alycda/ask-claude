@@ -33,6 +33,22 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     jq -e '.tools == null' "$(LOG)"
 }
 
+@test "events: a reply that fails mid-stream keeps its error and still counts its tool calls" {
+    # the web-fetch stream, cut before message_stop and ended by an error event
+    grep -v -e '^event: message_stop' -e '"type":"message_stop"' "$FIX/sse/web-fetch.sse" >"$TMP/midstream.sse"
+    printf 'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n' >>"$TMP/midstream.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/midstream.sse" "$BIN" --web "ping"
+    [ "$status" -eq 1 ]
+    jq -e '.error == "overloaded_error" and .tools == ["web_search", "web_fetch"]
+        and .tool_calls == {web_search: 0, web_fetch: 1, mcp: 0}' "$(LOG)"
+}
+
+@test "events: an HTTP error body has no tool_calls" {
+    run --separate-stderr replay error --web "ping"
+    [ "$status" -eq 1 ]
+    jq -e '.tools == ["web_search", "web_fetch"] and .tool_calls == null' "$(LOG)"
+}
+
 @test "events: the timestamp is UTC ISO 8601 and the version is the script's" {
     replay text "ping" >/dev/null 2>&1
     jq -e '.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")' "$(LOG)"

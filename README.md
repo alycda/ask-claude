@@ -125,7 +125,7 @@ turn interrupted with Ctrl-C writes `interrupted`.
 | `advisor` | `{model, calls, input_tokens, output_tokens}`, or `null` |
 | `error` | `null`, the API's error type, `unknown` (an error without one), or `no_response`, `parse`, `unreadable`; sessions also `interrupted` (Ctrl-C) and `unanswerable` |
 | `tools` | what the request let the model reach: `web_search`, `web_fetch`, `code_execution`, `advisor`, `mcp:<server>` for a server with all its tools, one `mcp:<server>:<tool>` per tool of an `--mcp-tool` allowlist; `null` for no tools and for sessions (the agent's tools live on the agent). Kept on a failed request: the tool set was decided before it. |
-| `tool_calls` | `{web_search, web_fetch, mcp}`: searches and fetches as the API's `usage.server_tool_use` counts them, MCP calls as `mcp_tool_use` blocks in the reply; `null` for a failed request and for sessions |
+| `tool_calls` | `{web_search, web_fetch, mcp}`: searches and fetches as the API's `usage.server_tool_use` counts them, MCP calls as `mcp_tool_use` blocks in the reply; `null` when no reply arrived (`no_response`, `unreadable`, `parse`, an HTTP error body) and for sessions. A reply that fails mid-stream still counts the calls it made: they ran and were billed |
 
 Six questions, each answered with `jq` alone:
 

@@ -80,7 +80,9 @@ def cents: if . == null then null elif type == "number" then tostring
                    | toolname ]
                else null end),
     # how often the model used them in this reply: web searches and fetches as
-    # usage.server_tool_use counts them, MCP calls as mcp_tool_use blocks
+    # usage.server_tool_use counts them, MCP calls as mcp_tool_use blocks.
+    # Keyed on whether a reply arrived, not on $error: a stream that ends in an
+    # error event still made, and was billed for, the calls it counts.
     tool_calls: (if $s or $in == null then null
                  else { web_search: ($u.server_tool_use.web_search_requests? | num),
                         web_fetch: ($u.server_tool_use.web_fetch_requests? | num),

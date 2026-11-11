@@ -7,8 +7,7 @@
 #          usage_mcp usage_mcp_tool usage_advisor ASK_CLAUDE_REPLAY ASK_CLAUDE_REQUEST_LOG
 #          ASK_CLAUDE_BETA_LOG; LIB (ask-claude), API (config), SAFE
 #          (common), HIST (ask-claude, chat)
-# sets:    betas (call sets it, transport reads it: a global, not an argument),
-#          WEB_NOTICE_SHOWN (the --web ZDR notice, once per run)
+# sets:    betas (call sets it, transport reads it: a global, not an argument)
 #          and the files $HIST, $HIST.container, $HIST.sse, $HIST.turn
 # defines: transport call ask
 # calls:   skills_json rollback_to (chat), sse_data api_error error_kind
@@ -85,12 +84,6 @@ call() {
     # the tools this request enables, for the event log: what the model could
     # reach, recorded on every line of the request, failed ones included
     rtools=$(printf '%s' "$body" | jq -c '.tools // null')
-    # once per run: the dynamic-filtering web tools are not ZDR-eligible, and
-    # --web sends them for every model, so say so where it is seen
-    if [ -z "${WEB_NOTICE_SHOWN:-}" ] && jq -e 'any(.[]?; .type == "web_search_20260318")' <<<"$rtools" >/dev/null 2>&1; then
-      echo "ask-claude: --web uses the dynamic-filtering web tools (web_search_20260318, web_fetch_20260318), which are not eligible for Zero Data Retention" >&2
-      WEB_NOTICE_SHOWN=1
-    fi
     log="$HIST.sse" t0=$SECONDS
     : >"$log"
     # tee the raw SSE to $log, strip "data: " with builtins, print text live

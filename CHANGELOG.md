@@ -16,10 +16,10 @@ adds one, and `just check-effver` checks it against `VERSION`.
   dynamic-filtering versions, in place of `web_search_20250305` and
   `web_fetch_20250910`: the model filters results in code before they reach
   its context. They are sent whatever the model; they need Claude 4.6 or
-  later, and an older model gets the API's 400. A one-line notice on stderr, once per run,
-  says they are not eligible for Zero Data Retention. Without `-s`, a `pause_turn` continuation sends
-  back the container the paused round ran in, so filtering that was in
-  progress resumes there. A new turn starts without one.
+  later, and an older model gets the API's 400. Without `-s`, a
+  `pause_turn` continuation sends back the container the paused round ran
+  in, so filtering that was in progress resumes there. A new turn starts
+  without one.
 
 - `--mcp-tool <host>:<tool>` (repeatable) limits an `--mcp` server to the
   tools named. Its `mcp_toolset` goes out as an allowlist
@@ -40,9 +40,6 @@ adds one, and `just check-effver` checks it against `VERSION`.
   - **`--web` with Claude Haiku 4.5 (or an older, retired model):** the
     request fails with the API's 400. Use a 4.6+ model, such as
     `-m claude-haiku-5-5`.
-  - **An organization under Zero Data Retention using `--web`:** the
-    dynamic-filtering versions are not ZDR-eligible, and the stderr notice
-    and the event log's `tools` now show when they were sent.
   - **A reader that compares whole event lines byte for byte:** it sees
     the two new keys.
 

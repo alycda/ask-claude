@@ -18,8 +18,7 @@ dynamic-filtering versions, `web_search_20260318` and `web_fetch_20260318`:
 the model runs code that filters results before they reach its context, and
 the stream shows `(running code) ` while it does. They need Claude 4.6 or
 later (every alias, and the default); an older model gets the API's 400.
-They are not eligible for Zero Data Retention, and ask-claude says so on
-stderr once per run when it sends them. `--mcp <https url>`
+`--mcp <https url>`
 (repeatable) lets it call an MCP server through the MCP connector. A
 server's authorization token is `ASK_CLAUDE_MCP_TOKEN_<HOST>`, the host
 upper-cased with every other character an underscore

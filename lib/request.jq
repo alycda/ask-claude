@@ -108,7 +108,7 @@ def advisor_used:
       # dynamic filtering: the model filters results in code before they
       # reach its context. The API provisions that code execution itself and
       # shares one container with the skills' code_execution (20260120 or
-      # later is accepted alongside); not ZDR-eligible. Sent whatever the
+      # later is accepted alongside). Sent whatever the
       # model: one without programmatic tool calling (Haiku 4.5, and the
       # retired 3.x, 4.0 and 4.1) gets the API's own 400.
       (if web != "" then {type: "web_search_20260318", name: "web_search", max_uses: 5},

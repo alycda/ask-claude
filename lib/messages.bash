@@ -86,9 +86,9 @@ call() {
     # reach, recorded on every line of the request, failed ones included
     rtools=$(printf '%s' "$body" | jq -c '.tools // null')
     # once per run: the dynamic-filtering web tools are not ZDR-eligible, and
-    # --web picks them for every 4.6+ model, so say so where it is seen
+    # --web sends them for every model, so say so where it is seen
     if [ -z "${WEB_NOTICE_SHOWN:-}" ] && jq -e 'any(.[]?; .type == "web_search_20260318")' <<<"$rtools" >/dev/null 2>&1; then
-      echo "ask-claude: --web uses the dynamic-filtering web tools (web_search_20260318, web_fetch_20260318), which are not eligible for Zero Data Retention; a model older than Claude 4.6 (-m) gets the basic versions" >&2
+      echo "ask-claude: --web uses the dynamic-filtering web tools (web_search_20260318, web_fetch_20260318), which are not eligible for Zero Data Retention" >&2
       WEB_NOTICE_SHOWN=1
     fi
     log="$HIST.sse" t0=$SECONDS

@@ -63,47 +63,18 @@ request2() { # sys eff skills cid web mcp
     jq -e '[.tools[].type] == ["web_search_20260318", "web_fetch_20260318"]' "$TMP/out.json"
 }
 
-# Haiku 4.5 rejects the dynamic-filtering web tools with a 400 (it has no
-# programmatic tool calling). Opus and Sonnet 4.5 accept them, but stay on
-# the basic versions so `-m` remains a route to ZDR-eligible tools. Every
-# spelling of an id counts: provider prefixes (anthropic., us.anthropic.),
-# @date and -v1 suffixes, and any case (0.3.1)
+# --web sends the same tools whatever the model: ask-claude does not special-
+# case model ids. A model without programmatic tool calling (Haiku 4.5, and
+# the retired 3.x, 4.0 and 4.1) gets the API's own 400 (0.3.1).
 web_types() { # model
     jq -n -c --arg m "$1" --argjson max 16000 --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web 1 \
         --slurpfile msgs "$FIX/request/history-one-turn.json" -f "$ROOT/lib/request.jq" | jq -c '[.tools[].type]'
 }
 
-@test "request: --web on a model older than 4.6 sends the basic versions" {
-    jq -n --arg m claude-haiku-4-5 --argjson max 16000 --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web 1 --arg mcp "" \
-        --slurpfile msgs "$FIX/request/history-one-turn.json" -f "$ROOT/lib/request.jq" > "$TMP/out.json"
-    assert_golden "$FIX/request/web-basic.json" "$TMP/out.json"
+@test "request: --web sends the dynamic versions for every model id and alias" {
     local m
-    for m in claude-haiku-4-5 claude-haiku-4-5-20251001 claude-sonnet-4-5-20250929 claude-opus-4-1 claude-opus-4-20250514 claude-sonnet-4-0 claude-3-7-sonnet-20250219; do
-        [ "$(web_types "$m")" = '["web_search_20250305","web_fetch_20250910"]' ] || { echo "basic expected for $m"; return 1; }
-    done
-}
-
-@test "request: --web sends the basic versions for every spelling of an older model id" {
-    local m
-    for m in CLAUDE-HAIKU-4-5 Claude-Sonnet-4-5 claude-haiku-4-5@20251001 claude-opus-4-5@20251101 \
-        anthropic.claude-haiku-4-5-20251001-v1:0 us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
-        anthropic.claude-sonnet-4-5-v1 claude-sonnet-4-5-latest claude-opus-4-5 \
-        us.anthropic.claude-3-7-sonnet-20250219-v1:0 claude-opus-4@20250514; do
-        [ "$(web_types "$m")" = '["web_search_20250305","web_fetch_20250910"]' ] || { echo "basic expected for $m"; return 1; }
-    done
-}
-
-@test "request: --web sends the dynamic versions for every spelling of a 4.6+ model id" {
-    local m
-    for m in CLAUDE-OPUS-4-6 claude-opus-4-6@20260201 anthropic.claude-sonnet-4-6-v1 \
-        us.anthropic.claude-opus-5-5-v1:0 claude-haiku-5-5@20261001 claude-sonnet-4-6-latest; do
-        [ "$(web_types "$m")" = '["web_search_20260318","web_fetch_20260318"]' ] || { echo "dynamic expected for $m"; return 1; }
-    done
-}
-
-@test "request: --web on 4.6 and later, and on every alias, sends the dynamic versions" {
-    local m
-    for m in claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5 claude-fable-5-1 claude-opus-4-6 claude-sonnet-4-6 claude-opus-4-8 haiku sonnet opus fable; do
+    for m in claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5 claude-fable-5-1 claude-opus-4-6 claude-sonnet-4-6 \
+        claude-opus-4-8 haiku sonnet opus fable claude-haiku-4-5 claude-sonnet-4-5-20250929 us.anthropic.claude-opus-5-5-v1:0; do
         [ "$(web_types "$m")" = '["web_search_20260318","web_fetch_20260318"]' ] || { echo "dynamic expected for $m"; return 1; }
     done
 }

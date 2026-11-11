@@ -15,11 +15,8 @@ adds one, and `just check-effver` checks it against `VERSION`.
 - `--web` sends `web_search_20260318` and `web_fetch_20260318`, the
   dynamic-filtering versions, in place of `web_search_20250305` and
   `web_fetch_20250910`: the model filters results in code before they reach
-  its context. A model id older than Claude 4.6 keeps the basic versions,
-  in any spelling (provider prefixes, `@date` suffixes, any case): Haiku
-  4.5 rejects the newer ones with a 400, and Opus and Sonnet 4.5 stay
-  basic so `-m` is a route to the ZDR-eligible versions. Aliases (`haiku`,
-  `opus`, ...) get the dynamic versions. A one-line notice on stderr, once per run,
+  its context. They are sent whatever the model; they need Claude 4.6 or
+  later, and an older model gets the API's 400. A one-line notice on stderr, once per run,
   says they are not eligible for Zero Data Retention. Without `-s`, a `pause_turn` continuation sends
   back the container the paused round ran in, so filtering that was in
   progress resumes there. A new turn starts without one.
@@ -32,20 +29,20 @@ adds one, and `just check-effver` checks it against `VERSION`.
   before any request.
 - Each event-log line has two more keys, at the end:
   - `tools`: what the request let the model reach, failed requests
-    included. Server tools are recorded by versioned type, so the
-    dynamic-filtering web tools (`web_search_20260318`) are told apart
-    from the basic ones (`web_search_20250305`).
+    included. Server tools are recorded by versioned type
+    (`web_search_20260318`), so a new tool version shows in the log.
   - `tool_calls`: web searches and fetches from `usage.server_tool_use`,
     MCP calls counted from the reply.
 
   Both are `null` for a session turn. The line format stays `v: 1`: the
   existing keys and their order are unchanged.
 - Adopting needs:
+  - **`--web` with Claude Haiku 4.5 (or an older, retired model):** the
+    request fails with the API's 400. Use a 4.6+ model, such as
+    `-m claude-haiku-5-5`.
   - **An organization under Zero Data Retention using `--web`:** the
     dynamic-filtering versions are not ZDR-eligible, and the stderr notice
-    and the event log's `tools` now show when they were sent. Pass an older
-    model with `-m` to get the basic versions; this version has no flag to
-    keep them on a 4.6+ model.
+    and the event log's `tools` now show when they were sent.
   - **A reader that compares whole event lines byte for byte:** it sees
     the two new keys.
 

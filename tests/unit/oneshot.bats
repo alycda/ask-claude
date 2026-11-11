@@ -99,9 +99,7 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     refute grep -q 'Zero Data Retention' <<<"$output"
 }
 
-@test "one-shot: --web on an older model, or without --web, prints no ZDR notice" {
-    run --separate-stderr replay web-search --web -m claude-haiku-4-5 "ping"
-    refute grep -q 'Zero Data Retention' <<<"$stderr"
+@test "one-shot: without --web there is no ZDR notice" {
     run --separate-stderr replay text "ping"
     refute grep -q 'Zero Data Retention' <<<"$stderr"
 }

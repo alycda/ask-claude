@@ -13,14 +13,13 @@ ask-claude --help                   every flag
 ```
 
 `--web` lets the model search and fetch the web (server tools; a search
-costs $10 per 1,000, a fetch nothing beyond tokens). On Claude 4.6 and
-later (every alias, and the default) these are the dynamic-filtering
-versions, `web_search_20260318` and `web_fetch_20260318`: the model runs
-code that filters results before they reach its context, and the stream
-shows `(running code) ` while it does. They are not eligible for Zero Data
-Retention, and ask-claude says so on stderr once per run when it sends
-them. An older model id (`claude-haiku-4-5`, `claude-sonnet-4-5-…`,
-the 3.x family) gets the basic versions, which are. `--mcp <https url>`
+costs $10 per 1,000, a fetch nothing beyond tokens). These are the
+dynamic-filtering versions, `web_search_20260318` and `web_fetch_20260318`:
+the model runs code that filters results before they reach its context, and
+the stream shows `(running code) ` while it does. They need Claude 4.6 or
+later (every alias, and the default); an older model gets the API's 400.
+They are not eligible for Zero Data Retention, and ask-claude says so on
+stderr once per run when it sends them. `--mcp <https url>`
 (repeatable) lets it call an MCP server through the MCP connector. A
 server's authorization token is `ASK_CLAUDE_MCP_TOKEN_<HOST>`, the host
 upper-cased with every other character an underscore
@@ -125,7 +124,7 @@ turn interrupted with Ctrl-C writes `interrupted`.
 | `list_cost` | sessions only: the API's cost so far, in cents, as a string |
 | `advisor` | `{model, calls, input_tokens, output_tokens}`, or `null` |
 | `error` | `null`, the API's error type, `unknown` (an error without one), or `no_response`, `parse`, `unreadable`; sessions also `interrupted` (Ctrl-C) and `unanswerable` |
-| `tools` | what the request let the model reach: each server tool by its versioned type (`web_search_20260318` and `web_fetch_20260318`, or the basic `web_search_20250305` and `web_fetch_20250910`; `code_execution_20260521`; `advisor_20260301`), `mcp:<server>` for a server with all its tools, one `mcp:<server>:<tool>` per tool of an `--mcp-tool` allowlist; `null` for no tools and for sessions (the agent's tools live on the agent). Kept on a failed request: the tool set was decided before it. |
+| `tools` | what the request let the model reach: each server tool by its versioned type (`web_search_20260318`, `web_fetch_20260318`, `code_execution_20260521`, `advisor_20260301`), `mcp:<server>` for a server with all its tools, one `mcp:<server>:<tool>` per tool of an `--mcp-tool` allowlist; `null` for no tools and for sessions (the agent's tools live on the agent). Kept on a failed request: the tool set was decided before it. |
 | `tool_calls` | `{web_search, web_fetch, mcp}`: searches and fetches as the API's `usage.server_tool_use` counts them, MCP calls as `mcp_tool_use` blocks in the reply; `null` when no reply arrived (`no_response`, `unreadable`, `parse`, an HTTP error body) and for sessions. A reply that fails mid-stream still counts the calls it made: they ran and were billed |
 
 Six questions, each answered with `jq` alone:

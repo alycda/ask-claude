@@ -150,11 +150,6 @@ event_tools() {
         jq -e '.tools == ["web_search_20260318", "web_fetch_20260318", "advisor_20260301"]'
 }
 
-@test "event: the basic web tools are told apart from the dynamic ones" {
-    event_tools "$FIX/sse/text.message.json" "$(jq -c .tools "$FIX/request/web-basic.json")" |
-        jq -e '.tools == ["web_search_20250305", "web_fetch_20250910"]'
-}
-
 @test "event: tool_calls counts web fetches from usage.server_tool_use" {
     event_tools "$FIX/sse/web-fetch.message.json" "$(jq -c .tools "$FIX/request/web.json")" |
         jq -e '.tool_calls == {web_search: 0, web_fetch: 1, mcp: 0}'

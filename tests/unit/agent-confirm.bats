@@ -95,8 +95,7 @@ confirm_fixture() {
 # The input approved is the input shown: a bidi formatting character safe
 # would drop (U+2066), a mark and a zero-width space it would keep invisible
 # (U+200F, U+200B) and a C1 control (U+0085) are written as JSON escapes,
-# not dropped. bash-only until the Rust renderer escapes the same set.
-# bats test_tags=bash-only
+# not dropped, by both binaries.
 @test "confirm: bidi and invisible characters in the input are shown as escapes, not dropped" {
     confirm_fixture "$TMP/fx"
     sed -i.bak 's/"echo pong"/"cat a\\u2066b\\u200fc\\u200bd\\u0085e"/' "$TMP/fx/1.sse"

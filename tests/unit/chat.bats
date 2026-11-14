@@ -40,6 +40,30 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ -z "$(ls "$(STATE_DIR)"/*.json 2>/dev/null)" ]
 }
 
+@test "chat: off a terminal no prompt is printed" {
+    run --separate-stderr chat 'hi
+/quit
+'
+    [ "$status" -eq 0 ]
+    refute grep -q '^>' <<<"$output"
+    refute grep -q '^>' <<<"$stderr"
+}
+
+@test "chat: the end of input quits the way /quit does" {
+    run --separate-stderr chat 'hi
+'
+    [ "$status" -eq 0 ]
+    grep -q '^you: hi' <<<"$output"
+    grep -q 'resume with: .*resume 20' <<<"$stderr"
+}
+
+@test "chat: a last line without a newline is not sent, as read leaves it" {
+    run --separate-stderr chat 'hi
+again'
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^you: ' <<<"$output")" -eq 1 ]
+}
+
 # bats test_tags=pty
 @test "chat: the bash running the loop supports bracketed paste (>= 5.1)" {
     # usage's shebang resolves `bash` from PATH; the same resolution happens here

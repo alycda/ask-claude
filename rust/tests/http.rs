@@ -546,3 +546,50 @@ fn http_ctrl_c_while_a_reply_streams_exits_130() {
     };
     assert_eq!(status.code(), Some(130), "{status:?}");
 }
+
+/// The chat loop against `base_url`: `stdin` piped in, state in a temp dir.
+fn ask(base_url: &str, args: &[&str], stdin: &str) -> (Output, tempfile::TempDir) {
+    let state = tempfile::tempdir().unwrap();
+    let mut child = command(base_url, args, state.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    (child.wait_with_output().unwrap(), state)
+}
+
+/// An API error in the chat loop is reported and the loop goes on: the
+/// failed line is dropped with its error (bash rolls back to before the
+/// ask), the next line is answered, and the chat holds only that exchange.
+/// Replay cannot stage this in bash, where one file answers every send, so
+/// it lives here. From the claude-rs prototype's REPL tests.
+#[test]
+fn http_an_api_error_mid_chat_is_not_fatal() {
+    let mock = Mock::start(vec![Reply::error(404, "error.sse"), Reply::sse("text.sse")]);
+    let (out, state) = ask(&mock.url, &[], "first\nsecond\n/quit\n");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("API error: model: claude-does-not-exist"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("pong"));
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 2, "/quit is not sent");
+    assert_eq!(
+        reqs[1].body["messages"],
+        json!([{"role": "user", "content": "second"}]),
+        "the failed turn is not sent again"
+    );
+    let chats = chats(state.path());
+    assert_eq!(chats.len(), 1, "{chats:?}");
+    assert_eq!(chats[0].as_array().map(Vec::len), Some(2), "{}", chats[0]);
+    assert_eq!(chats[0][0]["content"], "second");
+}

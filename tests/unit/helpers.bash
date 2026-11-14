@@ -20,6 +20,9 @@ setup() {
     TMP="$(mktemp -d)"
     export XDG_STATE_HOME="$TMP/state"
     export ANTHROPIC_API_KEY="sk-ant-test-not-a-key"
+    # the API root comes from --base-url or the test, never from the shell
+    # that runs the suite: an exported SDK variable would move every request
+    unset ANTHROPIC_BASE_URL
 }
 
 teardown() {

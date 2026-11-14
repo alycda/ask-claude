@@ -213,6 +213,14 @@ fn write_reply(mut stream: TcpStream, reply: &Reply) {
 /// The binary against `base_url` with `args`, no replay, no request log,
 /// state in `state`, no stdin.
 fn command(base_url: &str, args: &[&str], state: &Path) -> Command {
+    let mut cmd = binary(state);
+    cmd.arg("--base-url").arg(base_url).args(args);
+    cmd
+}
+
+/// The binary with the test key, state in `state`, no stdin, nothing from
+/// the shell that runs the suite, and no arguments yet.
+fn binary(state: &Path) -> Command {
     // ASK_CLAUDE_BIN runs the same scenarios against another binary, the bash
     // script above all: it is the oracle, so these tests pass on it first
     let mut cmd = match std::env::var_os("ASK_CLAUDE_BIN") {
@@ -235,10 +243,7 @@ fn command(base_url: &str, args: &[&str], state: &Path) -> Command {
             cmd.env_remove(&name);
         }
     }
-    cmd.arg("--base-url")
-        .arg(base_url)
-        .args(args)
-        .env("ANTHROPIC_API_KEY", KEY)
+    cmd.env("ANTHROPIC_API_KEY", KEY)
         .env("XDG_STATE_HOME", state.join("state"))
         .stdin(Stdio::null());
     cmd
@@ -371,6 +376,52 @@ fn http_skills_add_the_code_execution_beta() {
         mock.requests()[0].header("anthropic-beta"),
         "server-side-fallback-2026-07-01,code-execution-2025-08-25"
     );
+}
+
+/// ANTHROPIC_BASE_URL is the environment twin of --base-url (R22): without
+/// the flag the request goes to the root it names, and one stderr line names
+/// the variable and the host. The flag wins over it and says nothing; the
+/// variable then names a port nothing listens on, so a request sent there
+/// would fail the one shot.
+#[test]
+fn http_anthropic_base_url_routes_the_request_and_the_flag_wins() {
+    let announced = |o: &Output| -> Vec<String> {
+        stderr(o)
+            .lines()
+            .filter(|l| l.contains("ANTHROPIC_BASE_URL"))
+            .map(String::from)
+            .collect()
+    };
+
+    let mock = Mock::start(vec![Reply::sse("text.sse")]);
+    let state = tempfile::tempdir().unwrap();
+    let out = binary(state.path())
+        .env("ANTHROPIC_BASE_URL", &mock.url)
+        .arg("ping")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "pong\n");
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 1, "{reqs:?}");
+    assert_eq!(reqs[0].path, "/v1/messages");
+    let host = mock.url.strip_prefix("http://").unwrap();
+    assert_eq!(
+        announced(&out),
+        [format!(
+            "ask-claude: ANTHROPIC_BASE_URL is set; requests go to {host}"
+        )]
+    );
+
+    let mock = Mock::start(vec![Reply::sse("text.sse")]);
+    let state = tempfile::tempdir().unwrap();
+    let out = command(&mock.url, &["ping"], state.path())
+        .env("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(mock.requests().len(), 1);
+    assert_eq!(announced(&out), Vec::<String>::new());
 }
 
 /// A trailing slash on --base-url is stripped (bash strips it too), so the

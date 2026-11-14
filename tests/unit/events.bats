@@ -60,6 +60,11 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     jq -e '.host=="localhost:8080"' "$(LOG)"
 }
 
+@test "events: the host is ANTHROPIC_BASE_URL's when the flag is not given" {
+    ANTHROPIC_BASE_URL=http://localhost:9/some/path replay text "ping" >/dev/null 2>&1
+    jq -e '.host=="localhost:9"' "$(LOG)"
+}
+
 @test "events: each pause_turn round is its own line, numbered from 0" {
     run --separate-stderr replay pause-turn "ping"
     # the single-file replay answers pause_turn every round: rounds 0..8

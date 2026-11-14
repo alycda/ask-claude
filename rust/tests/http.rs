@@ -12,8 +12,13 @@
 //!
 //! `ASK_CLAUDE_BIN=<path> cargo test --test http` runs them against another
 //! binary, as the bats suite does; on the bash script they are green but
-//! the `http_openai_*` ones, since bash refuses `-p openai`: run it there
-//! with `-- --skip http_openai`.
+//! the `http_openai_*` ones, since bash refuses `-p openai`, and
+//! `http_agent_ctrl_c_*`, since an interrupted bash session turn dies of
+//! the signal where the plan (R6) asks for user.interrupt and 130: run it
+//! there with `-- --skip http_openai --skip http_agent_ctrl_c`. The
+//! sessions mock answers each connection on its own thread
+//! ([`Mock::route`]), since a session stream stays open while its events
+//! are posted; its canned create reply is the replay seam's own default.
 //!
 //! The mock is std only: a listener thread that answers one request per
 //! connection, in order, and keeps each request it read. Adapted from the
@@ -826,4 +831,359 @@ fn http_openai_the_reply_prints_as_it_arrives() {
     assert!(early, "po was not printed while the stream was held");
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(printed(&rx, "pong\n", Duration::from_secs(5)));
+}
+
+// ---- Managed Agents sessions (R6): the live paths of `ma_call` and the stream
+
+/// A session fixture under `tests/fixtures/sessions/`.
+fn session_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(repo().join("tests/fixtures/sessions").join(name)).expect("fixture")
+}
+
+/// What `route` answers one request with.
+type Route = Box<dyn Fn(&Request) -> Reply + Send + Sync>;
+
+impl Mock {
+    /// Answer every request on its own thread with `route`'s reply, so a
+    /// session's stream can stay open while its events are posted. Each
+    /// request is recorded, in the order the requests arrived, before its
+    /// reply is chosen.
+    fn route(route: Route) -> Mock {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&requests);
+        let route = Arc::new(route);
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { return };
+                let (log, route) = (Arc::clone(&log), Arc::clone(&route));
+                thread::spawn(move || {
+                    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+                    let Some(req) = read_request(&stream) else {
+                        return;
+                    };
+                    log.lock().unwrap().push(req.clone());
+                    write_reply(stream, &route(&req));
+                });
+            }
+        });
+        Mock { url, requests }
+    }
+}
+
+impl Reply {
+    fn json(status: u16, body: &[u8]) -> Reply {
+        Reply {
+            status,
+            headers: vec![("content-type", "application/json".into())],
+            body: body.to_vec(),
+            hold: None,
+        }
+    }
+    /// A session stream: `: connected` at once, the rest once `release`
+    /// yields or is dropped.
+    fn session_stream(name: &str, release: mpsc::Receiver<()>) -> Reply {
+        let body = session_fixture(name);
+        let at = body
+            .windows(2)
+            .position(|w| w == b"\n\n")
+            .map(|i| i + 2)
+            .expect("the connected comment");
+        assert!(body.starts_with(b": connected"), "{name}");
+        Reply {
+            status: 200,
+            headers: vec![("content-type", "text/event-stream".into())],
+            body,
+            hold: Some((at, release)),
+        }
+    }
+}
+
+/// What the replay seam answers POST /v1/sessions with when no create.json
+/// is given (`ma_call`): the session the fixtures are recorded under.
+const CREATED: &[u8] = br#"{"id":"sesn_FIXTURE01","status":"running"}"#;
+
+/// The binary against `base_url` with the agent and environment ids, `args`
+/// after `agent`, `stdin` piped in, state in a temp dir.
+fn agent(base_url: &str, args: &[&str], stdin: &str) -> (Output, tempfile::TempDir) {
+    let state = tempfile::tempdir().unwrap();
+    let mut child = command(base_url, &[&["agent"], args].concat(), state.path())
+        .env("ASK_CLAUDE_AGENT", "agent_FIXTURE")
+        .env("ASK_CLAUDE_ENVIRONMENT", "env_FIXTURE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    (child.wait_with_output().unwrap(), state)
+}
+
+/// The headers `ma_headers` sends on every sessions request: the key in
+/// x-api-key and nowhere else, the API version, the Managed Agents beta.
+fn assert_ma_headers(r: &Request) {
+    assert_eq!(r.header("x-api-key"), KEY, "{r:?}");
+    assert_eq!(r.header("anthropic-version"), "2026-10-21", "{r:?}");
+    assert_eq!(
+        r.header("anthropic-beta"),
+        "managed-agents-2026-04-01",
+        "{r:?}"
+    );
+    assert!(!r.path.contains(KEY), "the key never goes in the URL");
+}
+
+/// The one shot: POST /v1/sessions with the create body (the same golden
+/// the bats suite holds the replayed body to), then the session's stream,
+/// printed to the first idle; the usage line names the session.
+#[test]
+fn http_agent_one_shot_creates_the_session_then_reads_its_stream() {
+    let mock = Mock::route(Box::new(|r: &Request| {
+        match (r.method.as_str(), r.path.as_str()) {
+            ("POST", "/v1/sessions") => Reply::json(200, CREATED),
+            ("GET", "/v1/sessions/sesn_FIXTURE01/events/stream") => Reply {
+                status: 200,
+                headers: vec![("content-type", "text/event-stream".into())],
+                body: session_fixture("text.sse"),
+                hold: None,
+            },
+            _ => Reply::json(
+                404,
+                br#"{"error":{"type":"not_found_error","message":"no route"}}"#,
+            ),
+        }
+    }));
+    let (out, _state) = agent(&mock.url, &["ping"], "");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "pong\n");
+    assert!(
+        stderr(&out).contains("[sesn_FIXTURE01 in=4 out=4 "),
+        "{}",
+        stderr(&out)
+    );
+
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 2, "{reqs:?}");
+    let create = &reqs[0];
+    assert_eq!(
+        (create.method.as_str(), create.path.as_str()),
+        ("POST", "/v1/sessions")
+    );
+    assert_ma_headers(create);
+    assert!(
+        create
+            .header("content-type")
+            .starts_with("application/json"),
+        "{create:?}"
+    );
+    let golden: Value = serde_json::from_slice(
+        &std::fs::read(repo().join("tests/fixtures/agents/create-plain.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(create.body, golden);
+    assert_eq!(reqs[1].method, "GET");
+    assert_ma_headers(&reqs[1]);
+}
+
+/// A turn on a session that exists (KTD3): the stream is opened, and the
+/// events are posted only once it said it is connected, so nothing the
+/// session emits for them is missed. The mock holds the stream after its
+/// connected comment until the events arrive.
+#[test]
+fn http_agent_turn_opens_the_stream_before_it_posts_the_events() {
+    let (release, wait) = mpsc::channel();
+    let release = Mutex::new(Some(release));
+    let wait = Mutex::new(Some(wait));
+    let mock = Mock::route(Box::new(move |r: &Request| {
+        match (r.method.as_str(), r.path.as_str()) {
+            ("GET", "/v1/sessions/sesn_FIXTURE01/events/stream") => {
+                Reply::session_stream("chat/2.sse", wait.lock().unwrap().take().unwrap())
+            }
+            ("POST", "/v1/sessions/sesn_FIXTURE01/events") => {
+                drop(release.lock().unwrap().take());
+                Reply::json(200, b"{}")
+            }
+            ("GET", p) if p.starts_with("/v1/sessions/sesn_FIXTURE01/events?") => {
+                Reply::json(200, &session_fixture("chat/events.json"))
+            }
+            _ => Reply::json(
+                404,
+                br#"{"error":{"type":"not_found_error","message":"no route"}}"#,
+            ),
+        }
+    }));
+    let (out, _state) = agent(&mock.url, &["resume", "sesn_FIXTURE01"], "again\n/quit\n");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("pong"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(
+        stderr(&out).contains("you: Reply with the single word: pong"),
+        "the history: {}",
+        stderr(&out)
+    );
+
+    let reqs = mock.requests();
+    let at = |method: &str, path: &str| {
+        reqs.iter()
+            .position(|r| r.method == method && r.path == path)
+            .unwrap_or_else(|| panic!("no {method} {path}: {reqs:?}"))
+    };
+    let stream = at("GET", "/v1/sessions/sesn_FIXTURE01/events/stream");
+    let post = at("POST", "/v1/sessions/sesn_FIXTURE01/events");
+    assert!(stream < post, "the stream opens first: {reqs:?}");
+    assert_eq!(
+        reqs[post].body,
+        json!({"events": [{"type": "user.message", "content": [{"type": "text", "text": "again"}]}]})
+    );
+    // curl -g sends the brackets as they are; either spelling is the query
+    let raw = "/v1/sessions/sesn_FIXTURE01/events?types[]=user.message&types[]=agent.message";
+    let history = &reqs[0];
+    assert!(
+        history.path == raw || history.path == raw.replace("[]", "%5B%5D"),
+        "{history:?}"
+    );
+    reqs.iter().for_each(assert_ma_headers);
+}
+
+/// `agent list`: GET /v1/sessions newest first, one line per session.
+#[test]
+fn http_agent_list_gets_the_sessions_newest_first() {
+    let mock = Mock::route(Box::new(|r: &Request| match r.path.as_str() {
+        "/v1/sessions?order=desc&limit=50" => {
+            Reply::json(200, &session_fixture("chat/sessions.json"))
+        }
+        _ => Reply::json(
+            404,
+            br#"{"error":{"type":"not_found_error","message":"no route"}}"#,
+        ),
+    }));
+    let (out, _state) = agent(&mock.url, &["list"], "");
+    assert!(out.status.success(), "{}", stderr(&out));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        stdout.lines().next(),
+        Some("sesn_FIXTURE01  idle  $0.00  fixture custom tool"),
+        "{stdout}"
+    );
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 1, "{reqs:?}");
+    assert_eq!(reqs[0].method, "GET");
+    assert_ma_headers(&reqs[0]);
+}
+
+/// A stream the API refuses (an error status with a JSON body) is the
+/// script's "no response from the stream", with the body in it, exit 1.
+#[test]
+fn http_agent_a_refused_stream_is_no_response_with_its_body() {
+    let mock = Mock::route(Box::new(|r: &Request| match r.method.as_str() {
+        "POST" => Reply::json(200, CREATED),
+        _ => Reply::json(401, &session_fixture("not-sse/1.sse")),
+    }));
+    let (out, state) = agent(&mock.url, &["ping"], "");
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("no response from the stream"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(
+        stderr(&out).contains("invalid x-api-key"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(
+        !state
+            .path()
+            .join("state/ask-claude/sessions/sesn_FIXTURE01")
+            .exists(),
+        "a failed one shot is not remembered"
+    );
+}
+
+/// Ctrl-C while the live stream waits for its next event: the main thread
+/// sees the flag between waits (KTD3, KTD11), posts `user.interrupt` to the
+/// session and exits 130 within a second.
+#[test]
+fn http_agent_ctrl_c_while_the_stream_is_held_posts_user_interrupt_and_exits_130() {
+    let (_release, wait) = mpsc::channel::<()>();
+    let wait = Mutex::new(Some(wait));
+    let mock = Mock::route(Box::new(move |r: &Request| {
+        match (r.method.as_str(), r.path.as_str()) {
+            ("POST", "/v1/sessions") => Reply::json(200, CREATED),
+            ("GET", _) => {
+                let name = "text.sse";
+                let body = session_fixture(name);
+                let at = body
+                    .windows(b"\"pong\"".len())
+                    .position(|w| w == b"\"pong\"")
+                    .map(|i| i + body[i..].windows(2).position(|w| w == b"\n\n").unwrap() + 2)
+                    .unwrap();
+                Reply {
+                    status: 200,
+                    headers: vec![("content-type", "text/event-stream".into())],
+                    body,
+                    hold: Some((at, wait.lock().unwrap().take().unwrap())),
+                }
+            }
+            _ => Reply::json(200, b"{}"),
+        }
+    }));
+    let state = tempfile::tempdir().unwrap();
+    let mut cmd = command(&mock.url, &["agent", "ping"], state.path());
+    cmd.env("ASK_CLAUDE_AGENT", "agent_FIXTURE")
+        .env("ASK_CLAUDE_ENVIRONMENT", "env_FIXTURE")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let mut child = cmd.spawn().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut seen = Vec::new();
+        let mut buf = [0; 256];
+        while let Ok(n @ 1..) = stdout.read(&mut buf) {
+            seen.extend_from_slice(&buf[..n]);
+            if tx.send(seen.clone()).is_err() {
+                break;
+            }
+        }
+    });
+    assert!(
+        printed(&rx, "pong", Duration::from_secs(5)),
+        "the reply never started"
+    );
+    let pid = libc::pid_t::try_from(child.id()).unwrap();
+    // SAFETY: kill(2) on the process group the child leads; no memory involved
+    assert_eq!(unsafe { libc::kill(-pid, libc::SIGINT) }, 0);
+    let sent = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break Some(status);
+        }
+        if sent.elapsed() > Duration::from_secs(1) {
+            break None;
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let Some(status) = status else {
+        let _ = child.kill();
+        panic!("still running a second after Ctrl-C");
+    };
+    assert_eq!(status.code(), Some(130), "{status:?}");
+    let reqs = mock.requests();
+    let last = reqs.last().unwrap();
+    assert_eq!(
+        (last.method.as_str(), last.path.as_str()),
+        ("POST", "/v1/sessions/sesn_FIXTURE01/events"),
+        "{reqs:?}"
+    );
+    assert_eq!(last.body, json!({"events": [{"type": "user.interrupt"}]}));
 }

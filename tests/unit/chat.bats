@@ -2,8 +2,8 @@
 # shellcheck disable=SC2012,SC2059  # ls counts files in a test; a format string from the test itself
 load helpers
 
-chat() { # stdin script
-    printf "$1" | ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN"
+chat() { # stdin script, then args
+    printf "$1" | ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" "${@:2}"
 }
 STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
 
@@ -72,8 +72,7 @@ again'
 }
 
 @test "chat: an empty prompt argument is no prompt, the chat loop and no request" {
-    run --separate-stderr bash -c 'printf "/quit\n" | ASK_CLAUDE_REPLAY="$1" ASK_CLAUDE_REQUEST_LOG="$2" "$3" ""' _ \
-        "$FIX/sse/text.sse" "$TMP/requests.jsonl" "$BIN"
+    run --separate-stderr chat '/quit\n' ''
     [ "$status" -eq 0 ]
     grep -q '(/new resets, /quit exits)' <<<"$stderr"
     [ ! -s "$TMP/requests.jsonl" ]

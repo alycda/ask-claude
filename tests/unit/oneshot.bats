@@ -44,6 +44,13 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+@test "one-shot: an empty -f is no file, the prompt alone" {
+    run --separate-stderr replay text -f '' "summarize"
+    [ "$status" -eq 0 ]
+    [ "$output" = "pong" ]
+    jq -e '.messages[0].content=="summarize"' "$TMP/requests.jsonl"
+}
+
 @test "one-shot: API error exits 1 and drops the user turn" {
     run --separate-stderr replay error "ping"
     [ "$status" -eq 1 ]

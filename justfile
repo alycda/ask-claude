@@ -16,13 +16,20 @@ _help: build
 _agent-help: build
     ./ask-claude agent --help
 
+# Each argument reaches the binary as one word ("$@", so `-S 'be terse'`
+# stays whole), flags before the question, and the binary runs where just
+# was invoked, so `-f notes.md` and `agent files` downloads mean that
+# directory, not the recipe's.
+
 [group('rust')]
+[positional-arguments]
 [working-directory: 'rust/target/debug']
 ask question="" *FLAGS: build
-    ./ask-claude {{FLAGS}} {{ quote(question) }}
+    bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
 
+[positional-arguments]
 ask-bash question="" *FLAGS:
-    ./ask-claude {{FLAGS}} {{ quote(question) }}
+    bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
 
 # shell completions from the Rust binary's usage spec (bash, fish, nu,
 # powershell, zsh), which `just parity` holds to the script's #USAGE block.
@@ -37,10 +44,7 @@ ask-bash question="" *FLAGS:
 completions shell *flags: build
     #!/usr/bin/env bash
     set -euo pipefail
-    spec=$(mktemp)
-    trap 'rm -f "$spec"' EXIT
-    rust/target/debug/ask-claude --usage-spec >"$spec"
-    usage generate completion {{ quote(shell) }} ask-claude -f "$spec" {{ flags }}
+    rust/target/debug/ask-claude --usage-spec | usage generate completion {{ quote(shell) }} ask-claude -f - {{ flags }}
 
 # Skips the tests tagged pty, which need a terminal name readline reports
 # bracketed paste for (`just pty-test` runs them), and rust-only, behaviour the

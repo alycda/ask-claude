@@ -91,8 +91,10 @@ fn r0_a_dotenv_key_is_not_read() {
 }
 
 /// `ask-claude --usage-spec | head -1`: a reader that went away is SIGPIPE,
-/// the way curl and jq end, not a Rust panic about a broken pipe. The pipe's
-/// read end is closed before the binary writes, so the write always fails.
+/// the way curl and jq end, not a Rust panic about a broken pipe (KTD4).
+/// The pipe's read end is closed before the binary writes, so the write
+/// always raises the signal; a binary that ignored it and exited 0 would
+/// have swallowed the broken pipe, so only the signal passes.
 #[cfg(unix)]
 #[test]
 fn r0_a_closed_stdout_is_sigpipe_not_a_panic() {
@@ -106,12 +108,42 @@ fn r0_a_closed_stdout_is_sigpipe_not_a_panic() {
             !stderr.contains("panicked") && !stderr.contains("Broken pipe"),
             "{flag}: {stderr}"
         );
-        assert!(
-            out.status.success() || out.status.signal() == Some(13),
+        assert_eq!(
+            out.status.signal(),
+            Some(libc::SIGPIPE),
             "{flag}: {:?}",
             out.status
         );
     }
+}
+
+/// `umask 077` at the top, as the script has it: a file the binary creates
+/// is private to the user whatever the umask it was started under. The
+/// request log is opened with no mode of its own, so only the umask keeps
+/// it from 0644 under a shell's usual 022. Oracle: `umask 022;
+/// ASK_CLAUDE_REQUEST_LOG=<new file> ./ask-claude ping` leaves it 0600.
+#[cfg(unix)]
+#[test]
+fn r0_a_file_it_creates_is_private_whatever_the_umask() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("requests.jsonl");
+    Command::new("sh")
+        .arg("-c")
+        .arg(r#"umask 022 && exec "$0" ping"#)
+        .arg(bin().get_program())
+        .env("ANTHROPIC_API_KEY", "sk-ant-test-not-a-key")
+        .env("XDG_STATE_HOME", dir.path().join("state"))
+        .env(
+            "ASK_CLAUDE_REPLAY",
+            repo().join("tests/fixtures/sse/text.sse"),
+        )
+        .env("ASK_CLAUDE_REQUEST_LOG", &log)
+        .assert()
+        .success()
+        .stdout("pong\n");
+    let mode = std::fs::metadata(&log).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "{mode:o}");
 }
 
 #[test]

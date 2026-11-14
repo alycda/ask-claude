@@ -156,6 +156,13 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     refute grep -q events <<<"$output"
 }
 
+
+@test "events: each turn of a chat is a line under that chat's name" {
+    printf 'hi\nagain\n/quit\n' | ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" >/dev/null 2>&1
+    [ "$(wc -l <"$(LOG)")" -eq 2 ]
+    jq -s -e --arg c "$(history_name)" 'all(.chat == $c and .kind == "messages" and .round == 0)' "$(LOG)"
+}
+
 # ---- Managed Agents sessions ---------------------------------------------
 
 agent() { ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE ASK_CLAUDE_REPLAY="$FIX/sessions/$1" "$BIN" agent "${@:2}"; }

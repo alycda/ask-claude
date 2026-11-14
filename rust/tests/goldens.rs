@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use ask_claude::{reassemble, request, session, sse, stream};
+use ask_claude::{event, reassemble, request, session, sse, stream};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures")
@@ -1020,4 +1020,261 @@ fn r6_session_answer_custom_tool_calls() {
         out,
         unavailable("Tool unavailable: the local MCP server has no tool named launch. Do not call it again; answer the user without it.".into())
     );
+}
+
+// ---- R6: the event log line, against lib/event.jq's goldens (event.bats) ----
+
+/// The arguments event.bats passes `lib/event.jq`.
+fn event_args(kind: &str, round: u64, error: &str, chat: &str) -> event::Args {
+    event::Args {
+        ts: "2026-11-07T00:00:00Z".into(),
+        version: "0.2.6".into(),
+        kind: kind.into(),
+        chat: chat.into(),
+        host: "api.anthropic.com".into(),
+        round,
+        seconds: 2,
+        error: error.into(),
+        tools: Value::Null,
+    }
+}
+
+const CHAT: &str = "20260102T150405-1234";
+
+/// One line for `input`, as `jq -c` prints it (the goldens end in its
+/// newline).
+fn event_line(input: &Value, args: &event::Args) -> String {
+    event::line(input, args).expect("a line") + "\n"
+}
+
+#[test]
+fn r6_event_lines_match_every_golden() {
+    let cases: [(&str, &str, Value, u64, &str, &str); 10] = [
+        (
+            "text",
+            "messages",
+            json("sse/text.message.json"),
+            0,
+            "",
+            CHAT,
+        ),
+        (
+            "advisor",
+            "messages",
+            json("sse/advisor.message.json"),
+            0,
+            "",
+            CHAT,
+        ),
+        (
+            "advisor-redacted",
+            "messages",
+            json("sse/advisor-redacted.message.json"),
+            0,
+            "",
+            CHAT,
+        ),
+        (
+            "refusal",
+            "messages",
+            json("sse/refusal.message.json"),
+            0,
+            "",
+            CHAT,
+        ),
+        (
+            "pause-turn",
+            "messages",
+            json("sse/pause-turn.message.json"),
+            3,
+            "",
+            CHAT,
+        ),
+        (
+            "error",
+            "messages",
+            Value::Null,
+            0,
+            "overloaded_error",
+            CHAT,
+        ),
+        (
+            "session-text",
+            "session",
+            json("sessions/text.fold.json"),
+            0,
+            "",
+            "sesn_FIXTURE01",
+        ),
+        (
+            "session-budget",
+            "session",
+            json("sessions/budget.fold.json"),
+            2,
+            "",
+            "sesn_FIXTURE01",
+        ),
+        (
+            "session-error",
+            "session",
+            json("sessions/error.fold.json"),
+            0,
+            "api_error",
+            "sesn_FIXTURE01",
+        ),
+        (
+            "hostile",
+            "messages",
+            json("events/hostile.message.json"),
+            0,
+            "Error: your prompt was secret",
+            CHAT,
+        ),
+    ];
+    for (golden, kind, input, round, error, chat) in cases {
+        assert_eq!(
+            event_line(&input, &event_args(kind, round, error, chat)),
+            read(&format!("events/{golden}.jsonl")),
+            "{golden}"
+        );
+    }
+}
+
+/// event.bats: "a 64-character identifier is kept, 65 is unknown", and
+/// "an identifier with a trailing newline is unknown".
+#[test]
+fn r6_event_identifiers_are_bounded() {
+    let args = event_args("messages", 0, "", CHAT);
+    let model = |m: &str| {
+        let line = event_line(&serde_json::json!({ "model": m }), &args);
+        serde_json::from_str::<Value>(&line).unwrap()["model"].clone()
+    };
+    let m64 = "m".repeat(64);
+    assert_eq!(model(&m64), m64.as_str());
+    assert_eq!(model(&"m".repeat(65)), "unknown");
+    assert_eq!(model("claude-x\n"), "unknown");
+}
+
+/// event.bats: "usage that is not a number is null, and never written as
+/// given".
+#[test]
+fn r6_event_usage_that_is_not_a_number_is_null() {
+    let input = serde_json::json!({"model": "claude-opus-5-5", "stop_reason": "end_turn",
+        "usage": {"input_tokens": "the user secret prompt", "output_tokens": {"t": "reply text"},
+                  "cache_read_input_tokens": [1], "cache_creation_input_tokens": "x",
+                  "iterations": [{"type": "advisor_message", "model": "claude-opus-5-5",
+                                  "input_tokens": "advisor secret", "output_tokens": 2}]}});
+    let line = event_line(&input, &event_args("messages", 0, "", CHAT));
+    let v: Value = serde_json::from_str(&line).unwrap();
+    for k in ["input_tokens", "output_tokens", "cache_read", "cache_write"] {
+        assert_eq!(v[k], Value::Null, "{k}");
+    }
+    assert_eq!(v["advisor"]["input_tokens"], 0);
+    assert_eq!(v["advisor"]["output_tokens"], 2);
+    assert!(
+        !line.contains("secret") && !line.contains("reply"),
+        "{line}"
+    );
+}
+
+/// event.bats: "list_cost keeps the API's cents as a string, from a string
+/// or a number", and "an empty chat is null, not unknown".
+#[test]
+fn r6_event_list_cost_and_an_empty_chat() {
+    let args = event_args("session", 0, "", "sesn_FIXTURE01");
+    let cost = |c: Value| {
+        let mut fold = json("sessions/text.fold.json");
+        fold["usage"]["list_cost"] = c;
+        serde_json::from_str::<Value>(&event_line(&fold, &args)).unwrap()["list_cost"].clone()
+    };
+    assert_eq!(cost(serde_json::json!(42)), "42");
+    assert_eq!(cost(serde_json::json!("12.5")), "12.5");
+    assert_eq!(cost(serde_json::json!("twelve dollars")), "unknown");
+
+    let mut empty = event_args("session", 0, "unreadable", "");
+    empty.version = "0.2.7".into();
+    empty.seconds = 0;
+    let v: Value = serde_json::from_str(&event_line(&Value::Null, &empty)).unwrap();
+    assert_eq!(v["chat"], Value::Null);
+}
+
+/// The tools of a request fixture, as `jq -c .tools` gives them.
+fn tools_of(request_rel: &str) -> Value {
+    json(request_rel)["tools"].clone()
+}
+
+/// event.bats: tools names the server tools by versioned type, a whole MCP
+/// server, and each tool of an allowlist, in request order (the
+/// mcp-tool.jsonl golden), and tool_calls counts from the reply.
+#[test]
+fn r6_event_tools_and_tool_calls() {
+    let mut args = event_args("messages", 0, "", CHAT);
+    args.version = "0.3.1".into();
+    args.tools = tools_of("request/mcp-tool.json");
+    assert_eq!(
+        event_line(&json("sse/mcp.message.json"), &args),
+        read("events/mcp-tool.jsonl")
+    );
+
+    let field = |input: &Value, tools: Value, error: &str, key: &str| {
+        let mut a = event_args("messages", 0, error, CHAT);
+        a.tools = tools;
+        serde_json::from_str::<Value>(&event_line(input, &a)).unwrap()[key].clone()
+    };
+    assert_eq!(
+        field(
+            &json("sse/text.message.json"),
+            tools_of("request/advisor.json"),
+            "",
+            "tools"
+        ),
+        serde_json::json!([
+            "web_search_20260318",
+            "web_fetch_20260318",
+            "advisor_20260301"
+        ])
+    );
+    assert_eq!(
+        field(
+            &json("sse/web-fetch.message.json"),
+            tools_of("request/web.json"),
+            "",
+            "tool_calls"
+        ),
+        serde_json::json!({"web_search": 0, "web_fetch": 1, "mcp": 0})
+    );
+    // a failed request keeps its tools, and has no tool_calls
+    let web = tools_of("request/web.json");
+    assert_eq!(
+        field(&Value::Null, web.clone(), "overloaded_error", "tools"),
+        serde_json::json!(["web_search_20260318", "web_fetch_20260318"])
+    );
+    assert_eq!(
+        field(&Value::Null, web, "overloaded_error", "tool_calls"),
+        Value::Null
+    );
+    // a tool name outside the identifier set is unknown
+    let hostile = serde_json::json!([{"type": "mcp_toolset", "mcp_server_name": "a",
+        "default_config": {"enabled": false},
+        "configs": {"my secret\u{1b}[31m": {"enabled": true}, "ok": {"enabled": false}}}]);
+    let mut a = event_args("messages", 0, "", CHAT);
+    a.tools = hostile;
+    let line = event_line(&json("sse/text.message.json"), &a);
+    assert_eq!(
+        serde_json::from_str::<Value>(&line).unwrap()["tools"],
+        serde_json::json!(["unknown"])
+    );
+    assert!(!line.contains("secret"), "{line}");
+    // without tools (a session, or a caller of 0.3.0) tools is null
+    assert_eq!(
+        field(&json("sse/text.message.json"), Value::Null, "", "tools"),
+        Value::Null
+    );
+    let session = event_line(
+        &json("sessions/text.fold.json"),
+        &event_args("session", 0, "", "sesn_FIXTURE01"),
+    );
+    let session: Value = serde_json::from_str(&session).unwrap();
+    assert_eq!(session["tools"], Value::Null);
+    assert_eq!(session["tool_calls"], Value::Null);
 }

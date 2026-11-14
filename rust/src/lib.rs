@@ -44,6 +44,9 @@ pub mod config;
 /// chats on disk under the state directory.
 pub mod history;
 
+/// the event log (`lib/event.jq`).
+pub mod event;
+
 /// the chat loop (`chat_loop` in `lib/chat.bash`).
 pub mod chat;
 

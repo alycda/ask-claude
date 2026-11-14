@@ -1,19 +1,21 @@
 import 'tools/effver/effver.just'
 
-help:
+[group('bash')]
+_help:
     ./ask-claude --help
 
-agents-help:
+[group('bash')]
+_agents-help:
     ./ask-claude agent --help
 
 [group('rust')]
 [working-directory: 'rust/target/debug']
-_help: build
+help: build
     ./ask-claude --help
 
 [group('rust')]
 [working-directory: 'rust/target/debug']
-_agent-help: build
+agent-help: build
     ./ask-claude agent --help
 
 # Each argument reaches the binary as one word ("$@", so `-S 'be terse'`
@@ -27,6 +29,7 @@ _agent-help: build
 ask question="" *FLAGS: build
     bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
 
+[group('bash')]
 [positional-arguments]
 ask-bash question="" *FLAGS:
     bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
@@ -41,6 +44,7 @@ ask-bash question="" *FLAGS:
 # zsh needs; without it the script goes to stdout.
 
 # tab completion for <shell> from the binary's spec; --install puts it where the shell looks
+[group('rust')]
 completions shell *flags: build
     #!/usr/bin/env bash
     set -euo pipefail
@@ -50,22 +54,36 @@ completions shell *flags: build
 # bracketed paste for (`just pty-test` runs them), and rust-only, behaviour the
 # script does not have.
 
+[group('bash')]
+lint-bash:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shellcheck --version | head -2
+    mapfile -t files < <(git grep -l -E '^#!/usr/bin/env (bash|bats|-S usage bash)$' -- . ; git ls-files '*.bash')
+    printf '%s\n' "${files[@]}"
+    shellcheck -x "${files[@]}"
+
 # offline: bats over recorded fixtures (tests/unit), no key needed
+[group('bash')]
 unit-tests:
     bats --filter-tags '!pty,!rust-only' tests/unit
 
 # the pty-tagged tests alone, under a TERM readline reports bracketed paste for
+[group('bash')]
 pty-test:
     TERM=xterm-256color bats --filter-tags pty tests/unit
 
 # the GitHub Actions workflows; mise fetches actionlint, so mise.toml stays the script's own toolchain
+[group('ci')]
 actionlint:
     mise x actionlint@1.7.12 -- actionlint
 
 # one bats file, filtered as unit-tests filters the suite, so the two agree
+[group('bash')]
 unit-test unit:
     bats --filter-tags '!pty,!rust-only' tests/unit/{{ quote(unit) }}.bats
 
+[group('bash')]
 step name:
     bats --filter-tags {{ quote("step:" + name) }} tests/unit/*-steps.bats
 
@@ -73,6 +91,7 @@ step name:
 # per search), one listing an MCP server's tools. Only the live recipes (this one and
 # test-openai) read .env, and the key reaches hurl through a secrets file on a
 # pipe, not on its command line.
+[group('http')]
 [working-directory: 'tests']
 test:
     #!/usr/bin/env bash
@@ -83,6 +102,7 @@ test:
 
 # live: -s starts a code-execution sandbox and the reply carries container.id
 # (a few cents, so not part of test). Reads .env like test.
+[group('http')]
 [working-directory: 'tests']
 test-skills:
     #!/usr/bin/env bash
@@ -94,6 +114,7 @@ test-skills:
 # Reads .env like test; the key reaches curl through a header file on a pipe.
 
 # custom skills on this account (id, title, latest version), for -s
+[group('http')]
 skills:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -108,6 +129,7 @@ skills:
 # ASK_CLAUDE_ENVIRONMENT, the ids from the Console. Never run by `test`.
 
 # live Managed Agents contracts: the three lists and one 10-cent session turn, archived after
+[group('http')]
 [working-directory: 'tests/agents']
 test-agents:
     #!/usr/bin/env bash
@@ -119,6 +141,7 @@ test-agents:
         --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") list.hurl sessions.hurl
 
 # the agents on this account (id, model, name), for --agent / ASK_CLAUDE_AGENT
+[group('http')]
 agents:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -128,6 +151,7 @@ agents:
         jq -r 'if .data then .data[] | [.id, (.model | if type == "object" then (.id // .name // tostring) else . end), .name] | @tsv else "just agents: \(.error.message // "unreadable response")\n" | halt_error end'
 
 # the environments on this account (id, networking, name), for --environment / ASK_CLAUDE_ENVIRONMENT
+[group('http')]
 environments:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -139,6 +163,7 @@ environments:
 # live OpenAI-compatible contract, one call. Reads .env like `test`: OPENAI_BASE_URL
 # is the API root (e.g. https://api.venice.ai/api/v1), OPENAI_API_KEY the key,
 # OPENAI_MODEL the model (default gemini-4-argon); the key goes to hurl on a pipe.
+[group('http')]
 [working-directory: 'tests/providers']
 test-openai:
     #!/usr/bin/env bash
@@ -151,6 +176,7 @@ test-openai:
 # cargo comes from mise's rust; the recipes run it through `mise exec` until
 # the shims know the version (`mise use -g rust@1.99.1`).
 
+[group('rust')]
 [working-directory: 'rust']
 check:
     cargo check

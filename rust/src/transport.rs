@@ -14,8 +14,10 @@ pub trait Transport {
 pub type Reply = Box<dyn Read + Send>;
 
 use std::fs::{File, Metadata, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::time::Duration;
 
 /// POST /v1/messages with the headers `headers` in `lib/common.bash`
@@ -50,17 +52,46 @@ impl Http {
 }
 
 impl Transport for Http {
+    /// The request starts on the reply's first read, so it runs on the
+    /// thread that reads the reply ([`lines`]) and an interrupt is seen
+    /// while it connects and waits for the headers too, not only while the
+    /// body streams.
     fn send(&mut self, body: &str, betas: &str) -> io::Result<Reply> {
-        let response = self
-            .agent
-            .post(&self.url)
-            .header("content-type", "application/json")
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2026-10-21")
-            .header("anthropic-beta", betas)
-            .send(body)
-            .map_err(io::Error::other)?;
-        Ok(Box::new(response.into_body().into_reader()))
+        let agent = self.agent.clone();
+        let (url, key) = (self.url.clone(), self.api_key.clone());
+        let (body, betas) = (body.to_string(), betas.to_string());
+        Ok(Box::new(Deferred::Pending(Box::new(move || {
+            let response = agent
+                .post(&url)
+                .header("content-type", "application/json")
+                .header("x-api-key", &key)
+                .header("anthropic-version", "2026-10-21")
+                .header("anthropic-beta", &betas)
+                .send(&body)
+                .map_err(io::Error::other)?;
+            Ok(Box::new(response.into_body().into_reader()) as Reply)
+        }))))
+    }
+}
+
+/// A reply whose request has not started: the first read starts it.
+enum Deferred {
+    Pending(Box<dyn FnOnce() -> io::Result<Reply> + Send>),
+    Started(Reply),
+    Done,
+}
+
+impl Read for Deferred {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if let Deferred::Pending(_) = self
+            && let Deferred::Pending(start) = std::mem::replace(self, Deferred::Done)
+        {
+            *self = Deferred::Started(start()?);
+        }
+        match self {
+            Deferred::Started(reply) => reply.read(buf),
+            _ => Ok(0),
+        }
     }
 }
 
@@ -192,4 +223,103 @@ fn private(log: &Path, meta: &Metadata) -> Result<(), String> {
 #[cfg(not(unix))]
 fn private(_log: &Path, _meta: &Metadata) -> Result<(), String> {
     Ok(())
+}
+
+/// Set by the signal handler (KTD11): SIGINT, SIGTERM and SIGHUP do
+/// nothing else, so no work stops halfway inside a handler; the main
+/// thread looks at the flag between waits for the next line and exits 130.
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(unix)]
+extern "C" fn on_signal(_: libc::c_int) {
+    INTERRUPTED.store(true, Ordering::SeqCst);
+}
+
+/// Install the handler for SIGINT, SIGTERM and SIGHUP. Reads restart after
+/// it runs (`SA_RESTART`), so the worker's blocking read is not cut short:
+/// the main thread decides what an interrupt means.
+#[cfg(unix)]
+pub fn catch_signals() {
+    // SAFETY: the handler only stores to an atomic, which is
+    // async-signal-safe; the sigaction struct is zeroed then filled.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_signal as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        action.sa_flags = libc::SA_RESTART;
+        libc::sigemptyset(&mut action.sa_mask);
+        for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+            libc::sigaction(signal, &action, std::ptr::null_mut());
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn catch_signals() {}
+
+/// Whether a signal asked this process to stop.
+pub fn interrupted() -> bool {
+    INTERRUPTED.load(Ordering::SeqCst)
+}
+
+/// What [`Lines::next`] waited for.
+#[derive(Debug)]
+pub enum Next {
+    /// one line of the body, its newline included (the last may lack one)
+    Line(Vec<u8>),
+    /// the read failed; what came before it stands
+    Failed(io::Error),
+    /// the body ended
+    End,
+    /// a signal set the flag while waiting
+    Interrupted,
+}
+
+/// The lines of a reply as a worker thread reads them (KTD3). A signal
+/// cannot wake a blocking socket read on every platform, so the read
+/// happens off the main thread, which waits on the channel a tick at a
+/// time and looks at the interrupt flag between ticks. On an interrupt the
+/// worker is abandoned to process exit.
+pub struct Lines {
+    rx: mpsc::Receiver<io::Result<Vec<u8>>>,
+}
+
+/// How long the main thread waits for a line before it looks at the flag.
+const TICK: Duration = Duration::from_millis(50);
+
+/// Start reading `reply` on a worker thread.
+pub fn lines(reply: Reply) -> Lines {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(reply);
+        loop {
+            let mut line = Vec::new();
+            let item = match reader.read_until(b'\n', &mut line) {
+                Ok(0) => break,
+                Ok(_) => Ok(line),
+                Err(e) => Err(e),
+            };
+            let failed = item.is_err();
+            if tx.send(item).is_err() || failed {
+                break;
+            }
+        }
+    });
+    Lines { rx }
+}
+
+impl Lines {
+    /// The next line, the end, a failed read, or an interrupt.
+    pub fn next(&self) -> Next {
+        loop {
+            if interrupted() {
+                return Next::Interrupted;
+            }
+            match self.rx.recv_timeout(TICK) {
+                Ok(Ok(line)) => return Next::Line(line),
+                Ok(Err(e)) => return Next::Failed(e),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Next::End,
+            }
+        }
+    }
 }

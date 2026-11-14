@@ -133,6 +133,7 @@ pub fn run(cli: cli::Cli) -> i32 {
             return 2;
         }
     };
+    transport::catch_signals();
     one_shot(&args, &mut t)
 }
 
@@ -217,29 +218,38 @@ impl Received {
     }
 }
 
-/// Send one request and take its reply line by line as it is read.
-fn exchange(t: &mut dyn transport::Transport, body: &str, betas: &str) -> Received {
-    use std::io::{BufRead, BufReader};
+/// A signal stopped the wait for the reply (KTD11).
+#[derive(Debug)]
+struct Interrupted;
+
+/// Send one request and take its reply line by line as it arrives, the
+/// read on a worker thread (KTD3), or stop at an interrupt.
+fn exchange(
+    t: &mut dyn transport::Transport,
+    body: &str,
+    betas: &str,
+) -> Result<Received, Interrupted> {
+    use transport::Next;
     let mut got = Received::new();
     let mut out = std::io::stdout().lock();
     match t.send(body, betas) {
         Ok(reply) => {
-            let mut reader = BufReader::new(reply);
+            let lines = transport::lines(reply);
             loop {
-                let mut line = Vec::new();
-                match reader.read_until(b'\n', &mut line) {
-                    Ok(0) => break,
-                    Ok(_) => got.take(&line, &mut out),
-                    Err(e) => {
+                match lines.next() {
+                    Next::Line(line) => got.take(&line, &mut out),
+                    Next::Failed(e) => {
                         failed(&e);
                         break;
                     }
+                    Next::End => break,
+                    Next::Interrupted => return Err(Interrupted),
                 }
             }
         }
         Err(e) => failed(&e),
     }
-    got
+    Ok(got)
 }
 
 /// A transport failure, the way curl -sS reports one before the script's
@@ -279,7 +289,11 @@ pub fn one_shot(args: &request::Args, t: &mut dyn transport::Transport) -> i32 {
     use stream::safe;
 
     let t0 = std::time::Instant::now();
-    let got = exchange(t, &request::body(args).to_string(), &betas(args));
+    let Ok(got) = exchange(t, &request::body(args).to_string(), &betas(args)) else {
+        // Ctrl-C: what was printed stands and nothing more is done, as a
+        // killed script does nothing more
+        return 130;
+    };
     if got.bytes == 0 {
         eprintln!("ask-claude: no response (the request failed or timed out)");
         return 1;
@@ -346,6 +360,10 @@ pub fn one_shot(args: &request::Args, t: &mut dyn transport::Transport) -> i32 {
         ),
         Some("max_tokens") => eprintln!("[stopped: max_tokens reached, raise --max-tokens]"),
         _ => eprintln!("[stopped: {}]", safe(&text(&msg["stop_reason"]))),
+    }
+    // a signal during the fold or the notices: the script would be gone
+    if transport::interrupted() {
+        return 130;
     }
     0
 }

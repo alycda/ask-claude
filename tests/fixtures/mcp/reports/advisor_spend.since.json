@@ -1,0 +1,8 @@
+[
+  {
+    "advisor": "claude-opus-5-5",
+    "calls": 1,
+    "input_tokens": 500,
+    "output_tokens": 20
+  }
+]

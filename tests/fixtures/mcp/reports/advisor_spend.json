@@ -1,0 +1,14 @@
+[
+  {
+    "advisor": "claude-opus-5-5",
+    "calls": 1,
+    "input_tokens": 500,
+    "output_tokens": 20
+  },
+  {
+    "advisor": "claude-sonnet-5-5",
+    "calls": 2,
+    "input_tokens": 1000,
+    "output_tokens": 50
+  }
+]

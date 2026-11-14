@@ -1,0 +1,10 @@
+[
+  {
+    "model": "claude-haiku-5-5",
+    "cache_hit": 0.75
+  },
+  {
+    "model": "claude-opus-5-5",
+    "cache_hit": 0.5
+  }
+]

@@ -1,0 +1,28 @@
+[package]
+name = "ask-claude-mcp"
+# not the release number: the server reports ../VERSION (include_str!), the
+# one number `just bump` moves
+version = "0.0.0"
+edition = "2024"
+description = "ask-claude's local state over MCP: the event log's reports and the chats on disk, on stdio (docs/plans/2026-11-08-002-feat-mcp-server-plan.md)"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "ask-claude-mcp"
+path = "src/main.rs"
+
+[dependencies]
+# exact: the SDK moves fast (3.x renamed the handshake around protocol
+# 2026-07-28), and the tests pin the wire, not this crate's types.
+rmcp = { version = "=3.9.0", features = ["schemars", "transport-io"] }
+tokio = { version = "1.54.1", features = ["macros", "rt", "rt-multi-thread", "io-std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+chrono = "*"
+
+[dev-dependencies]
+# src/lib.rs: unit tests as tables of cases
+rstest = "0.28.0"
+# tests/common: a state directory per test
+tempfile = "3.27.0"

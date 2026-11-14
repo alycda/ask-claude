@@ -193,6 +193,53 @@ pub fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
     }
 }
 
+/// The Chat as `you:` / `claude:` text, `show_history` in
+/// `lib/chat.bash`: a turn's content when it is a string, else its text
+/// blocks joined by newlines (thinking and tool blocks skipped); each turn
+/// through `safe`, then the blank line `jq -r` adds.
+pub fn text(turns: &Value) -> String {
+    turns
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|turn| {
+            let who = if turn["role"] == "user" {
+                "you"
+            } else {
+                "claude"
+            };
+            let said = match &turn["content"] {
+                Value::String(s) => s.clone(),
+                Value::Array(blocks) => blocks
+                    .iter()
+                    .filter(|b| b["type"] == "text")
+                    .map(|b| match &b["text"] {
+                        Value::String(s) => s.clone(),
+                        Value::Null => String::new(),
+                        other => other.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                _ => String::new(),
+            };
+            crate::stream::safe(&format!("{who}: {said}\n")) + "\n"
+        })
+        .collect()
+}
+
+/// Remove a Chat and its container file: an empty Chat leaves no file.
+pub fn forget(chat: &Path) {
+    let _ = std::fs::remove_file(chat);
+    let _ = std::fs::remove_file(container_file(chat));
+}
+
+/// A Chat's name, its file name without `.json`, as `list` prints it and
+/// `resume` takes it.
+pub fn name(chat: &Path) -> String {
+    let file = chat.file_name().unwrap_or_default().to_string_lossy();
+    file.strip_suffix(".json").unwrap_or(&file).to_string()
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;

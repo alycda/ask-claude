@@ -44,41 +44,42 @@ pub mod config;
 /// chats on disk under the state directory.
 pub mod history;
 
+/// the chat loop (`chat_loop` in `lib/chat.bash`).
+pub mod chat;
+
 /// Run the parsed CLI; the exit code is the bash script's (0 reply, 1 API
 /// error, 2 bad input, 130 after Ctrl-C). The order is the script's: the
 /// checks of `lib/config.bash` and the state directory for every form,
-/// then the form; for the one shot, the key, `-f`, then the request.
+/// then the form; for the one shot, the key, `-f`, then the request; for
+/// the chat loop, the key, then a new Chat.
 pub fn run(cli: cli::Cli) -> i32 {
     let r = &cli.request;
     let cfg = match config::check(r) {
         Ok(cfg) => cfg,
-        Err(refused) => {
-            eprintln!("ask-claude: {refused}");
-            return 2;
-        }
+        Err(refused) => return refuse(&refused),
     };
     let state = match history::state_dir() {
         Ok(state) => state,
-        Err(refused) => {
-            eprintln!("ask-claude: {refused}");
-            return 2;
-        }
+        Err(refused) => return refuse(&refused),
     };
     if cli.command.is_some() {
         todo!("R6, R7: list, resume, agent");
     }
+    let Some(api_key) = need_key() else {
+        return 2;
+    };
     let Some(prompt) = cli.prompt.as_deref() else {
-        todo!("R6: the chat loop");
+        let mut t = match open_transport(&cfg, api_key) {
+            Ok(t) => t,
+            Err(refused) => return refuse(&refused),
+        };
+        let mut args = request_args(r, &cfg, serde_json::json!([]));
+        let chat = history::new_chat(&state);
+        keep(&chat, &args.messages);
+        transport::catch_signals();
+        return chat::run_loop(&mut args, &mut t, &state, chat);
     };
 
-    let api_key = match std::env::var("ANTHROPIC_API_KEY") {
-        Ok(k) if !k.is_empty() => k,
-        _ => {
-            // `need_key` in lib/config.bash, word for word
-            eprintln!("ask-claude: no key: export ANTHROPIC_API_KEY");
-            return 2;
-        }
-    };
     // -f: the file's contents, trailing newlines dropped as `$(cat ..)`
     // drops them, then a blank line, then the prompt
     let mut text = String::new();
@@ -88,19 +89,53 @@ pub fn run(cli: cli::Cli) -> i32 {
                 text.push_str(String::from_utf8_lossy(&bytes).trim_end_matches('\n'));
                 text.push_str("\n\n");
             }
-            Err(_) => {
-                eprintln!("ask-claude: cannot read {file}");
-                return 2;
-            }
+            Err(_) => return refuse(&format!("cannot read {file}")),
         }
     }
     text.push_str(prompt);
 
+    let mut args = request_args(
+        r,
+        &cfg,
+        serde_json::json!([{ "role": "user", "content": text }]),
+    );
+    let mut t = match open_transport(&cfg, api_key) {
+        Ok(t) => t,
+        Err(refused) => return refuse(&refused),
+    };
+    transport::catch_signals();
+    one_shot(&mut args, &mut t, &state)
+}
+
+/// `die` in the script: the message on stderr, exit 2.
+fn refuse(message: &str) -> i32 {
+    eprintln!("ask-claude: {message}");
+    2
+}
+
+/// The key, or None after `need_key`'s message (lib/config.bash, word for
+/// word): checked where a request can happen, so `list` works without one.
+fn need_key() -> Option<String> {
+    match std::env::var("ANTHROPIC_API_KEY") {
+        Ok(k) if !k.is_empty() => Some(k),
+        _ => {
+            refuse("no key: export ANTHROPIC_API_KEY");
+            None
+        }
+    }
+}
+
+/// What every request of this run carries from the flags, around a history.
+fn request_args(
+    r: &cli::RequestFlags,
+    cfg: &config::Config,
+    messages: serde_json::Value,
+) -> request::Args {
     let skills = match r.skills.as_deref() {
         Some(list) if !list.is_empty() => request::skills(list).to_string(),
         _ => String::new(),
     };
-    let mut args = request::Args {
+    request::Args {
         advisor: r.advisor.clone().unwrap_or_default(),
         mcp_tool: r.mcp_tool.join(" "),
         model: r.model.clone(),
@@ -112,10 +147,14 @@ pub fn run(cli: cli::Cli) -> i32 {
         web: r.web,
         mcp: r.mcp.clone(),
         mcp_token: std::env::var("ASK_CLAUDE_MCP_TOKEN").unwrap_or_default(),
-        messages: serde_json::json!([{ "role": "user", "content": text }]),
+        messages,
         tools: Vec::new(),
-    };
+    }
+}
 
+/// The API, or `ASK_CLAUDE_REPLAY`, inside the test logs; `Err` is a
+/// request log that is not private.
+fn open_transport(cfg: &config::Config, api_key: String) -> Result<transport::Logged, String> {
     let env_path = |name: &str| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())
@@ -125,19 +164,11 @@ pub fn run(cli: cli::Cli) -> i32 {
         Some(path) => Box::new(transport::Replay::new(path)),
         None => Box::new(transport::Http::new(&cfg.base_url, api_key)),
     };
-    let mut t = match transport::Logged::new(
+    transport::Logged::new(
         inner,
         env_path("ASK_CLAUDE_REQUEST_LOG"),
         env_path("ASK_CLAUDE_BETA_LOG"),
-    ) {
-        Ok(t) => t,
-        Err(refused) => {
-            eprintln!("ask-claude: {refused}");
-            return 2;
-        }
-    };
-    transport::catch_signals();
-    one_shot(&mut args, &mut t, &state)
+    )
 }
 
 /// The `anthropic-beta` value of a request, as `call` in
@@ -304,7 +335,7 @@ pub fn one_shot(
 
 /// Save the Chat; a write that fails is reported and the turn goes on, as
 /// a failed redirect in the script does.
-fn keep(chat: &std::path::Path, turns: &serde_json::Value) {
+pub(crate) fn keep(chat: &std::path::Path, turns: &serde_json::Value) {
     if let Err(e) = history::save(chat, turns) {
         eprintln!("ask-claude: cannot save {}: {e}", chat.display());
     }

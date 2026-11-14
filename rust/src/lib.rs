@@ -76,7 +76,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         max_tokens,
         system: r.system.clone().unwrap_or_default(),
         effort: format!("{:?}", r.effort).to_lowercase(),
-        skills: skills.clone(),
+        skills,
         container_id: String::new(),
         web: r.web,
         mcp: r.mcp.clone(),
@@ -85,33 +85,68 @@ pub fn run(cli: cli::Cli) -> i32 {
         tools: Vec::new(),
     };
 
-    match std::env::var_os("ASK_CLAUDE_REPLAY") {
-        Some(path) => one_shot(&args, &mut transport::Replay::new(path.into())),
-        None => {
-            let base_url = r
-                .base_url
-                .clone()
-                .unwrap_or_else(|| "https://api.anthropic.com".to_string());
-            let mut betas = String::from("server-side-fallback-2026-07-01");
-            if !skills.is_empty() {
-                betas.push_str(",code-execution-2025-08-25");
-            }
-            one_shot(&args, &mut transport::Http::new(base_url, api_key, betas))
+    let env_path = |name: &str| {
+        std::env::var_os(name)
+            .filter(|v| !v.is_empty())
+            .map(std::path::PathBuf::from)
+    };
+    let inner: Box<dyn transport::Transport + Send> = match env_path("ASK_CLAUDE_REPLAY") {
+        Some(path) => Box::new(transport::Replay::new(path)),
+        None => Box::new(transport::Http::new(
+            r.base_url.as_deref().unwrap_or("https://api.anthropic.com"),
+            api_key,
+        )),
+    };
+    let mut t = match transport::Logged::new(
+        inner,
+        env_path("ASK_CLAUDE_REQUEST_LOG"),
+        env_path("ASK_CLAUDE_BETA_LOG"),
+    ) {
+        Ok(t) => t,
+        Err(refused) => {
+            eprintln!("ask-claude: {refused}");
+            return 2;
         }
+    };
+    one_shot(&args, &mut t)
+}
+
+/// The `anthropic-beta` value of a request, as `call` in
+/// `lib/messages.bash` sets it once per user turn: skills run in the
+/// code-execution sandbox, `--mcp` needs the MCP client, and the advisor
+/// beta goes with `--advisor` and also with a history that holds advisor
+/// blocks (a chat resumed without `--advisor`), which the API refuses
+/// without it.
+fn betas(args: &request::Args) -> String {
+    let mut betas = String::from("server-side-fallback-2026-07-01");
+    if !args.skills.is_empty() {
+        betas.push_str(",code-execution-2025-08-25");
     }
+    if !args.mcp.is_empty() {
+        betas.push_str(",mcp-client-2025-11-20");
+    }
+    if !args.advisor.is_empty()
+        || args
+            .messages
+            .to_string()
+            .contains("\"advisor_tool_result\"")
+    {
+        betas.push_str(",advisor-tool-2026-03-01");
+    }
+    betas
 }
 
 /// R5: one request, its stream printed to stdout as `lib/stream.jq` does,
 /// then the `[model in=.. ..]` line and any `[stopped: ..]` on stderr, the
 /// way `call` in `lib/messages.bash` ends a turn. 0 on a reply, 1 on an
 /// API or transport error.
-pub fn one_shot<T: transport::Transport>(args: &request::Args, t: &mut T) -> i32 {
+pub fn one_shot(args: &request::Args, t: &mut dyn transport::Transport) -> i32 {
     use std::io::{Read, Write};
     use stream::safe;
 
     let t0 = std::time::Instant::now();
     let raw = match t
-        .send(&request::body(args).to_string())
+        .send(&request::body(args).to_string(), &betas(args))
         .and_then(|mut reply| {
             let mut raw = Vec::new();
             reply.read_to_end(&mut raw).map(|_| sse::decode(&raw))

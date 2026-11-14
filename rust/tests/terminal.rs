@@ -436,6 +436,33 @@ fn terminal_agent_asks_on_the_terminal_y_allows_enter_denies() {
     assert_eq!(results(dir.path()), ["allow", "deny"], "{screen}");
 }
 
+/// A line typed before a prompt was shown is not an answer to it. The
+/// first `y` answers the first ask; the second `y`, sent in the same
+/// write, is in the terminal's queue before the second prompt exists, so
+/// whoever typed it had not seen that call's name or input. The second
+/// prompt must still wait, and Enter alone then denies. Security-audit
+/// run 4 (lead 5) queued `y` ahead of a prompt and the call was allowed.
+/// Two asks, so the order is fixed by the test and not by how fast the
+/// binary reaches its first prompt.
+#[test]
+fn terminal_agent_does_not_take_type_ahead_as_the_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let replay = asking(dir.path(), 2);
+    let Some(mut term) = agent_on_terminal(dir.path(), &replay) else {
+        return;
+    };
+    term.wait_for("", r#"allow bash {"command":"echo 1"}? [y/N/a(lways)] "#);
+    term.type_keys(b"y\ry\r");
+    term.wait_for("", r#"allow bash {"command":"echo 2"}? [y/N/a(lways)] "#);
+    // not type_keys: where the queued line answered, the binary has
+    // exited and the pipe is closed; the assertion below reports that
+    let _ = term.keys.write_all(b"\r");
+    let _ = term.keys.flush();
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    assert_eq!(results(dir.path()), ["allow", "deny"], "{screen}");
+}
+
 /// `a` allows this call and every later call of that tool in this
 /// process, without asking again.
 #[test]

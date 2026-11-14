@@ -35,7 +35,12 @@ enforce belong elsewhere.
 - **A value shown for approval is encoded exactly once, by `jq -c`.** Never
   stack `tostring` with `@tsv` or another escaping layer; the double
   encoding displays a different command from the one being approved.
-  Source: "the confirmation prompt shows the tool input encoded once".
+  Inside that one encoding, every code point `safe` would drop and every
+  invisible one it keeps (the bidi marks, zero-width characters, U+FEFF)
+  is written as a JSON escape before `safe` runs, so nothing in the value
+  approved is missing or hidden on screen. Source: "the confirmation
+  prompt shows the tool input encoded once", "what a medium review of the
+  bidi controls in safe found".
 
 ## Values the API controls
 

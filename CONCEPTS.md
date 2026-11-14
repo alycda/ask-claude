@@ -33,7 +33,7 @@ A jq program that reads a whole Stream at once and produces one value from it. T
 *Avoid:* reassembler, for the general concept; it names the Messages fold only.
 
 ### safe
-The filter every string not typed by the user at this prompt passes through before it reaches the terminal: replies, error messages, tool results, skill bodies. It keeps tab and newline and drops every other control character, so a reply cannot retitle the terminal, erase lines or write the clipboard, and it drops the nine bidirectional formatting characters U+202A to U+202E and U+2066 to U+2069, so it cannot reorder what the user reads. The marks U+200E, U+200F and U+061C stay: ordinary right-to-left text carries them.
+The filter every string not typed by the user at this prompt passes through before it reaches the terminal: replies, error messages, tool results, skill bodies. It keeps tab and newline and drops every other control character, so a reply cannot retitle the terminal, erase lines or write the clipboard, and it drops the nine bidirectional formatting characters U+202A to U+202E and U+2066 to U+2069, so it cannot override the order of what the user reads. The marks U+200E, U+200F and U+061C stay: ordinary right-to-left text carries them, though they can still move a neutral character such as punctuation, and zero-width characters stay too. A tool confirmation therefore shows its input with all of these written as escapes, never dropped or invisible.
 
 ## Chats and what they carry
 

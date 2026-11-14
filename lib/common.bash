@@ -6,16 +6,28 @@
 #
 # reads:   ASK_CLAUDE_EVENTS ANTHROPIC_API_KEY ASK_CLAUDE_VERSION;
 #          LIB STATE (ask-claude), HOST (config)
-# sets:    SAFE DOLLARS (read by every module that prints API text)
+# sets:    SAFE FOR_APPROVAL DOLLARS (read by every module that prints API text)
 # defines: event error_kind headers api_error sse_data
 
-# SAFE: prefix for every jq program that prints text to the terminal (the
-# live printer has its own copy in lib/stream.jq). Replies and error messages
-# may carry control characters; jq -r decodes \u001b etc. into raw bytes.
+# SAFE: prefix for every jq program that prints text to the terminal.
+# lib/stream.jq, lib/session.jq and lib/session-history.jq carry their own
+# copies and rust/src/stream.rs the Rust one: change all five together.
+# Replies and error messages may carry control characters; jq -r decodes
+# \u001b etc. into raw bytes.
 # The bidirectional formatting characters U+202A-U+202E and U+2066-U+2069
 # go too (they reorder what the user reads); the marks U+200E, U+200F and
 # U+061C stay.
 SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159) and (. < 8234 or . > 8238) and (. < 8294 or . > 8297)))) | implode else . end; '
+# FOR_APPROVAL: `for_approval`, a value as a tool confirmation shows it: its
+# `tojson`, with the code points safe would drop (C1, the nine bidi
+# formatting characters) and the invisible ones it keeps (U+061C,
+# U+200B-U+200F, U+2060-U+2064, U+FEFF) written as \uXXXX escapes inside
+# that same JSON. Dropped or hidden, they would show a value other than the
+# one approved. Still one encoding: the escapes decode to the value itself.
+# Then safe, like every value shown.
+# shellcheck disable=SC2016  # a jq program, not a shell string
+# shellcheck disable=SC2034  # read by lib/agent-turn.bash
+FOR_APPROVAL='def for_approval: tojson | explode | map(. as $c | if (. >= 128 and . <= 159) or . == 1564 or (. >= 8203 and . <= 8207) or (. >= 8234 and . <= 8238) or (. >= 8288 and . <= 8292) or (. >= 8294 and . <= 8297) or . == 65279 then "\\u" + ([4096, 256, 16, 1] | map(($c / . | floor) % 16 | "0123456789abcdef"[.:. + 1]) | join("")) else [.] | implode end) | join(""); '
 # DOLLARS: cents as the API gives them (a string) to "$1.23", for the usage
 # line, `agent list` and `agent budget`
 # shellcheck disable=SC2016  # a jq program, not a shell string

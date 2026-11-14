@@ -7,7 +7,7 @@
 # reads:   usage_agent usage_environment usage_budget usage_file usage_vault
 #          usage_repo usage_memory usage_local_mcp ASK_CLAUDE_REPLAY
 #          ASK_CLAUDE_CONFIRM ASK_CLAUDE_VERSION GITHUB_TOKEN; LIB STATE
-#          (ask-claude), BASE_URL (config), SAFE DOLLARS (common),
+#          (ask-claude), BASE_URL (config), SAFE FOR_APPROVAL DOLLARS (common),
 #          LOCAL_MCP_PID LOCAL_MCP_TOOLS (local-mcp)
 # sets:    turn stream_pid ALWAYS session_tty session_interrupted, the INT
 #          trap for a turn and the EXIT trap for the process
@@ -108,9 +108,11 @@ session_answer() {
     id=$(jq -r '.id // empty' <<<"$ask")
     [ -n "$id" ] || continue
     # name and input go to the terminal (the prompt and the status lines):
-    # safe, like every other API value printed; the id goes back unchanged
+    # safe, like every other API value printed; the id goes back unchanged.
+    # The input goes through for_approval first: a bidi or zero-width
+    # character in it is an escape on screen, never dropped or invisible.
     name=$(jq -r "$SAFE"'.name | tostring | safe' <<<"$ask")
-    input=$(jq -r "$SAFE"'.input | tojson | safe' <<<"$ask")
+    input=$(jq -r "$SAFE$FOR_APPROVAL"'.input | for_approval | safe' <<<"$ask")
     result=$(session_confirm "$name" "$input")
     [ "$result" = allow ] && echo "ask-claude: allowed $name ($input)" >&2
     [ "$result" = deny ] && [ -n "${ASK_CLAUDE_CONFIRM:-}" ] && echo "ask-claude: denied $name ($input): ASK_CLAUDE_CONFIRM=$ASK_CLAUDE_CONFIRM" >&2
@@ -132,7 +134,7 @@ session_answer() {
       continue
     fi
     shown=$(jq -r "$SAFE"'.name | tostring | safe' <<<"$use")
-    input=$(jq -r "$SAFE"'.input | tojson | safe' <<<"$use")
+    input=$(jq -r "$SAFE$FOR_APPROVAL"'.input | for_approval | safe' <<<"$use")
     result=$(session_confirm "local $shown" "$input")
     if [ "$result" = allow ]; then
       echo "ask-claude: allowed local $shown ($input)" >&2

@@ -137,8 +137,8 @@ build:
 # the Rust unit tests: every lib/*.jq twin against the same goldens
 [group('rust')]
 [working-directory: 'rust']
-rust-test:
-    cargo test
+rust-test *ARGS:
+    cargo test {{ ARGS }}
 
 # fmt --check and clippy, the Rust side of `just lint`
 [group('rust')]

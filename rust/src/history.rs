@@ -1,8 +1,7 @@
 //! Chats on disk under the State directory (`lib/chat.bash`, and the
-//! state directory lines of `lib/config.bash`). U4 holds the one shot's
-//! part: the directory, a new Chat, private writes; `list`, `resume`, the
-//! rest of the container file and the owner, symlink and mode checks on
-//! the directory are U5's.
+//! state directory lines of `lib/config.bash`): the directory and its
+//! checks, a new Chat, private writes, the container file, `list` and the
+//! chat `resume` picks.
 
 use std::fs::OpenOptions;
 use std::io::{self, Write};
@@ -11,21 +10,14 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 /// `$XDG_STATE_HOME/ask-claude`, or `~/.local/state/ask-claude`, created
-/// private (`mkdir -p` then `chmod 700`). The message on failure is the
-/// script's.
+/// and checked by [`private_state`].
 pub fn state_dir() -> Result<PathBuf, String> {
     let base = match std::env::var_os("XDG_STATE_HOME").filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
         None => PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state"),
     };
     let state = base.join("ask-claude");
-    std::fs::create_dir_all(&state).map_err(|_| format!("cannot create {}", state.display()))?;
-    private_dir(&state).map_err(|_| {
-        format!(
-            "cannot make {} private (chmod 700); keep the history in a directory you own",
-            state.display()
-        )
-    })?;
+    private_state(&state)?;
     Ok(state)
 }
 
@@ -35,27 +27,78 @@ pub fn state_dir() -> Result<PathBuf, String> {
 /// 700), when another account owns it, or when others can still write it.
 /// Fixed names are written there, so a directory another account controls
 /// could have them planted (CODING_STANDARDS.md, files and state).
-pub fn private_state(state: &Path) -> Result<(), String> {
-    let _ = state;
-    todo!("U5: the state directory checks")
-}
-
-/// The owner and mode half of [`private_state`], over what the directory's
-/// stat said: `me` is this process's effective uid.
-#[cfg_attr(not(test), allow(dead_code))]
-fn verdict(state: &Path, me: u32, owner: u32, mode: u32) -> Result<(), String> {
-    let _ = (state, me, owner, mode);
-    todo!("U5: the state directory checks")
-}
-
+///
+/// Unlike the script, the chmod and the stat act on one open directory,
+/// opened without following a link, so a name swapped between the checks
+/// cannot send them elsewhere. Later opens still go by name: an ancestor
+/// another account can write is the audit's open lead, which this does not
+/// close.
 #[cfg(unix)]
-fn private_dir(dir: &std::path::Path) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+pub fn private_state(state: &Path) -> Result<(), String> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+
+    let shown = state.display();
+    let symlink = || {
+        format!("{shown} is a symlink; keep the history in a private directory, not a link to one")
+    };
+    let cannot_create = || format!("cannot create {shown}");
+    let not_private = || {
+        format!("cannot make {shown} private (chmod 700); keep the history in a directory you own")
+    };
+    let private = || std::fs::Permissions::from_mode(0o700);
+
+    std::fs::create_dir_all(state).map_err(|_| cannot_create())?;
+    if std::fs::symlink_metadata(state).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(symlink());
+    }
+    let open = || {
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(state)
+    };
+    let dir = match open() {
+        // a directory of ours we cannot read: chmod it by name (it was no
+        // link a moment ago) and open it again, as the script's chmod would
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            std::fs::set_permissions(state, private()).map_err(|_| not_private())?;
+            open()
+        }
+        other => other,
+    };
+    let dir = dir.map_err(|e| match e.raw_os_error() {
+        Some(libc::ELOOP) => symlink(),
+        _ => cannot_create(),
+    })?;
+    dir.set_permissions(private()).map_err(|_| not_private())?;
+    let meta = dir.metadata().map_err(|_| not_private())?;
+    // SAFETY: geteuid(2) takes nothing and cannot fail
+    let me = unsafe { libc::geteuid() };
+    verdict(state, me, meta.uid(), meta.mode())
 }
 
 #[cfg(not(unix))]
-fn private_dir(_dir: &std::path::Path) -> std::io::Result<()> {
+pub fn private_state(state: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(state).map_err(|_| format!("cannot create {}", state.display()))
+}
+
+/// The owner and mode half of [`private_state`], over what the directory's
+/// stat said: `me` is this process's effective uid. The write bits are the
+/// group's and others', the two the script cuts from `ls -ldn`.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn verdict(state: &Path, me: u32, owner: u32, mode: u32) -> Result<(), String> {
+    if owner != me {
+        return Err(format!(
+            "{} is owned by uid {owner}, not you; keep the history in a directory you own",
+            state.display()
+        ));
+    }
+    if mode & 0o022 != 0 {
+        return Err(format!(
+            "{} is writable by other accounts; keep the history in a private directory",
+            state.display()
+        ));
+    }
     Ok(())
 }
 

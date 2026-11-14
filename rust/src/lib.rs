@@ -10,6 +10,12 @@
 
 pub mod cli;
 
+/// The repository's `VERSION`, the one number `just bump` moves and the
+/// bash script copies into `ASK_CLAUDE_VERSION`; `Cargo.toml` carries none.
+pub fn version() -> &'static str {
+    include_str!("../../VERSION").trim()
+}
+
 /// the Messages API event stream, line by line.
 pub mod sse;
 

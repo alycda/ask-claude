@@ -8,7 +8,7 @@ use ask_claude::cli::Cli;
 fn main() {
     let cli = Cli::parse();
     if cli.version {
-        println!("ask-claude {}", env!("CARGO_PKG_VERSION"));
+        println!("ask-claude {}", ask_claude::version());
         return;
     }
     if cli.usage_spec {

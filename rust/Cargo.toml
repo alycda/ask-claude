@@ -1,6 +1,6 @@
 [package]
 name = "ask-claude"
-version = "0.5.0"
+# no `version`: the binary's is the repository's VERSION (src/lib.rs)
 edition = "2024"
 description = "Talk to Claude from a shell: the Rust port of the bash ask-claude (docs/plan.md, phase 4)"
 license = "MIT"

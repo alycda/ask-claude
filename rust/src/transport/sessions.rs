@@ -35,6 +35,74 @@ pub trait Sessions {
     /// download that failed, an error status included (`curl --fail`);
     /// what reached `to` before it is the caller's to throw away.
     fn download(&mut self, id: &str, name: &str, to: &mut dyn Write) -> io::Result<()>;
+
+    /// `file_upload`: `bytes` to POST /v1/files as the file `name`; the
+    /// response body whatever its status, for the caller to read the id
+    /// or the error from. An `Err` is a request that got no response.
+    fn upload(&mut self, name: &str, bytes: &[u8]) -> io::Result<String>;
+}
+
+/// The content type curl gives a form part by its file's extension, case
+/// aside (`ContentTypeForFilename` in curl's lib/mime.c); the Files API
+/// keeps it as the file's MIME type.
+fn content_type(name: &str) -> &'static str {
+    const TYPES: [(&str, &str); 10] = [
+        (".gif", "image/gif"),
+        (".jpg", "image/jpeg"),
+        (".jpeg", "image/jpeg"),
+        (".png", "image/png"),
+        (".svg", "image/svg+xml"),
+        (".txt", "text/plain"),
+        (".htm", "text/html"),
+        (".html", "text/html"),
+        (".pdf", "application/pdf"),
+        (".xml", "application/xml"),
+    ];
+    let lower = name.to_ascii_lowercase();
+    TYPES
+        .iter()
+        .find(|(ext, _)| lower.ends_with(ext))
+        .map_or("application/octet-stream", |(_, t)| t)
+}
+
+/// The body `curl -F file=@<path>` sends, and its content type: one part
+/// named `file` under `boundary`, the file's name with `"`, CR and LF
+/// percent-encoded as curl's form escaping writes them.
+fn form(boundary: &str, name: &str, bytes: &[u8]) -> (String, Vec<u8>) {
+    let filename = name
+        .replace('"', "%22")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A");
+    let mut body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: {}\r\n\r\n",
+        content_type(name)
+    )
+    .into_bytes();
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (format!("multipart/form-data; boundary={boundary}"), body)
+}
+
+/// A boundary in curl's shape (24 dashes, 22 letters and digits) that the
+/// bytes do not contain, from the standard library's per-process random
+/// hash keys: no random crate for one string.
+fn boundary(bytes: &[u8]) -> String {
+    use std::hash::{BuildHasher, Hasher};
+    const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    loop {
+        let state = std::collections::hash_map::RandomState::new();
+        let tail: String = (0..22u8)
+            .map(|i| {
+                let mut h = state.build_hasher();
+                h.write_u8(i);
+                ALNUM[(h.finish() % ALNUM.len() as u64) as usize] as char
+            })
+            .collect();
+        let b = format!("{}{tail}", "-".repeat(24));
+        if !bytes.windows(b.len()).any(|w| w == b.as_bytes()) {
+            return b;
+        }
+    }
 }
 
 /// The API: `ma_call`'s curl and `session_stream_open`'s, with the headers
@@ -144,6 +212,22 @@ impl Sessions for Http {
         io::copy(&mut response.into_body().into_reader(), to)?;
         Ok(())
     }
+
+    /// POST /v1/files as a form, with the key and the API version only:
+    /// the Files API is out of beta, and the body is not JSON. The
+    /// script's curl has no time limit here; this has the stream's.
+    fn upload(&mut self, name: &str, bytes: &[u8]) -> io::Result<String> {
+        let (content_type, body) = form(&boundary(bytes), name, bytes);
+        let response = self
+            .streams
+            .post(format!("{}/v1/files", self.root))
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2026-10-21")
+            .header("content-type", content_type)
+            .send(&body[..])
+            .map_err(io::Error::other)?;
+        body_text(response)
+    }
 }
 
 /// `ASK_CLAUDE_REPLAY` for sessions. A call is answered from the replay
@@ -236,6 +320,11 @@ impl Sessions for Replay {
             }
         }
     }
+
+    /// `file_upload`'s replay branch: the id it stands in for the API's.
+    fn upload(&mut self, _name: &str, _bytes: &[u8]) -> io::Result<String> {
+        Ok("{\"id\":\"file_FIXTURE01\"}\n".to_string())
+    }
 }
 
 /// The request log around another sessions transport: each body `ma_call`
@@ -269,6 +358,17 @@ impl Sessions for Logged {
 
     fn download(&mut self, id: &str, name: &str, to: &mut dyn Write) -> io::Result<()> {
         self.inner.download(id, name, to)
+    }
+
+    /// An upload is logged as `{"file": <name>}`, the form being file
+    /// contents and not a line of JSON. The script writes that line under
+    /// replay only; here a live upload is logged the same way, so the log
+    /// holds every request either way.
+    fn upload(&mut self, name: &str, bytes: &[u8]) -> io::Result<String> {
+        if let Some(log) = &self.requests {
+            super::log_request(log, &crate::tojson(&serde_json::json!({ "file": name })))?;
+        }
+        self.inner.upload(name, bytes)
     }
 }
 

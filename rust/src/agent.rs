@@ -48,7 +48,7 @@ pub fn run(
                 Ok(id) => id,
                 Err(refused) => return crate::refuse(&refused),
             };
-            let mut agent = match Agent::new(args, cfg, sessions, log) {
+            let mut agent = match Agent::new(args, cli, cfg, sessions, log) {
                 Ok(agent) => agent,
                 Err(code) => return code,
             };
@@ -68,12 +68,14 @@ pub fn run(
         }
         Some(_) => todo!("U6 step 3: agent tools"),
     }
-    let mut agent = match Agent::new(args, cfg, sessions, log) {
+    let mut agent = match Agent::new(args, cli, cfg, sessions, log) {
         Ok(agent) => agent,
         Err(code) => return code,
     };
-    if cli.file.is_some() {
-        todo!("U6 step 3: agent -f uploads the file and attaches it");
+    if let Some(file) = &cli.file
+        && !agent.upload(file)
+    {
+        return 1;
     }
     match &args.prompt {
         Some(prompt) => agent.one_shot(prompt),
@@ -411,6 +413,10 @@ struct Agent<'a> {
     environment: String,
     /// whole cents, "0" for none
     budget: String,
+    /// the Files API id of the `-f` file, attached to every session this
+    /// run creates, and its name; "" for none
+    file_id: String,
+    file_name: String,
 }
 
 impl<'a> Agent<'a> {
@@ -419,6 +425,7 @@ impl<'a> Agent<'a> {
     /// `--repo`) are checked first, before the ids.
     fn new(
         args: &AgentArgs,
+        cli: &Cli,
         cfg: &config::Config,
         sessions: PathBuf,
         log: &'a event::Log,
@@ -442,6 +449,12 @@ impl<'a> Agent<'a> {
         }
         let confirm = std::env::var("ASK_CLAUDE_CONFIRM").ok();
         let gate = session::Gate::new(confirm.as_deref()).map_err(|m| crate::refuse(&m))?;
+        // `[ -r "$usage_file" ]`: readable, a directory included
+        if let Some(file) = cli.file.as_deref().filter(|f| !f.is_empty())
+            && std::fs::File::open(file).is_err()
+        {
+            return Err(crate::refuse(&format!("cannot read {file}")));
+        }
         let api_key = crate::need_key(&cfg.provider).ok_or(2)?;
         let t = open(cfg, api_key).map_err(|m| crate::refuse(&m))?;
         transport::catch_signals();
@@ -453,7 +466,41 @@ impl<'a> Agent<'a> {
             agent,
             environment,
             budget: budget.clone(),
+            file_id: String::new(),
+            file_name: String::new(),
         })
+    }
+
+    /// `file_upload`: the `-f` file to the Files API, its id kept for the
+    /// sessions this run creates, mounted at /mnt/session/uploads/<name>;
+    /// false after `upload failed` and the API's message.
+    fn upload(&mut self, file: &str) -> bool {
+        let name = Path::new(file)
+            .file_name()
+            .map_or_else(|| file.to_string(), |n| n.to_string_lossy().into_owned());
+        let bytes = match std::fs::read(file) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!("ask-claude: upload failed: cannot read {file}: {e}");
+                return false;
+            }
+        };
+        let resp = self.t.upload(&name, &bytes).unwrap_or_else(|e| {
+            crate::failed(&e);
+            String::new()
+        });
+        match id_of(&resp).filter(|id| !id.is_empty()) {
+            Some(id) => {
+                self.file_id = id;
+                self.file_name = name;
+                true
+            }
+            None => {
+                let err = api_error(&resp).unwrap_or_default();
+                eprintln!("ask-claude: upload failed: {err}");
+                false
+            }
+        }
     }
 
     /// `ma_call`: the response body, or after a request that got none, the
@@ -563,6 +610,8 @@ impl<'a> Agent<'a> {
             environment: self.environment.clone(),
             budget: self.budget.clone(),
             prompt: prompt.to_string(),
+            file_id: self.file_id.clone(),
+            file_name: self.file_name.clone(),
             ..Default::default()
         });
         let resp = self.call("POST", "/sessions", Some(&crate::tojson(&body)));

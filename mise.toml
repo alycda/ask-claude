@@ -8,6 +8,8 @@ rust = "1.99.1"
 bats = "1.14.0"
 # lint: the version CI runs, so findings do not depend on the runner image
 shellcheck = "0.11.0"
+# just bench-compare: the bash and Rust binaries timed end to end
+hyperfine = "2.0.0"
 
 [settings]
 # install only what mise.lock pins: every tool, every platform, checked by sha256 (`mise lock` refreshes it)

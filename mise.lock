@@ -56,6 +56,35 @@ checksum_source = "mise-versions"
 url = "https://github.com/Orange-OpenSource/hurl/releases/download/8.0.1/hurl-8.0.1-x86_64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/Orange-OpenSource/hurl/releases/assets/407509619"
 
+[[tools.hyperfine]]
+version = "2.0.0"
+backend = "aqua:sharkdp/hyperfine"
+specifiers = ["2.0.0"]
+
+[tools.hyperfine."platforms.linux-arm64"]
+checksum = "sha256:f8244d1e17f8da23ee6b3ae2cdc04a6a185a450f6b74e09bff12e498038fcbc9"
+checksum_source = "mise-versions"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v2.0.0-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/619832203"
+
+[tools.hyperfine."platforms.linux-x64"]
+checksum = "sha256:ae2beda2ac99c098427e4f755244552daf20e514422889cca6d44421e2d93c87"
+checksum_source = "mise-versions"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v2.0.0-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/619831673"
+
+[tools.hyperfine."platforms.macos-arm64"]
+checksum = "sha256:590b839cfea386b384ce0b42d16daf2910277cf30950656194bb3a5f20dea81e"
+checksum_source = "mise-versions"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v2.0.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/619831330"
+
+[tools.hyperfine."platforms.macos-x64"]
+checksum = "sha256:8afe204926afefa406ad320cef0672b739e5f676c623fbd6d43d779bacd684e3"
+checksum_source = "mise-versions"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v2.0.0-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/619836081"
+
 [[tools.jq]]
 version = "1.8.2"
 backend = "aqua:jqlang/jq"

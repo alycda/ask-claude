@@ -153,6 +153,30 @@ lint:
 bench:
     cargo bench
 
+# bash vs Rust end to end: the replayed one shot over each recorded stream,
+# release build, timed with hyperfine (rust/target/bench-compare/)
+[group('rust')]
+bench-compare:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build --release --quiet --manifest-path rust/Cargo.toml
+    out=rust/target/bench-compare
+    rm -rf "$out/state" && mkdir -p "$out/state"
+    export ANTHROPIC_API_KEY=sk-ant-test-not-a-key XDG_STATE_HOME="$PWD/$out/state"
+    fixtures=text,thinking,code-execution,web-search,mcp
+    # the same reply out of both, or the timing compares different work
+    for f in ${fixtures//,/ }; do
+        sse=tests/fixtures/sse/$f.sse
+        diff <(ASK_CLAUDE_REPLAY=$sse ./ask-claude ping 2>/dev/null) \
+             <(ASK_CLAUDE_REPLAY=$sse rust/target/release/ask-claude ping 2>/dev/null) \
+            || { echo "bench-compare: bash and Rust print different replies for $f" >&2; exit 1; }
+    done
+    hyperfine --shell=none --warmup 3 \
+        -L fixture "$fixtures" -L bin ./ask-claude,rust/target/release/ask-claude \
+        --export-markdown "$out/summary.md" --export-json "$out/summary.json" \
+        "env ASK_CLAUDE_REPLAY=tests/fixtures/sse/{fixture}.sse {bin} ping"
+    echo "tables: $out/summary.md, raw: $out/summary.json"
+
 # the two binaries agree on their interface: usage diff of the bash spec and the Rust one
 [group('rust')]
 parity: build

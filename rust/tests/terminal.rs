@@ -39,6 +39,12 @@ impl Terminal {
     /// The binary with `args` on a pty, replaying text.sse, its state and
     /// HOME in `dir`; None where `script` is not installed.
     fn start(dir: &Path, args: &[&str]) -> Option<Self> {
+        Self::start_with(dir, args, None)
+    }
+
+    /// [`Terminal::start`], with stdout redirected to `stdout` when given,
+    /// so only stderr and the keys are on the pty.
+    fn start_with(dir: &Path, args: &[&str], stdout: Option<&Path>) -> Option<Self> {
         if Command::new("script").arg("--version").output().is_err() {
             eprintln!("skipped: no util-linux script to give the binary a terminal");
             return None;
@@ -51,6 +57,10 @@ impl Terminal {
         for a in args {
             line.push(' ');
             line.push_str(&shell_quote(a));
+        }
+        if let Some(file) = stdout {
+            line.push_str(" > ");
+            line.push_str(&shell_quote(&file.to_string_lossy()));
         }
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
@@ -219,4 +229,29 @@ fn terminal_ctrl_c_at_the_prompt_exits_130_without_the_epilogue() {
     let chats = chats(dir.path());
     assert_eq!(chats.len(), 1, "{chats:?}");
     assert_eq!(chats[0].as_array().map(Vec::len), Some(2));
+}
+
+/// The keys and the prompt on the terminal, the replies redirected to a
+/// file (`ask-claude > answers.txt`): the file holds the reply and the
+/// epilogue, and none of the codes the line editor sends the terminal
+/// (bracketed paste on and off, a cursor query). The script's `read -e`
+/// writes those to the terminal only.
+#[test]
+fn terminal_a_redirected_stdout_gets_no_terminal_codes() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.txt");
+    let Some(mut term) = Terminal::start_with(dir.path(), &[], Some(&out)) else {
+        return;
+    };
+    term.wait_for("", "> ");
+    term.type_keys(b"hi\r");
+    // the usage line is on stderr, the terminal; the next prompt follows it
+    term.wait_for("[claude-opus-5-5", "> ");
+    term.type_keys(b"\x04");
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    let file = std::fs::read_to_string(&out).unwrap();
+    assert!(file.contains("pong"), "{file:?}");
+    assert!(file.contains("claude: pong"), "{file:?}");
+    assert!(!file.contains('\x1b'), "{file:?}");
 }

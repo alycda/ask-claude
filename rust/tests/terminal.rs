@@ -56,6 +56,19 @@ impl Terminal {
         stdout: Option<&Path>,
         env: &[(&str, &std::ffi::OsStr)],
     ) -> Option<Self> {
+        Self::start_redirected(dir, args, stdout, None, env)
+    }
+
+    /// [`Terminal::start_env`], with stderr redirected to `stderr` when
+    /// given (`ask-claude 2> errors.txt`), so the pty carries stdout and
+    /// the keys, and whatever the binary writes to the terminal itself.
+    fn start_redirected(
+        dir: &Path,
+        args: &[&str],
+        stdout: Option<&Path>,
+        stderr: Option<&Path>,
+        env: &[(&str, &std::ffi::OsStr)],
+    ) -> Option<Self> {
         if Command::new("script").arg("--version").output().is_err() {
             eprintln!("skipped: no util-linux script to give the binary a terminal");
             return None;
@@ -71,6 +84,10 @@ impl Terminal {
         }
         if let Some(file) = stdout {
             line.push_str(" > ");
+            line.push_str(&shell_quote(&file.to_string_lossy()));
+        }
+        if let Some(file) = stderr {
+            line.push_str(" 2> ");
             line.push_str(&shell_quote(&file.to_string_lossy()));
         }
         let home = dir.join("home");
@@ -434,4 +451,36 @@ fn terminal_agent_always_answers_the_rest_of_the_run() {
     assert_eq!(status.code(), Some(0), "{screen}");
     assert_eq!(results(dir.path()), ["allow", "allow"], "{screen}");
     assert_eq!(screen.matches("[y/N/a(lways)]").count(), 1, "{screen}");
+}
+
+/// `agent ping 2> errors.txt`: stdin is still the terminal, so the gate
+/// asks, and the answer is read from /dev/tty. The question has to be on
+/// that same terminal: an answer typed there approves the name and input
+/// the question shows, and a question that went to a file showed the person
+/// answering nothing. Security-audit run 4 (lead 4) typed `yes` on such a
+/// terminal and the call was allowed, the prompt only in the file. The
+/// script asks with `read -p`, on stderr too, and fails this the same way.
+#[test]
+fn terminal_agent_asks_on_the_terminal_with_stderr_redirected() {
+    let dir = tempfile::tempdir().unwrap();
+    let replay = asking(dir.path(), 1);
+    let errors = dir.path().join("errors.txt");
+    let Some(mut term) = Terminal::start_redirected(
+        dir.path(),
+        &["agent", "ping"],
+        None,
+        Some(&errors),
+        &[
+            ("ASK_CLAUDE_REPLAY", replay.as_os_str()),
+            ("ASK_CLAUDE_AGENT", "agent_FIXTURE".as_ref()),
+            ("ASK_CLAUDE_ENVIRONMENT", "env_FIXTURE".as_ref()),
+        ],
+    ) else {
+        return;
+    };
+    term.wait_for("", r#"allow bash {"command":"echo 1"}? [y/N/a(lways)] "#);
+    term.type_keys(b"y\r");
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    assert_eq!(results(dir.path()), ["allow"], "{screen}");
 }

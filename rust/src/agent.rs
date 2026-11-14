@@ -439,6 +439,9 @@ struct Agent<'a> {
     repo: String,
     github_token: String,
     memories: Vec<String>,
+    /// the `--local-mcp` server that answers the custom tools, stopped
+    /// when the run ends (the script's EXIT trap)
+    local: Option<LocalMcp>,
 }
 
 impl<'a> Agent<'a> {
@@ -516,6 +519,11 @@ impl<'a> Agent<'a> {
         }
         let api_key = crate::need_key(&cfg.provider).ok_or(2)?;
         let t = open(cfg, api_key).map_err(|m| crate::refuse(&m))?;
+        // last, so a bad flag or a missing key fails before a server starts
+        let local = match args.local_mcp.as_deref().filter(|c| !c.is_empty()) {
+            Some(command) => Some(LocalMcp::start(command).map_err(|m| crate::refuse(&m))?),
+            None => None,
+        };
         transport::catch_signals();
         Ok(Self {
             t,
@@ -531,6 +539,7 @@ impl<'a> Agent<'a> {
             repo,
             github_token,
             memories: args.memory.clone(),
+            local,
         })
     }
 
@@ -837,7 +846,9 @@ impl<'a> Agent<'a> {
 
     /// `session_answer`: the events that answer what `fold` waits on,
     /// through the confirmation gate, which asks on the terminal when
-    /// stdin is one (`session_tty`) and `/dev/tty` can be read.
+    /// stdin is one (`session_tty`) and `/dev/tty` can be read; a custom
+    /// tool call the gate allows runs on the `--local-mcp` server, since
+    /// it runs on this machine (KTD9).
     fn answer(&mut self, fold: &Value) -> Value {
         use std::io::IsTerminal;
         let tty = std::io::stdin().is_terminal() && std::fs::File::open("/dev/tty").is_ok();
@@ -845,7 +856,9 @@ impl<'a> Agent<'a> {
             fold,
             &mut self.gate,
             tty,
-            None,
+            self.local
+                .as_mut()
+                .map(|l| l as &mut dyn session::LocalTools),
             &mut ask_tty,
             &mut std::io::stderr(),
         )

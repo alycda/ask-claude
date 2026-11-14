@@ -60,6 +60,8 @@ struct Request {
     path: String,
     headers: HashMap<String, String>,
     body: Value,
+    /// the body as it came, for one that is not JSON (a multipart upload)
+    raw: Vec<u8>,
 }
 
 impl Request {
@@ -192,12 +194,12 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
         body.resize(n, 0);
         r.read_exact(&mut body).ok()?;
     }
-    let body = serde_json::from_slice(&body).unwrap_or(Value::Null);
     Some(Request {
         method,
         path,
         headers,
-        body,
+        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+        raw: body,
     })
 }
 
@@ -1326,4 +1328,131 @@ fn http_agent_files_force_replaces_a_regular_file_and_never_a_symlink() {
         reqs[before..].iter().all(|r| !r.path.ends_with("/content")),
         "{reqs:?}"
     );
+}
+
+/// The Files API's answer to an upload: the new file, as the API sends it.
+const UPLOADED: &[u8] =
+    br#"{"id":"file_FIXTURE01","type":"file","filename":"notes.md","size_bytes":9}"#;
+
+/// The upload, the create and the stream of a one shot with `-f`.
+fn upload_mock() -> Mock {
+    Mock::route(Box::new(|r: &Request| {
+        match (r.method.as_str(), r.path.as_str()) {
+            ("POST", "/v1/files") => Reply::json(200, UPLOADED),
+            ("POST", "/v1/sessions") => Reply::json(200, CREATED),
+            ("GET", "/v1/sessions/sesn_FIXTURE01/events/stream") => Reply {
+                status: 200,
+                headers: vec![("content-type", "text/event-stream".into())],
+                body: session_fixture("text.sse"),
+                hold: None,
+            },
+            _ => Reply::json(
+                404,
+                br#"{"error":{"type":"not_found_error","message":"no route"}}"#,
+            ),
+        }
+    }))
+}
+
+/// The multipart body `curl -F file=@<path>` sends for one file: its
+/// boundary from the content type, the part named `file` with the file's
+/// name and a content type from its extension, the bytes, the closing
+/// boundary.
+fn form_part(r: &Request, filename: &str, content_type: &str, bytes: &[u8]) {
+    let ct = r.header("content-type");
+    let boundary = ct
+        .strip_prefix("multipart/form-data; boundary=")
+        .unwrap_or_else(|| panic!("not a form upload: {r:?}"));
+    let mut want = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n"
+    )
+    .into_bytes();
+    want.extend_from_slice(bytes);
+    want.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    assert_eq!(
+        String::from_utf8_lossy(&r.raw),
+        String::from_utf8_lossy(&want)
+    );
+}
+
+/// `agent -f`: the file goes to POST /v1/files as `curl -F` sends it, with
+/// the key and the API version but not the Managed Agents beta (the Files
+/// API is out of beta), and its id is attached to the session the create
+/// makes, the prompt not prefixed (the same golden the bats suite holds
+/// the replayed create to).
+#[test]
+fn http_agent_f_uploads_the_file_as_a_form_then_attaches_it() {
+    let mock = upload_mock();
+    let dir = tempfile::tempdir().unwrap();
+    let notes = dir.path().join("notes.md");
+    std::fs::write(&notes, "line one\n").unwrap();
+    let (out, _state) = agent(&mock.url, &["-f", notes.to_str().unwrap(), "summarize"], "");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "pong\n");
+
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 3, "{reqs:?}");
+    let upload = &reqs[0];
+    assert_eq!(
+        (upload.method.as_str(), upload.path.as_str()),
+        ("POST", "/v1/files")
+    );
+    assert_eq!(upload.header("x-api-key"), KEY);
+    assert_eq!(upload.header("anthropic-version"), "2026-10-21");
+    assert!(
+        !upload.headers.contains_key("anthropic-beta"),
+        "no beta header on the Files API: {upload:?}"
+    );
+    form_part(
+        upload,
+        "notes.md",
+        "application/octet-stream",
+        b"line one\n",
+    );
+
+    let golden: Value = serde_json::from_slice(
+        &std::fs::read(repo().join("tests/fixtures/agents/create-file.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(reqs[1].path, "/v1/sessions");
+    assert_eq!(reqs[1].body, golden);
+}
+
+/// The part's name and type as curl writes them: a double quote, a
+/// carriage return and a newline in the name percent-encoded (curl's form
+/// escaping), the type from the extension whatever its case.
+#[test]
+fn http_agent_f_names_and_types_the_part_as_curl_does() {
+    let mock = upload_mock();
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a\"b\nc.TXT");
+    std::fs::write(&file, "x").unwrap();
+    let (_out, _state) = agent(&mock.url, &["-f", file.to_str().unwrap(), "summarize"], "");
+    let reqs = mock.requests();
+    assert_eq!(reqs[0].path, "/v1/files", "{reqs:?}");
+    form_part(&reqs[0], "a%22b%0Ac.TXT", "text/plain", b"x");
+}
+
+/// An upload the API refuses: its message after `upload failed`, exit 1,
+/// and no session created.
+#[test]
+fn http_agent_f_a_refused_upload_exits_1_before_the_create() {
+    let mock = Mock::route(Box::new(|_: &Request| {
+        Reply::json(
+            400,
+            br#"{"type":"error","error":{"type":"invalid_request_error","message":"file too large"}}"#,
+        )
+    }));
+    let dir = tempfile::tempdir().unwrap();
+    let notes = dir.path().join("notes.md");
+    std::fs::write(&notes, "line one\n").unwrap();
+    let (out, _state) = agent(&mock.url, &["-f", notes.to_str().unwrap(), "summarize"], "");
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("upload failed: file too large"),
+        "{}",
+        stderr(&out)
+    );
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 1, "{reqs:?}");
 }

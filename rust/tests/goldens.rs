@@ -555,3 +555,469 @@ fn r6_session_create_bodies() {
         json("agents/create-resources.json")
     );
 }
+
+// ---- R6: the session fold's defaults, as session.bats pins them for jq ----
+
+fn stream(lines: &[&str]) -> Vec<Value> {
+    lines
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
+/// session.bats: "a stream without session.usage folds to zero usage, not
+/// null", and "a turn with no session.error or session.usage still folds":
+/// every `last(...)` has its explicit default (CODING_STANDARDS.md).
+#[test]
+fn r6_session_fold_without_usage_or_error_folds_to_zeros() {
+    let ev: Vec<Value> = events("sessions/text.sse")
+        .into_iter()
+        .filter(|e| e["type"] != "session.usage")
+        .collect();
+    let fold = session::fold(&ev);
+    assert_eq!(
+        fold["usage"],
+        serde_json::json!({"input_tokens": 0, "output_tokens": 0, "cache_read": 0,
+                           "cache_write": 0, "list_cost": "0", "active_seconds": 0})
+    );
+    let idle = stream(&[r#"{"type":"session.status_idle","stop_reason":{"type":"end_turn"}}"#]);
+    let fold = session::fold(&idle);
+    assert_eq!(fold["stop_reason"], "end_turn");
+    assert_eq!(fold["error"], Value::Null);
+    assert_eq!(fold["usage"]["input_tokens"], 0);
+    let empty = session::fold(&[]);
+    assert_eq!(empty["stop_reason"], Value::Null);
+    assert_eq!(empty["asks"], serde_json::json!([]));
+}
+
+/// session.bats: "an unknown event type prints nothing and folds to nothing".
+#[test]
+fn r6_session_unknown_events_print_and_fold_to_nothing() {
+    let ev = stream(&[
+        r#"{"type":"session.thread_created","id":"x"}"#,
+        r#"{"type":"workflow_run.created","id":"y"}"#,
+    ]);
+    assert_eq!(ev.iter().map(session::line).collect::<String>(), "");
+    let fold = session::fold(&ev);
+    assert_eq!(fold["stop_reason"], Value::Null);
+    assert_eq!(fold["event_ids"], serde_json::json!([]));
+    assert_eq!(fold["asks"], serde_json::json!([]));
+    assert_eq!(fold["error"], Value::Null);
+}
+
+/// session.bats: control characters never reach the terminal, and the
+/// tool markers name the tool with idle ending the line.
+#[test]
+fn r6_session_printer_drops_controls_and_marks_tools() {
+    let ev = stream(&[
+        r#"{"type":"agent.message","content":[{"type":"text","text":"a\u001b]0;owned\u0007b\u009bc\td\n"}]}"#,
+    ]);
+    assert_eq!(session::line(&ev[0]), "a]0;ownedbc\td\n");
+    let ev = stream(&[
+        r#"{"type":"agent.tool_use","name":"bash","input":{"command":"ls"}}"#,
+        r#"{"type":"agent.mcp_tool_use","name":"linear","input":{}}"#,
+        r#"{"type":"session.status_idle","stop_reason":{"type":"end_turn"}}"#,
+    ]);
+    assert_eq!(
+        ev.iter().map(session::line).collect::<String>(),
+        "(bash) (mcp linear) \n"
+    );
+}
+
+// ---- R6: session ids, the stubs under sessions/, and prefix lookup ----
+
+/// `session_id_ok`: `^sesn_[A-Za-z0-9_-]{1,128}$`, a whole-string match.
+#[test]
+fn r6_session_id_ok_is_the_api_shape_and_nothing_else() {
+    let long = format!("sesn_{}", "a".repeat(128));
+    for id in ["sesn_FIXTURE01", "sesn_a-b_C9", "sesn_x", long.as_str()] {
+        assert!(session::id_ok(id), "{id}");
+    }
+    let too_long = format!("sesn_{}", "a".repeat(129));
+    for id in [
+        "",
+        "sesn_",
+        "sesn_a.b",
+        "sesn_../x",
+        "../../victim.txt",
+        "x_abc",
+        "SESN_abc",
+        "sesn_abc\n",
+        "sesn_ab c",
+        "sesn_é",
+        too_long.as_str(),
+    ] {
+        assert!(!session::id_ok(id), "{id:?}");
+    }
+}
+
+/// `session_remember` writes `agent=`, `environment=`, `created=` lines,
+/// private; an id that is not one is refused at the sink and writes
+/// nothing, here or outside the directory.
+#[cfg(unix)]
+#[test]
+fn r6_session_remember_writes_the_stub_and_refuses_a_bad_id_at_the_sink() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let sessions = tmp.path().join("state/sessions");
+    session::remember(&sessions, "sesn_FIXTURE01", "agent_FIXTURE", "env_FIXTURE").unwrap();
+    let stub = fs::read_to_string(sessions.join("sesn_FIXTURE01")).unwrap();
+    let lines: Vec<&str> = stub.lines().collect();
+    assert_eq!(
+        lines[..2],
+        ["agent=agent_FIXTURE", "environment=env_FIXTURE"]
+    );
+    let created = lines[2].strip_prefix("created=").unwrap();
+    assert!(
+        created.len() == 15
+            && created.as_bytes()[8] == b'T'
+            && created
+                .bytes()
+                .enumerate()
+                .all(|(i, b)| i == 8 || b.is_ascii_digit()),
+        "{created}"
+    );
+    assert!(stub.ends_with('\n') && lines.len() == 3, "{stub:?}");
+    let mode = fs::metadata(sessions.join("sesn_FIXTURE01"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+
+    let other = tmp.path().join("other/sessions");
+    for bad in ["../../victim.txt", "sesn_../x", "sesn_"] {
+        assert!(session::remember(&other, bad, "a", "e").is_err(), "{bad}");
+    }
+    assert!(!tmp.path().join("other").exists());
+    assert!(!tmp.path().join("victim.txt").exists());
+}
+
+/// `session_find`: a unique prefix with or without `sesn_`, an id itself
+/// when nothing here matches, and the script's three refusals. A name with
+/// a path part or a glob character never reaches the lookup; a passed-
+/// through id is held to the id shape (stricter than the script, which
+/// passes any `sesn_*` on to a URL).
+#[test]
+fn r6_session_find_by_prefix_or_id() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sessions = tmp.path().join("sessions");
+    fs::create_dir_all(&sessions).unwrap();
+    for id in ["sesn_abc1", "sesn_abd2", "sesn_xyz"] {
+        fs::write(sessions.join(id), "agent=a\n").unwrap();
+    }
+    assert_eq!(session::find(&sessions, "abc").unwrap(), "sesn_abc1");
+    assert_eq!(session::find(&sessions, "sesn_xy").unwrap(), "sesn_xyz");
+    assert_eq!(session::find(&sessions, "sesn_xyz").unwrap(), "sesn_xyz");
+    assert_eq!(
+        session::find(&sessions, "ab"),
+        Err("\"ab\" matches 2 sessions, see `ask-claude agent list`".into())
+    );
+    assert_eq!(
+        session::find(&sessions, "sesn_elsewhere").unwrap(),
+        "sesn_elsewhere"
+    );
+    assert_eq!(
+        session::find(&sessions, "nope"),
+        Err(
+            "nothing to resume: \"nope\" is not a session id, nor a prefix of one started here"
+                .into()
+        )
+    );
+    for bad in ["../x", "sesn_a/b", "ab*", "a?", "[a]"] {
+        assert_eq!(
+            session::find(&sessions, bad),
+            Err("resume takes a session id or a prefix from `ask-claude agent list`".into()),
+            "{bad}"
+        );
+    }
+    assert!(session::find(&sessions, "sesn_a b").is_err());
+    // no sessions/ yet: an id is still an id
+    let none = tmp.path().join("none");
+    assert_eq!(session::find(&none, "sesn_abc").unwrap(), "sesn_abc");
+}
+
+// ---- R6: the confirmation gate and the answer to a fold ----
+
+/// A prompt that must not be shown.
+fn no_prompt(prompt: &str) -> Option<String> {
+    panic!("prompted: {prompt}")
+}
+
+/// The fold of agent-confirm.bats' fixture: one bash call waiting.
+fn waiting(input: Value) -> Value {
+    serde_json::json!({
+        "stop_reason": "requires_action", "event_ids": ["sevt_T1"],
+        "asks": [{"id": "sevt_T1", "name": "bash", "input": input}],
+        "custom": [], "usage": {}, "error": null
+    })
+}
+
+fn confirmation(id: &str, result: &str) -> Value {
+    serde_json::json!({"type": "user.tool_confirmation", "tool_use_id": id, "result": result})
+}
+
+/// agent-confirm.bats: off a terminal the default is deny, and stderr says
+/// how to change it; ASK_CLAUDE_CONFIRM=ask says so twice, as the script
+/// does (the gate's line, then the answer's).
+#[test]
+fn r6_session_answer_off_a_terminal_denies_and_says_why() {
+    let fold = waiting(serde_json::json!({"command": "echo pong"}));
+    let mut err = Vec::new();
+    let mut gate = session::Gate::new(None).unwrap();
+    let out = session::answer(&fold, &mut gate, false, None, &mut no_prompt, &mut err);
+    assert_eq!(
+        out,
+        serde_json::json!({"events": [confirmation("sevt_T1", "deny")]})
+    );
+    assert_eq!(
+        String::from_utf8(err).unwrap(),
+        "ask-claude: denied bash ({\"command\":\"echo pong\"}): stdin is not a terminal (ASK_CLAUDE_CONFIRM=allow to allow unattended)\n"
+    );
+
+    let mut err = Vec::new();
+    let mut gate = session::Gate::new(Some("ask")).unwrap();
+    session::answer(&fold, &mut gate, false, None, &mut no_prompt, &mut err);
+    assert_eq!(
+        String::from_utf8(err).unwrap(),
+        "ask-claude: denied bash ({\"command\":\"echo pong\"}): stdin is not a terminal (ASK_CLAUDE_CONFIRM=allow to allow unattended)\n\
+         ask-claude: denied bash ({\"command\":\"echo pong\"}): ASK_CLAUDE_CONFIRM=ask\n"
+    );
+}
+
+/// agent-confirm.bats: ASK_CLAUDE_CONFIRM=allow and =deny answer without
+/// asking, terminal or not, and say what they did.
+#[test]
+fn r6_session_answer_follows_the_policy_without_asking() {
+    let fold = waiting(serde_json::json!({"command": "echo pong"}));
+    for tty in [false, true] {
+        let mut err = Vec::new();
+        let mut gate = session::Gate::new(Some("allow")).unwrap();
+        let out = session::answer(&fold, &mut gate, tty, None, &mut no_prompt, &mut err);
+        assert_eq!(
+            out,
+            serde_json::json!({"events": [confirmation("sevt_T1", "allow")]})
+        );
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "ask-claude: allowed bash ({\"command\":\"echo pong\"})\n"
+        );
+
+        let mut err = Vec::new();
+        let mut gate = session::Gate::new(Some("deny")).unwrap();
+        let out = session::answer(&fold, &mut gate, tty, None, &mut no_prompt, &mut err);
+        assert_eq!(
+            out,
+            serde_json::json!({"events": [confirmation("sevt_T1", "deny")]})
+        );
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "ask-claude: denied bash ({\"command\":\"echo pong\"}): ASK_CLAUDE_CONFIRM=deny\n"
+        );
+    }
+}
+
+/// agent-confirm.bats: an unknown ASK_CLAUDE_CONFIRM exits 2 with this
+/// message; an empty one is the default, ask.
+#[test]
+fn r6_session_gate_refuses_an_unknown_policy() {
+    assert_eq!(
+        session::Gate::new(Some("yes")).unwrap_err(),
+        "ASK_CLAUDE_CONFIRM must be ask, allow or deny, got: yes"
+    );
+    assert!(session::Gate::new(Some("")).is_ok());
+}
+
+/// On a terminal the gate asks in the script's words; y allows this call,
+/// a allows this tool name for the rest of the process (KTD9: per name, in
+/// memory), anything else denies. No terminal denies even after an always,
+/// since that check comes first.
+#[test]
+fn r6_session_gate_asks_and_remembers_always_per_tool_name() {
+    let mut gate = session::Gate::new(None).unwrap();
+    let mut err = Vec::new();
+    let mut prompts = Vec::new();
+    let mut answers = vec![
+        Some("y".to_string()),
+        Some("a".into()),
+        None,
+        Some("n".into()),
+    ]
+    .into_iter();
+    let mut ask = |p: &str| {
+        prompts.push(p.to_string());
+        answers.next().unwrap()
+    };
+    let input = r#"{"command":"ls"}"#;
+    assert!(gate.confirm("bash", input, true, &mut ask, &mut err));
+    assert!(gate.confirm("bash", input, true, &mut ask, &mut err));
+    // always for bash: no prompt
+    assert!(gate.confirm("bash", input, true, &mut ask, &mut err));
+    // another name asks again: None (no line) and n deny
+    assert!(!gate.confirm(
+        "str_replace_based_edit_tool",
+        "{}",
+        true,
+        &mut ask,
+        &mut err
+    ));
+    assert!(!gate.confirm("skill", "{}", true, &mut ask, &mut err));
+    assert_eq!(
+        prompts,
+        [
+            "allow bash {\"command\":\"ls\"}? [y/N/a(lways)] ",
+            "allow bash {\"command\":\"ls\"}? [y/N/a(lways)] ",
+            "allow str_replace_based_edit_tool {}? [y/N/a(lways)] ",
+            "allow skill {}? [y/N/a(lways)] ",
+        ]
+    );
+    // no terminal: deny before the always is looked at
+    let mut err = Vec::new();
+    assert!(!gate.confirm("bash", input, false, &mut no_prompt, &mut err));
+    assert!(
+        String::from_utf8(err)
+            .unwrap()
+            .contains("stdin is not a terminal")
+    );
+}
+
+/// agent-confirm.bats: the input is shown encoded once (a real newline is
+/// one backslash and an n), and the name and input reach the terminal
+/// through safe, while the id goes back unchanged.
+#[test]
+fn r6_session_answer_shows_input_encoded_once_and_through_safe() {
+    let fold = waiting(serde_json::json!({"command": "echo safe\nid"}));
+    let mut err = Vec::new();
+    let mut gate = session::Gate::new(Some("allow")).unwrap();
+    session::answer(&fold, &mut gate, false, None, &mut no_prompt, &mut err);
+    assert_eq!(
+        String::from_utf8(err).unwrap(),
+        "ask-claude: allowed bash ({\"command\":\"echo safe\\nid\"})\n"
+    );
+
+    let fold = serde_json::json!({
+        "asks": [{"id": "sevt_T\u{1b}1", "name": "bash\u{1b}[2Kread_file", "input": "\u{1b}]0;T\u{7}ls\u{7f}"}],
+        "custom": []
+    });
+    let mut err = Vec::new();
+    let out = session::answer(&fold, &mut gate, false, None, &mut no_prompt, &mut err);
+    let err = String::from_utf8(err).unwrap();
+    // the name loses its raw ESC to safe; the input is JSON, whose escapes
+    // (jq's tojson writes DEL as \u007f too) leave safe nothing to drop.
+    // Oracle: `jq -r "$SAFE"'.input | tojson | safe'` on this ask
+    assert_eq!(
+        err,
+        "ask-claude: allowed bash[2Kread_file (\"\\u001b]0;T\\u0007ls\\u007f\")\n"
+    );
+    assert_eq!(out["events"][0]["tool_use_id"], "sevt_T\u{1b}1");
+}
+
+/// An ask without an id is skipped, as the script's `[ -n "$id" ] ||
+/// continue`; custom tool calls come after the confirmations.
+#[test]
+fn r6_session_answer_skips_an_ask_without_an_id_and_puts_customs_last() {
+    let fold = serde_json::json!({
+        "asks": [{"name": "bash", "input": {}}, {"id": "sevt_A", "name": "bash", "input": {}}],
+        "custom": [{"id": "sevt_C", "name": "get_weather", "input": {"city": "Paris"}}]
+    });
+    let mut err = Vec::new();
+    let mut gate = session::Gate::new(Some("allow")).unwrap();
+    let out = session::answer(&fold, &mut gate, false, None, &mut no_prompt, &mut err);
+    let events = out["events"].as_array().unwrap();
+    assert_eq!(events.len(), 2, "{out}");
+    assert_eq!(events[0], confirmation("sevt_A", "allow"));
+    assert_eq!(events[1]["type"], "user.custom_tool_result");
+    assert_eq!(events[1]["custom_tool_use_id"], "sevt_C");
+}
+
+/// A custom tool call without --local-mcp gets the error result
+/// `session_answer` sends, whatever the policy; with a server, a
+/// tool it lacks is an error, a denied call is an error, and an allowed
+/// one is the server's result, after the gate's "local" prompt.
+#[test]
+fn r6_session_answer_custom_tool_calls() {
+    let fold = serde_json::json!({
+        "asks": [],
+        "custom": [{"id": "sevt_C", "name": "get_weather", "input": {"city": "Paris"}}]
+    });
+    let unavailable = |text: String| {
+        serde_json::json!({"events": [{
+            "type": "user.custom_tool_result", "custom_tool_use_id": "sevt_C",
+            "content": [{"type": "text", "text": text}], "is_error": true
+        }]})
+    };
+    let mut gate = session::Gate::new(Some("allow")).unwrap();
+    let mut err = Vec::new();
+    let out = session::answer(&fold, &mut gate, false, None, &mut no_prompt, &mut err);
+    assert_eq!(
+        out,
+        unavailable(format!(
+            "Tool unavailable: ask-claude {} runs no local tools without --local-mcp. Do not call it again; answer the user without it.",
+            ask_claude::version()
+        ))
+    );
+    assert!(err.is_empty());
+
+    struct Server(Vec<Value>);
+    impl session::LocalTools for Server {
+        fn has(&self, name: &str) -> bool {
+            name == "get_weather"
+        }
+        fn call(&mut self, tool_use: &Value) -> Value {
+            self.0.push(tool_use.clone());
+            serde_json::json!({"type": "user.custom_tool_result", "custom_tool_use_id": tool_use["id"],
+                               "content": [{"type": "text", "text": "Sunny in Paris"}]})
+        }
+    }
+    let mut server = Server(Vec::new());
+    let mut err = Vec::new();
+    let out = session::answer(
+        &fold,
+        &mut gate,
+        false,
+        Some(&mut server),
+        &mut no_prompt,
+        &mut err,
+    );
+    assert_eq!(out["events"][0]["content"][0]["text"], "Sunny in Paris");
+    assert_eq!(server.0.len(), 1);
+    assert_eq!(
+        String::from_utf8(err).unwrap(),
+        "ask-claude: allowed local get_weather ({\"city\":\"Paris\"})\n"
+    );
+
+    let mut deny = session::Gate::new(Some("deny")).unwrap();
+    let mut err = Vec::new();
+    let out = session::answer(
+        &fold,
+        &mut deny,
+        false,
+        Some(&mut server),
+        &mut no_prompt,
+        &mut err,
+    );
+    assert_eq!(
+        out,
+        unavailable("Tool call denied by the user: get_weather did not run.".into())
+    );
+    assert_eq!(
+        String::from_utf8(err).unwrap(),
+        "ask-claude: denied local get_weather ({\"city\":\"Paris\"}): ASK_CLAUDE_CONFIRM=deny\n"
+    );
+    assert_eq!(server.0.len(), 1, "a denied call does not run");
+
+    let other = serde_json::json!({
+        "asks": [], "custom": [{"id": "sevt_C", "name": "launch", "input": {}}]
+    });
+    let out = session::answer(
+        &other,
+        &mut gate,
+        false,
+        Some(&mut server),
+        &mut no_prompt,
+        &mut Vec::new(),
+    );
+    assert_eq!(
+        out,
+        unavailable("Tool unavailable: the local MCP server has no tool named launch. Do not call it again; answer the user without it.".into())
+    );
+}

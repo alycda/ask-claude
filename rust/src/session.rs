@@ -227,3 +227,95 @@ pub fn history(page: &Value) -> String {
         })
         .collect()
 }
+
+/// `session_id_ok` in `lib/agent-api.bash`: the shape of a session id the
+/// API hands out, `sesn_` and 1 to 128 of letters, digits, `_` or `-`. An
+/// id names a file under `sessions/`, a URL path segment and a terminal
+/// line, so nothing else passes (CODING_STANDARDS.md, values the API
+/// controls).
+pub fn id_ok(id: &str) -> bool {
+    let _ = id;
+    todo!("U5: session pure parts")
+}
+
+/// `session_remember`: the stub `agent list` and `agent resume` read,
+/// `<sessions>/<id>`, written private through a temp file and a rename.
+/// The id is checked here, at the sink, whatever the caller checked.
+pub fn remember(
+    sessions: &std::path::Path,
+    id: &str,
+    agent: &str,
+    environment: &str,
+) -> std::io::Result<()> {
+    let _ = (sessions, id, agent, environment);
+    todo!("U5: session pure parts")
+}
+
+/// `session_find`: the session `arg` names, a unique prefix (with or
+/// without `sesn_`) of one started here, or `arg` itself when it is a
+/// session id; `Err` is the message for exit 2.
+pub fn find(sessions: &std::path::Path, arg: &str) -> Result<String, String> {
+    let _ = (sessions, arg);
+    todo!("U5: session pure parts")
+}
+
+/// The confirmation gate (`session_confirm`, KTD9): `ASK_CLAUDE_CONFIRM`
+/// as a policy, and the "always" answers this process gave, by tool name,
+/// in memory and never in a file, so no other process can plant or reuse
+/// one.
+#[derive(Debug)]
+pub struct Gate {
+    _todo: (),
+}
+
+impl Gate {
+    /// The gate for `ASK_CLAUDE_CONFIRM`'s value (unset or empty is ask);
+    /// `Err` is the message for exit 2.
+    pub fn new(value: Option<&str>) -> Result<Self, String> {
+        let _ = value;
+        todo!("U5: session pure parts")
+    }
+
+    /// Whether the call of `name` with `input` (both as shown: through
+    /// safe, the input encoded once) may run. The order is KTD9's: the
+    /// policy, then no terminal means deny (said on `err`), then an
+    /// "always" for this name, then `ask` with the script's prompt, which
+    /// returns the line typed or None.
+    pub fn confirm(
+        &mut self,
+        name: &str,
+        input: &str,
+        tty: bool,
+        ask: &mut dyn FnMut(&str) -> Option<String>,
+        err: &mut dyn std::io::Write,
+    ) -> bool {
+        let _ = (name, input, tty, ask, err);
+        todo!("U5: session pure parts")
+    }
+}
+
+/// The tools a `--local-mcp` server offers, for [`answer`]'s custom tool
+/// calls (`local_mcp_has` and `local_mcp_call` in `lib/local-mcp.bash`).
+pub trait LocalTools {
+    /// Whether the server lists a tool of this name.
+    fn has(&self, name: &str) -> bool;
+    /// Run the call; the `user.custom_tool_result` event.
+    fn call(&mut self, tool_use: &Value) -> Value;
+}
+
+/// `session_answer`: the events that answer what a fold waits on, as
+/// `{"events": [...]}`: a `user.tool_confirmation` per ask, through the
+/// gate, then a `user.custom_tool_result` per custom tool call, run on
+/// `local` when it lists the tool and the gate allows it, else an error
+/// result. What it says goes to `err`.
+pub fn answer(
+    fold: &Value,
+    gate: &mut Gate,
+    tty: bool,
+    local: Option<&mut dyn LocalTools>,
+    ask: &mut dyn FnMut(&str) -> Option<String>,
+    err: &mut dyn std::io::Write,
+) -> Value {
+    let _ = (fold, gate, tty, local, ask, err);
+    todo!("U5: session pure parts")
+}

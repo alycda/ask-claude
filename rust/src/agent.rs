@@ -417,6 +417,11 @@ struct Agent<'a> {
     /// run creates, and its name; "" for none
     file_id: String,
     file_name: String,
+    /// `--vault`, `--repo` with its token, `--memory`, checked
+    vaults: Vec<String>,
+    repo: String,
+    github_token: String,
+    memories: Vec<String>,
 }
 
 impl<'a> Agent<'a> {
@@ -431,6 +436,43 @@ impl<'a> Agent<'a> {
         log: &'a event::Log,
     ) -> Result<Self, i32> {
         let given = |v: &Option<String>| v.clone().filter(|v| !v.is_empty());
+        // the resources, before any request: the API's own checks come after
+        if let Some(v) = session::words(&args.vault).find(|v| !v.starts_with("vlt_")) {
+            return Err(crate::refuse(&format!(
+                "--vault takes vault ids (vlt_...), got: {v}"
+            )));
+        }
+        let memories: Vec<&str> = session::words(&args.memory).collect();
+        if let Some(m) = memories
+            .iter()
+            .find(|m| !m.split(':').next().unwrap_or("").starts_with("memstore_"))
+        {
+            return Err(crate::refuse(&format!(
+                "--memory takes memory store ids (memstore_...), with :ro for read-only, got: {m}"
+            )));
+        }
+        if memories.len() > 8 {
+            return Err(crate::refuse(&format!(
+                "--memory: a session takes at most 8 memory stores, got {}",
+                memories.len()
+            )));
+        }
+        let repo = given(&args.repo).unwrap_or_default();
+        let mut github_token = String::new();
+        if !repo.is_empty() {
+            if !session::repo_ok(&repo) {
+                return Err(crate::refuse(&format!(
+                    "--repo takes owner/name[@branch] or a https://github.com URL, got: {repo}"
+                )));
+            }
+            // the token reaches the body from the environment, never an argument
+            github_token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
+            if github_token.is_empty() {
+                return Err(crate::refuse(&format!(
+                    "--repo needs GITHUB_TOKEN in the environment (a token that can read {repo})"
+                )));
+            }
+        }
         let Some(agent) = given(&args.agent) else {
             return Err(crate::refuse(
                 "no agent id: --agent or ASK_CLAUDE_AGENT (the Console, Agents)",
@@ -468,6 +510,10 @@ impl<'a> Agent<'a> {
             budget: budget.clone(),
             file_id: String::new(),
             file_name: String::new(),
+            vaults: args.vault.clone(),
+            repo,
+            github_token,
+            memories: args.memory.clone(),
         })
     }
 
@@ -612,6 +658,10 @@ impl<'a> Agent<'a> {
             prompt: prompt.to_string(),
             file_id: self.file_id.clone(),
             file_name: self.file_name.clone(),
+            vaults: self.vaults.clone(),
+            repo: self.repo.clone(),
+            github_token: self.github_token.clone(),
+            memories: self.memories.clone(),
             ..Default::default()
         });
         let resp = self.call("POST", "/sessions", Some(&crate::tojson(&body)));

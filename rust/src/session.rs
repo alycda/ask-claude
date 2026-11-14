@@ -177,10 +177,16 @@ pub fn create_body(args: &CreateArgs) -> Value {
 
 /// Each entry split on spaces, empties dropped: jq's `words` over the
 /// space-joined list the bash passes.
-fn words(list: &[String]) -> impl Iterator<Item = &str> {
+pub(crate) fn words(list: &[String]) -> impl Iterator<Item = &str> {
     list.iter()
         .flat_map(|s| s.split(' '))
         .filter(|w| !w.is_empty())
+}
+
+/// `--repo`'s shape, `^(https://github\.com/)?[^/@]+/[^/@]+(@.+)?$` in
+/// `session_prereqs`: what [`create_body`] can mount.
+pub fn repo_ok(repo: &str) -> bool {
+    repo_resource(repo, "").is_some()
 }
 
 /// `owner/name[@branch]` or `https://github.com/owner/name[@branch]`;

@@ -62,7 +62,17 @@ test:
     set -euo pipefail
     set -a; . "{{ justfile_directory() }}/.env"; set +a
     hurl --test --variable base_url=https://api.anthropic.com \
-        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") messages.hurl anthropic-stream.hurl
+        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") messages.hurl anthropic-stream.hurl errors.hurl
+
+# live: -s starts a code-execution sandbox and the reply carries container.id
+# (a few cents, so not part of test). Reads .env like test.
+[working-directory: 'tests']
+test-skills:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; . "{{ justfile_directory() }}/.env"; set +a
+    hurl --test --variable base_url=https://api.anthropic.com \
+        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") skills.hurl
 
 # Reads .env like test; the key reaches curl through a header file on a pipe.
 

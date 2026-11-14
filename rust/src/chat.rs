@@ -35,7 +35,14 @@ enum Input {
 impl Input {
     fn new() -> Self {
         use std::io::IsTerminal;
-        if !std::io::stdin().is_terminal() {
+        let (stdin, stdout, stderr) = (
+            std::io::stdin().is_terminal(),
+            std::io::stdout().is_terminal(),
+            std::io::stderr().is_terminal(),
+        );
+        // a terminal to edit on: stdin for the keys, and stdout or stderr
+        // for the codes the editor sends the terminal (see on_terminal)
+        if !stdin || !(stdout || stderr) {
             // read on a worker thread like a reply (KTD3), so a signal is
             // seen while the main thread waits for the next line
             return Self::Pipe(transport::lines(Box::new(std::io::stdin())));
@@ -67,7 +74,7 @@ impl Input {
             // the terminal is raw while reedline reads, so Ctrl-C is a key
             // here, not SIGINT: exit 130 without the epilogue, as the
             // script dies of the signal; Ctrl-D runs it
-            Self::Terminal(editor) => match editor.read_line(&Prompt) {
+            Self::Terminal(editor) => match on_terminal(|| editor.read_line(&Prompt)) {
                 Ok(reedline::Signal::Success(line) | reedline::Signal::HostCommand(line)) => {
                     Read::Line(line)
                 }
@@ -76,6 +83,46 @@ impl Input {
             },
         }
     }
+}
+
+/// Run `read` with stdout on the terminal. reedline paints on stderr, but
+/// crossterm writes the bracketed-paste toggles and its cursor-position
+/// query to stdout; with stdout redirected (`ask-claude > answers.txt`)
+/// they would land in the file around every prompt. So while the editor
+/// reads, fd 1 is stderr's terminal, and then the file again, the way the
+/// script's `read -e` keeps its codes on the terminal.
+#[cfg(unix)]
+fn on_terminal<T>(read: impl FnOnce() -> T) -> T {
+    use std::io::IsTerminal;
+    if std::io::stdout().is_terminal() {
+        return read();
+    }
+    let _ = std::io::stdout().flush();
+    // SAFETY: dup(2) of a descriptor this process holds open
+    let saved = unsafe { libc::dup(1) };
+    // SAFETY: dup2(2) between descriptors this process holds open; on
+    // failure fd 1 is unchanged
+    if saved < 0 || unsafe { libc::dup2(2, 1) } < 0 {
+        if saved >= 0 {
+            // SAFETY: the descriptor dup returned above, closed once
+            unsafe { libc::close(saved) };
+        }
+        return read();
+    }
+    let result = read();
+    let _ = std::io::stdout().flush();
+    // SAFETY: fd 1 back to the descriptor saved above, which is then
+    // closed once
+    unsafe {
+        libc::dup2(saved, 1);
+        libc::close(saved);
+    }
+    result
+}
+
+#[cfg(not(unix))]
+fn on_terminal<T>(read: impl FnOnce() -> T) -> T {
+    read()
 }
 
 /// The script's prompt, `> `, and nothing else.

@@ -452,6 +452,21 @@ fn r4_safe_keeps_tab_and_newline_and_drops_every_other_control_character() {
     assert_eq!(stream::safe("plain"), "plain");
 }
 
+/// The nine bidirectional formatting characters (U+202A to U+202E, U+2066 to
+/// U+2069) can reorder what the user reads and are dropped; the marks
+/// U+200E, U+200F and U+061C are ordinary RTL text and stay (KTD16).
+#[test]
+fn r4_safe_drops_the_bidi_formatting_characters_and_keeps_the_marks() {
+    assert_eq!(
+        stream::safe("a\u{202a}\u{202b}\u{202c}\u{202d}\u{202e}b\u{2066}\u{2067}\u{2068}\u{2069}c"),
+        "abc"
+    );
+    assert_eq!(
+        stream::safe("\u{200e}x\u{200f}y\u{61c}z"),
+        "\u{200e}x\u{200f}y\u{61c}z"
+    );
+}
+
 /// A reply carrying ESC, BEL, CSI (both the 7-bit `ESC [` and the C1
 /// U+009B), CR and DEL prints none of them through the printer, and tab
 /// and newline survive. Oracle: this event through `jq -rj -f
@@ -490,6 +505,20 @@ fn r6_session_history_text() {
         session::history(&json("sessions/chat/events.json")),
         read("sessions/chat/history.txt")
     );
+}
+
+/// The session printer and the history drop the bidi formatting characters
+/// and keep the marks. Oracle: these events through `jq -rj -f
+/// lib/session.jq` and `jq -r -f lib/session-history.jq` (session.bats).
+#[test]
+fn r6_session_printer_and_history_drop_the_bidi_formatting_characters() {
+    let message: Value = serde_json::from_str(
+        r#"{"type":"agent.message","content":[{"type":"text","text":"a\u202eb\u2069c\u200fd"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(session::line(&message), "abc\u{200f}d");
+    let page = serde_json::json!({ "data": [message] });
+    assert_eq!(session::history(&page), "agent: abc\u{200f}d\n\n");
 }
 
 #[test]

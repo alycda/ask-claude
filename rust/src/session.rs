@@ -70,12 +70,17 @@ pub fn fold(events: &[Value]) -> Value {
     let zero = json!(0);
     let n = |v: &Value| or(v, &zero).clone();
     let cw = &u["cache_creation"];
-    let cache_write = match (
+    let (a, b) = (
         n(&cw["ephemeral_5m_input_tokens"]),
         n(&cw["ephemeral_1h_input_tokens"]),
-    ) {
-        (a, b) if a.is_i64() && b.is_i64() => json!(a.as_i64().unwrap() + b.as_i64().unwrap()),
-        (a, b) => json!(a.as_f64().unwrap_or(0.0) + b.as_f64().unwrap_or(0.0)),
+    );
+    let cache_write = match a
+        .as_i64()
+        .zip(b.as_i64())
+        .and_then(|(a, b)| a.checked_add(b))
+    {
+        Some(sum) => json!(sum),
+        None => json!(a.as_f64().unwrap_or(0.0) + b.as_f64().unwrap_or(0.0)),
     };
     let error = last(&["session.error"])
         .map_or(&null, |e| &e["error"])

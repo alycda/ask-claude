@@ -30,6 +30,13 @@ serde_json = { version = "=1.0.154", features = ["preserve_order"] }
 # already, and the reply is SSE bytes for the printer, not one JSON value
 ureq = "=3.5.2"
 
+# umask(2) and signal(2) at the top of main, which std does not expose: files
+# private as the script's `umask 077` makes them, and SIGPIPE back to its
+# default so `ask-claude | head` ends the way curl does. Already in the tree
+# under ring and getrandom, so the pin adds no crate.
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
 [dev-dependencies]
 # tests/cli.rs: the binary under test
 assert_cmd = "=2.2.2"

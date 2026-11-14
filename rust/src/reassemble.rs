@@ -74,9 +74,10 @@ pub fn message(events: &[Value]) -> Value {
                     if !usage.is_object() {
                         usage = Value::Object(Map::new());
                     }
-                    let u = usage.as_object_mut().unwrap();
-                    for (k, v) in add {
-                        u.insert(k.clone(), v.clone());
+                    if let Some(u) = usage.as_object_mut() {
+                        for (k, v) in add {
+                            u.insert(k.clone(), v.clone());
+                        }
                     }
                 }
                 if !e["delta"]["container"].is_null() {

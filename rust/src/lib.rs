@@ -8,6 +8,10 @@
 //! inside is the port's business; the typed SSE model in [`sse`] is a
 //! starting shape, not a promise.
 
+// An API or file input error is an exit code the bash script would give,
+// never a panic (docs/plans, KTD4); tests may still unwrap.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod cli;
 
 /// The repository's `VERSION`, the one number `just bump` moves and the
@@ -47,9 +51,8 @@ pub fn run(cli: cli::Cli) -> i32 {
     let api_key = match std::env::var("ANTHROPIC_API_KEY") {
         Ok(k) if !k.is_empty() => k,
         _ => {
-            eprintln!(
-                "ask-claude: set ANTHROPIC_API_KEY (https://platform.claude.com/settings/keys)"
-            );
+            // `need_key` in lib/config.bash, word for word
+            eprintln!("ask-claude: no key: export ANTHROPIC_API_KEY");
             return 2;
         }
     };

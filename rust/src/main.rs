@@ -1,11 +1,15 @@
 //! ask-claude, the binary: parse the CLI, print the version or the usage spec
 //! when asked, otherwise hand over to the library (docs/plan.md, phase 4).
 
+// No panic reaches main: every input error is the bash exit code (KTD4).
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+
 use clap::{CommandFactory, Parser};
 
 use ask_claude::cli::Cli;
 
 fn main() {
+    process_defaults();
     let cli = Cli::parse();
     if cli.version {
         println!("ask-claude {}", ask_claude::version());
@@ -16,6 +20,23 @@ fn main() {
         return;
     }
     std::process::exit(ask_claude::run(cli));
+}
+
+/// What the bash script gets from its first lines and from being a shell:
+/// `umask 077`, so every file and directory this process creates (history,
+/// logs, downloads) is private to the user whatever the shell's umask, and
+/// SIGPIPE at its default, so a reader that goes away (`ask-claude | head`)
+/// ends this process the way it ends curl and jq. Rust ignores SIGPIPE
+/// before main, which turns that into a write error and `print!` into a
+/// panic.
+fn process_defaults() {
+    #[cfg(unix)]
+    // SAFETY: both calls only set process state, take no pointers, and run
+    // first in main, before any thread or file exists that they could race.
+    unsafe {
+        libc::umask(0o077);
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
 }
 
 /// The usage spec of this binary, as `usage diff` compares it with the bash

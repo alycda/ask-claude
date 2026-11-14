@@ -2,11 +2,15 @@
 /// or a directory whose `1.sse, 2.sse, ...` are the turns in order).
 /// `ASK_CLAUDE_REQUEST_LOG` appends each body that would have been sent.
 pub trait Transport {
-    /// Send a body, get the raw SSE of the reply.
-    fn send(&mut self, body: &str) -> std::io::Result<String>;
+    /// Send a body; the reply body as a reader, read as it arrives (KTD3),
+    /// so one loop prints each `data:` line and keeps it for the fold.
+    fn send(&mut self, body: &str) -> io::Result<Reply>;
 }
 
-use std::io;
+/// A reply body: the SSE of a stream, or an error body, as raw bytes.
+pub type Reply = Box<dyn Read + Send>;
+
+use std::io::{self, Read};
 use std::path::PathBuf;
 
 /// POST /v1/messages. An error status is not an `Err`: its body (the
@@ -28,9 +32,9 @@ impl Http {
 }
 
 impl Transport for Http {
-    fn send(&mut self, body: &str) -> io::Result<String> {
+    fn send(&mut self, body: &str) -> io::Result<Reply> {
         let url = format!("{}/v1/messages", self.base_url.trim_end_matches('/'));
-        ureq::post(&url)
+        let response = ureq::post(&url)
             .config()
             .http_status_as_error(false)
             .build()
@@ -39,11 +43,8 @@ impl Transport for Http {
             .header("anthropic-beta", &self.betas)
             .header("content-type", "application/json")
             .send(body)
-            .map_err(io::Error::other)?
-            .body_mut()
-            .read_to_vec()
-            .map(|raw| crate::sse::decode(&raw))
-            .map_err(io::Error::other)
+            .map_err(io::Error::other)?;
+        Ok(Box::new(response.into_body().into_reader()))
     }
 }
 
@@ -60,7 +61,7 @@ impl Replay {
 }
 
 impl Transport for Replay {
-    fn send(&mut self, body: &str) -> io::Result<String> {
+    fn send(&mut self, body: &str) -> io::Result<Reply> {
         if let Some(log) = std::env::var_os("ASK_CLAUDE_REQUEST_LOG") {
             use io::Write;
             let mut f = std::fs::OpenOptions::new()
@@ -70,11 +71,11 @@ impl Transport for Replay {
             writeln!(f, "{body}")?;
         }
         self.turn += 1;
-        let raw = if self.path.is_dir() {
-            std::fs::read(self.path.join(format!("{}.sse", self.turn)))?
+        let file = if self.path.is_dir() {
+            std::fs::File::open(self.path.join(format!("{}.sse", self.turn)))?
         } else {
-            std::fs::read(&self.path)?
+            std::fs::File::open(&self.path)?
         };
-        Ok(crate::sse::decode(&raw))
+        Ok(Box::new(file))
     }
 }

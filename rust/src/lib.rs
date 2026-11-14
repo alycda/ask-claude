@@ -106,11 +106,16 @@ pub fn run(cli: cli::Cli) -> i32 {
 /// way `call` in `lib/messages.bash` ends a turn. 0 on a reply, 1 on an
 /// API or transport error.
 pub fn one_shot<T: transport::Transport>(args: &request::Args, t: &mut T) -> i32 {
-    use std::io::Write;
+    use std::io::{Read, Write};
     use stream::safe;
 
     let t0 = std::time::Instant::now();
-    let raw = match t.send(&request::body(args).to_string()) {
+    let raw = match t
+        .send(&request::body(args).to_string())
+        .and_then(|mut reply| {
+            let mut raw = Vec::new();
+            reply.read_to_end(&mut raw).map(|_| sse::decode(&raw))
+        }) {
         Ok(raw) => raw,
         Err(e) => {
             eprintln!("ask-claude: {}", safe(&e.to_string()));

@@ -29,6 +29,10 @@ serde_json = { version = "=1.0.154", features = ["preserve_order"] }
 # R5: POST /v1/messages. No `json` feature: the body is serde_json text
 # already, and the reply is SSE bytes for the printer, not one JSON value
 ureq = "=3.5.2"
+# R5, KTD5: line editing for the chat loop on a terminal, bracketed paste
+# on so one paste is one turn; no features: no sqlite history, no system
+# clipboard. Its tree is reviewed in the commit that adds it (KTD20)
+reedline = { version = "=0.53.0", default-features = false }
 
 # umask(2) and signal(2) at the top of main, which std does not expose: files
 # private as the script's `umask 077` makes them, and SIGPIPE back to its

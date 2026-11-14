@@ -7,6 +7,7 @@
 //! terminal: whole lines, no prompt, and a last line without a newline
 //! dropped, so the bats suite drives it unchanged (KTD5).
 
+use std::borrow::Cow;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -24,31 +25,84 @@ enum Read {
     Interrupted,
 }
 
-/// Where the lines come from.
-struct Input {
-    lines: transport::Lines,
+/// Where the lines come from: plain lines off a pipe, line editing on a
+/// terminal (KTD5).
+enum Input {
+    Pipe(transport::Lines),
+    Terminal(Box<reedline::Reedline>),
 }
 
 impl Input {
     fn new() -> Self {
-        // read on a worker thread like a reply (KTD3), so a signal is seen
-        // while the main thread waits for the next line
-        Self {
-            lines: transport::lines(Box::new(std::io::stdin())),
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            // read on a worker thread like a reply (KTD3), so a signal is
+            // seen while the main thread waits for the next line
+            return Self::Pipe(transport::lines(Box::new(std::io::stdin())));
         }
+        // bracketed paste, so a pasted newline is text and one paste one
+        // turn; the history in memory only (FileBackedHistory without a
+        // file, reedline's default spelled out): a history file would keep
+        // the typed lines of a Chat that left no file; no colours
+        let editor = reedline::Reedline::create()
+            .use_bracketed_paste(true)
+            .with_history(Box::<reedline::FileBackedHistory>::default())
+            .with_highlighter(Box::<reedline::SimpleMatchHighlighter>::default())
+            .with_ansi_colors(false);
+        Self::Terminal(Box::new(editor))
     }
 
     fn read(&mut self) -> Read {
         use transport::Next;
-        match self.lines.next() {
-            Next::Line(raw) => match raw.strip_suffix(b"\n") {
-                Some(line) => Read::Line(String::from_utf8_lossy(line).into_owned()),
-                // `read` fails on a last line with no newline
-                None => Read::End,
+        match self {
+            Self::Pipe(lines) => match lines.next() {
+                Next::Line(raw) => match raw.strip_suffix(b"\n") {
+                    Some(line) => Read::Line(String::from_utf8_lossy(line).into_owned()),
+                    // `read` fails on a last line with no newline
+                    None => Read::End,
+                },
+                Next::Failed(_) | Next::End => Read::End,
+                Next::Interrupted => Read::Interrupted,
             },
-            Next::Failed(_) | Next::End => Read::End,
-            Next::Interrupted => Read::Interrupted,
+            // the terminal is raw while reedline reads, so Ctrl-C is a key
+            // here, not SIGINT: exit 130 without the epilogue, as the
+            // script dies of the signal; Ctrl-D runs it
+            Self::Terminal(editor) => match editor.read_line(&Prompt) {
+                Ok(reedline::Signal::Success(line) | reedline::Signal::HostCommand(line)) => {
+                    Read::Line(line)
+                }
+                Ok(reedline::Signal::CtrlC(_)) => Read::Interrupted,
+                Ok(_) | Err(_) => Read::End,
+            },
         }
+    }
+}
+
+/// The script's prompt, `> `, and nothing else.
+struct Prompt;
+
+impl reedline::Prompt for Prompt {
+    fn render_prompt_left(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_right(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_indicator(&self, _mode: reedline::PromptEditMode) -> Cow<'_, str> {
+        Cow::Borrowed("> ")
+    }
+
+    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_history_search_indicator(
+        &self,
+        search: reedline::PromptHistorySearch,
+    ) -> Cow<'_, str> {
+        Cow::Owned(format!("(reverse-i-search)`{}': ", search.term))
     }
 }
 

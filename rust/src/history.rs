@@ -268,14 +268,21 @@ pub fn load(chat: &Path) -> Option<Value> {
     serde_json::from_slice(&std::fs::read(chat).ok()?).ok()
 }
 
-/// `jq length`: what the script counts as a Chat's turns.
-fn length(v: &Value) -> Option<usize> {
+/// `jq length`: what the script counts as a Chat's turns. A number's is
+/// its absolute value, so a Chat file holding `5` has 5; a boolean has
+/// none, the error the script's `$(...)` turns into nothing.
+fn length(v: &Value) -> Option<Value> {
     match v {
-        Value::Array(a) => Some(a.len()),
-        Value::Object(o) => Some(o.len()),
-        Value::String(s) => Some(s.chars().count()),
-        Value::Null => Some(0),
-        _ => None,
+        Value::Array(a) => Some(a.len().into()),
+        Value::Object(o) => Some(o.len().into()),
+        Value::String(s) => Some(s.chars().count().into()),
+        Value::Null => Some(0.into()),
+        Value::Number(n) => Some(match (n.as_u64(), n.as_i64()) {
+            (Some(n), _) => n.into(),
+            (None, Some(n)) => n.unsigned_abs().into(),
+            _ => n.as_f64().map(f64::abs).into(),
+        }),
+        Value::Bool(_) => None,
     }
 }
 
@@ -313,7 +320,14 @@ pub fn find(state: &Path, name: Option<&str>) -> Result<PathBuf, String> {
     let Some(name) = name.filter(|n| !n.is_empty()) else {
         return chats(state)
             .into_iter()
-            .find(|chat| load(chat).as_ref().and_then(length).is_some_and(|n| n > 0))
+            // `[ "$(jq length "$f")" -gt 0 ]`: a whole number above 0
+            .find(|chat| {
+                load(chat)
+                    .as_ref()
+                    .and_then(length)
+                    .and_then(|n| n.as_u64())
+                    .is_some_and(|n| n > 0)
+            })
             .ok_or_else(nothing);
     };
     if name.contains(['/', '*', '?', '[']) {

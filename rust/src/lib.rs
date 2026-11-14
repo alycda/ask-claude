@@ -571,7 +571,9 @@ fn error_kind(body: &str) -> String {
         Value::Null => "unknown".into(),
         Value::Object(e) => match or(e.get("type").unwrap_or(&Value::Null), &Value::Null) {
             Value::Null => "unknown".into(),
-            t => text(t),
+            // the script takes it through `$(...)`, which drops trailing
+            // newlines, before `ident` tests its shape
+            t => text(t).trim_end_matches('\n').to_string(),
         },
         _ => "unreadable".into(),
     }
@@ -617,11 +619,12 @@ fn or<'a>(a: &'a serde_json::Value, b: &'a serde_json::Value) -> &'a serde_json:
     }
 }
 
-/// jq's `"\(x)"`: a string as itself, anything else as its JSON text.
+/// jq's `"\(x)"` and `tostring`: a string as itself, anything else as its
+/// JSON text, [`tojson`]'s (DEL escaped, as jq escapes it).
 fn text(v: &serde_json::Value) -> String {
     match v {
         serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
+        other => tojson(other),
     }
 }
 

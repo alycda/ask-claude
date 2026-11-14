@@ -231,6 +231,79 @@ fn terminal_ctrl_c_at_the_prompt_exits_130_without_the_epilogue() {
     assert_eq!(chats[0].as_array().map(Vec::len), Some(2));
 }
 
+/// SIGTERM or SIGHUP from another process while the editor waits
+/// at the prompt exits 130 then, without the epilogue, as off a pipe:
+/// not at the next key, and the Enter that follows saves no turn.
+#[test]
+fn terminal_a_signal_at_the_prompt_exits_130_without_the_epilogue() {
+    // kill -INT takes the SIGTERM path: the same handler, the same flag
+    for signal in [libc::SIGTERM, libc::SIGHUP] {
+        let dir = tempfile::tempdir().unwrap();
+        let Some(mut term) = Terminal::start(dir.path(), &[]) else {
+            return;
+        };
+        term.wait_for("", "> ");
+        term.type_keys(b"hi\r");
+        term.wait_for("", "pong");
+        term.wait_for("pong", "> ");
+        let pid = binary_pid(term.child.id());
+        // SAFETY: kill(2) of the binary this test started, still running
+        assert_eq!(unsafe { libc::kill(pid, signal) }, 0);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut exited = false;
+        while !exited && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+            exited = term.child.try_wait().unwrap().is_some();
+        }
+        if !exited {
+            // still at the prompt: this Enter would save a dangling turn
+            term.type_keys(b"again\r");
+        }
+        let (status, screen) = term.exit();
+        assert!(exited, "signal {signal}: still waiting for a key: {screen}");
+        assert_eq!(status.code(), Some(130), "signal {signal}: {screen}");
+        assert!(!screen.contains("resume with"), "{screen}");
+        let chats = chats(dir.path());
+        assert_eq!(chats.len(), 1, "{chats:?}");
+        assert_eq!(chats[0].as_array().map(Vec::len), Some(2), "{chats:?}");
+    }
+}
+
+/// The pid of the binary under the `script` whose pid is `script`: the
+/// process below it whose executable is the binary.
+fn binary_pid(script: u32) -> libc::pid_t {
+    let bin = match std::env::var_os("ASK_CLAUDE_BIN") {
+        Some(bin) => PathBuf::from(bin),
+        None => PathBuf::from(env!("CARGO_BIN_EXE_ask-claude")),
+    };
+    let bin = std::fs::canonicalize(bin).unwrap();
+    let parent = |pid: &str| -> Option<String> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let after = &stat[stat.rfind(')')? + 2..];
+        after.split(' ').nth(1).map(str::to_string)
+    };
+    let pids: Vec<String> = std::fs::read_dir("/proc")
+        .unwrap()
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|n| n.bytes().all(|b| b.is_ascii_digit()))
+        .collect();
+    let mut below = vec![script.to_string()];
+    let mut at = 0;
+    while at < below.len() {
+        let pid = below[at].clone();
+        if std::fs::read_link(format!("/proc/{pid}/exe")).is_ok_and(|exe| exe == bin) {
+            return pid.parse().unwrap();
+        }
+        below.extend(
+            pids.iter()
+                .filter(|p| parent(p).as_deref() == Some(&pid))
+                .cloned(),
+        );
+        at += 1;
+    }
+    panic!("no {} below script {script}", bin.display());
+}
+
 /// The keys and the prompt on the terminal, the replies redirected to a
 /// file (`ask-claude > answers.txt`): the file holds the reply and the
 /// epilogue, and none of the codes the line editor sends the terminal

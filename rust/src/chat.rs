@@ -55,7 +55,8 @@ impl Input {
             .use_bracketed_paste(true)
             .with_history(Box::<reedline::FileBackedHistory>::default())
             .with_highlighter(Box::<reedline::SimpleMatchHighlighter>::default())
-            .with_ansi_colors(false);
+            .with_ansi_colors(false)
+            .with_break_signal(wake_on_signal());
         Self::Terminal(Box::new(editor))
     }
 
@@ -75,6 +76,10 @@ impl Input {
             // here, not SIGINT: exit 130 without the epilogue, as the
             // script dies of the signal; Ctrl-D runs it
             Self::Terminal(editor) => match on_terminal(|| editor.read_line(&Prompt)) {
+                // a signal while the editor waited (SIGTERM, SIGHUP, kill
+                // -INT) broke the read, or a hangup ended it: 130 as off a
+                // pipe, never a turn or the epilogue
+                _ if transport::interrupted() => Read::Interrupted,
                 Ok(reedline::Signal::Success(line) | reedline::Signal::HostCommand(line)) => {
                     Read::Line(line)
                 }
@@ -83,6 +88,29 @@ impl Input {
             },
         }
     }
+}
+
+/// The editor's break signal, set once a signal has set the interrupt
+/// flag. The editor reads the keys in raw mode and resumes a wait that a
+/// signal cut short, so on its own it sits at the prompt until the next
+/// key; with a break signal it looks every 100 ms and returns. The watcher
+/// looks at the flag every 50 ms, as [`transport::lines`] does, and ends
+/// with the editor.
+fn wake_on_signal() -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let wake = std::sync::Arc::new(AtomicBool::new(false));
+    let watched = std::sync::Arc::downgrade(&wake);
+    std::thread::spawn(move || {
+        while let Some(wake) = watched.upgrade() {
+            if transport::interrupted() {
+                wake.store(true, Ordering::SeqCst);
+                return;
+            }
+            drop(wake);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
+    wake
 }
 
 /// Run `read` with stdout on the terminal. reedline paints on stderr, but

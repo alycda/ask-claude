@@ -80,7 +80,7 @@ pub fn fold(events: &[Value]) -> Value {
         .and_then(|(a, b)| a.checked_add(b))
     {
         Some(sum) => json!(sum),
-        None => json!(a.as_f64().unwrap_or(0.0) + b.as_f64().unwrap_or(0.0)),
+        None => crate::event::sum(a.as_f64().unwrap_or(0.0) + b.as_f64().unwrap_or(0.0)),
     };
     let error = last(&["session.error"])
         .map_or(&null, |e| &e["error"])
@@ -437,7 +437,7 @@ pub fn answer(
     // and `.input | tojson`, encoded once, through safe
     let shown = |e: &Value| {
         (
-            safe(&tostring(&e["name"])),
+            safe(&crate::text(&e["name"])),
             safe(&crate::tojson(&e["input"])),
         )
     };
@@ -464,7 +464,7 @@ pub fn answer(
             continue;
         };
         // the name for the model, as given; for the terminal, through safe
-        let name = tostring(&tool_use["name"]);
+        let name = crate::text(&tool_use["name"]);
         let Some(server) = local.as_deref_mut() else {
             events.push(custom_error(
                 &id,
@@ -498,12 +498,4 @@ pub fn answer(
         }
     }
     serde_json::json!({ "events": events })
-}
-
-/// jq's `tostring`: a string as itself, anything else as its JSON.
-fn tostring(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => crate::tojson(other),
-    }
 }

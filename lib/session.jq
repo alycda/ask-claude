@@ -11,7 +11,7 @@
 
 def safe:
     if type == "string" then
-        explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode
+        explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159) and (. < 8234 or . > 8238) and (. < 8294 or . > 8297)))) | implode
     else . end;
 
 (if .type == "agent.message" then

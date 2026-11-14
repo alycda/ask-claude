@@ -22,13 +22,16 @@ enforce belong elsewhere.
 
 ## What reaches the terminal
 
-- **Every string that came from the API goes through `safe` before it is
-  printed.** That includes values the shell extracts itself, not only the
-  jq renderers: tool names and inputs, stop reasons, event ids, raw bytes
-  of a non-SSE body. `safe` keeps tab and newline and drops every other C0
-  and C1 control character. Source: "strip terminal control characters
-  from everything ask-claude prints", "every Managed Agents value the shell
-  prints goes through safe".
+- **Every string not typed by the user at this prompt goes through `safe`
+  before it is printed.** That includes values the shell extracts itself,
+  not only the jq renderers: tool names and inputs, tool results, skill
+  bodies, stop reasons, event ids, raw bytes of a non-SSE body. `safe`
+  keeps tab and newline and drops every other C0 and C1 control character
+  and the bidirectional formatting characters U+202A to U+202E and U+2066
+  to U+2069; it keeps the marks U+200E, U+200F and U+061C. Source: "strip
+  terminal control characters from everything ask-claude prints", "every
+  Managed Agents value the shell prints goes through safe", "safe drops the
+  bidi formatting characters in every jq definition".
 - **A value shown for approval is encoded exactly once, by `jq -c`.** Never
   stack `tostring` with `@tsv` or another escaping layer; the double
   encoding displays a different command from the one being approved.

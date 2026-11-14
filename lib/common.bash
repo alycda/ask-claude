@@ -12,7 +12,10 @@
 # SAFE: prefix for every jq program that prints text to the terminal (the
 # live printer has its own copy in lib/stream.jq). Replies and error messages
 # may carry control characters; jq -r decodes \u001b etc. into raw bytes.
-SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode else . end; '
+# The bidirectional formatting characters U+202A-U+202E and U+2066-U+2069
+# go too (they reorder what the user reads); the marks U+200E, U+200F and
+# U+061C stay.
+SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159) and (. < 8234 or . > 8238) and (. < 8294 or . > 8297)))) | implode else . end; '
 # DOLLARS: cents as the API gives them (a string) to "$1.23", for the usage
 # line, `agent list` and `agent budget`
 # shellcheck disable=SC2016  # a jq program, not a shell string

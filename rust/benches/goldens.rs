@@ -90,6 +90,7 @@ fn request_bench(c: &mut Criterion) {
         mcp_tool: String::new(),
         mcp_token: "tok_FIXTURE".into(),
         messages: history,
+        tools: Vec::new(),
     };
     c.bench_function("request::body(everything)", |b| {
         b.iter(|| request::body(&args))

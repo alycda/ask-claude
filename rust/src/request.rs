@@ -20,6 +20,9 @@ pub struct Args {
     pub mcp_token: String,
     /// the history: the `messages` array
     pub messages: Value,
+    /// declarations sent after every built-in `tools` entry: the local
+    /// tools `--tools` turns on (KTD12); empty adds nothing
+    pub tools: Vec<Value>,
 }
 
 /// The body of POST /v1/messages, keys in the goldens' order.

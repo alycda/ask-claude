@@ -3,8 +3,10 @@ use serde_json::Value;
 /// The events of one reply, in order, into the message the history
 /// keeps: `{model, stop_reason, stop_details, usage, container, error,
 /// content}` in that key order, with `content` the blocks in index order
-/// and tool inputs parsed from their `input_json_delta` partials.
-pub fn message(events: &[Value]) -> Value {
+/// and tool inputs parsed from their `input_json_delta` partials
+/// (`lib/reassemble.jq`). An `Err` is a reply jq cannot fold, which `call`
+/// in `lib/messages.bash` reports as an API error.
+pub fn message(events: &[Value]) -> Result<Value, serde_json::Error> {
     use serde_json::{Map, json};
     use std::collections::BTreeMap;
 
@@ -89,7 +91,7 @@ pub fn message(events: &[Value]) -> Value {
         }
     }
 
-    json!({
+    Ok(json!({
         "model": model,
         "stop_reason": stop_reason,
         "stop_details": stop_details,
@@ -97,5 +99,5 @@ pub fn message(events: &[Value]) -> Value {
         "container": container,
         "error": error,
         "content": blocks.into_values().collect::<Vec<_>>(),
-    })
+    }))
 }

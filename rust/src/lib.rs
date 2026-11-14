@@ -82,6 +82,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         mcp: r.mcp.clone(),
         mcp_token: std::env::var("ASK_CLAUDE_MCP_TOKEN").unwrap_or_default(),
         messages: serde_json::json!([{ "role": "user", "content": prompt }]),
+        tools: Vec::new(),
     };
 
     match std::env::var_os("ASK_CLAUDE_REPLAY") {
@@ -139,7 +140,12 @@ pub fn one_shot<T: transport::Transport>(args: &request::Args, t: &mut T) -> i32
     }
     drop(out);
 
-    let msg = reassemble::message(&events);
+    let Ok(msg) = reassemble::message(&events) else {
+        // `call` in lib/messages.bash: a reply jq cannot fold is an error,
+        // not an empty turn that vanishes
+        eprintln!("ask-claude: API error: the reply could not be parsed");
+        return 1;
+    };
     if !msg["error"].is_null() {
         let kind = text(&msg["error"]["type"]);
         let message = text(&msg["error"]["message"]);

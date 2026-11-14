@@ -95,7 +95,11 @@ fn r2_reassemble_matches_every_message_golden() {
         if !fixtures().join(&golden).exists() {
             continue; // error.sse and the hand-written ones have no message golden
         }
-        assert_eq!(reassemble::message(&events(&rel)), json(&golden), "{rel}");
+        assert_eq!(
+            reassemble::message(&events(&rel)).unwrap(),
+            json(&golden),
+            "{rel}"
+        );
         n += 1;
     }
     assert!(n >= 6, "{n} message goldens compared");
@@ -103,7 +107,7 @@ fn r2_reassemble_matches_every_message_golden() {
 
 #[test]
 fn r2_tool_inputs_are_parsed_from_their_partials_and_partial_is_gone() {
-    let m = reassemble::message(&events("sse/code-execution.sse"));
+    let m = reassemble::message(&events("sse/code-execution.sse")).unwrap();
     let tool = m["content"]
         .as_array()
         .unwrap()
@@ -144,6 +148,7 @@ fn args(
         mcp_tool: String::new(),
         mcp_token: token.into(),
         messages: json("request/history-one-turn.json"),
+        tools: Vec::new(),
     }
 }
 

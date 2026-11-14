@@ -701,11 +701,55 @@ pub(crate) fn tojson(v: &serde_json::Value) -> String {
     v.to_string().replace('\u{7f}', "\\u007f")
 }
 
+/// `for_approval` in `lib/common.bash`: a value as a tool confirmation shows
+/// it, its [`tojson`] with the code points `safe` would drop (C1, the nine
+/// bidi formatting characters) and the invisible ones it keeps (U+061C,
+/// U+200B-U+200F, U+2060-U+2064, U+FEFF) written as lowercase `\uXXXX`
+/// escapes inside that same JSON. Dropped or hidden, they would show a value
+/// other than the one approved; escaped, it is still one encoding of it.
+pub(crate) fn for_approval(v: &serde_json::Value) -> String {
+    let mut out = String::new();
+    for c in tojson(v).chars() {
+        match u32::from(c) {
+            n @ (0x80..=0x9f
+            | 0x61c
+            | 0x200b..=0x200f
+            | 0x202a..=0x202e
+            | 0x2060..=0x2064
+            | 0x2066..=0x2069
+            | 0xfeff) => out.push_str(&format!("\\u{n:04x}")),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// jq's `.[]?`: an array's elements, an object's values, else nothing.
 pub(crate) fn each(v: &serde_json::Value) -> Vec<&serde_json::Value> {
     match v {
         serde_json::Value::Array(a) => a.iter().collect(),
         serde_json::Value::Object(o) => o.values().collect(),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::for_approval;
+
+    /// The bytes `jq -r "$FOR_APPROVAL"'. | for_approval'` prints for the
+    /// same value: every listed code point escaped in lowercase, U+00A0
+    /// (not in the set) left as it is.
+    #[test]
+    fn for_approval_escapes_what_the_script_escapes() {
+        let v = serde_json::json!({
+            "c": "a\u{2066}b\u{200f}c\u{200b}d\u{85}e\u{61c}f\u{2060}g\u{feff}h\u{80}i\u{9f}j\u{202a}k\u{2069}l\u{2067}m\u{a0}n"
+        });
+        let want = concat!(
+            r#"{"c":"a\u2066b\u200fc\u200bd\u0085e\u061cf\u2060g\ufeffh\u0080i\u009fj\u202ak\u2069l\u2067m"#,
+            "\u{a0}",
+            r#"n"}"#
+        );
+        assert_eq!(for_approval(&v), want);
     }
 }

@@ -440,11 +440,11 @@ pub fn answer(
     use crate::stream::safe;
     let list = |key: &str| fold[key].as_array().cloned().unwrap_or_default();
     // the name and input as the terminal shows them: `.name | tostring`
-    // and `.input | tojson`, encoded once, through safe
+    // and `.input | for_approval`, encoded once, through safe
     let shown = |e: &Value| {
         (
             safe(&crate::text(&e["name"])),
-            safe(&crate::tojson(&e["input"])),
+            safe(&crate::for_approval(&e["input"])),
         )
     };
 

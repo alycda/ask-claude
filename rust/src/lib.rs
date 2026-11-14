@@ -97,7 +97,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         Some(list) if !list.is_empty() => request::skills(list).to_string(),
         _ => String::new(),
     };
-    let args = request::Args {
+    let mut args = request::Args {
         advisor: r.advisor.clone().unwrap_or_default(),
         mcp_tool: r.mcp_tool.join(" "),
         model: r.model.clone(),
@@ -134,7 +134,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         }
     };
     transport::catch_signals();
-    one_shot(&args, &mut t)
+    one_shot(&mut args, &mut t)
 }
 
 /// The `anthropic-beta` value of a request, as `call` in
@@ -281,46 +281,113 @@ fn api_error(body: &str) -> String {
     }
 }
 
-/// R5: one request, its stream printed to stdout as `lib/stream.jq` does
-/// while it arrives, then the `[model in=.. ..]` line and any `[stopped:
-/// ..]` on stderr, the way `call` in `lib/messages.bash` ends a turn. 0 on
-/// a reply, 1 on an API error or no response.
-pub fn one_shot(args: &request::Args, t: &mut dyn transport::Transport) -> i32 {
+/// R5: the one shot, one user turn whose history is `args.messages`.
+pub fn one_shot(args: &mut request::Args, t: &mut dyn transport::Transport) -> i32 {
+    call(args, t)
+}
+
+/// One user turn on the Messages path, `call` in `lib/messages.bash`:
+/// `args.messages` is the history, its last element the user turn. Each
+/// round's stream is printed to stdout as `lib/stream.jq` prints it while
+/// it arrives, the reply is appended to the history, the `[model in=..]`
+/// line goes to stderr; a `pause_turn` (a server tool still working) is
+/// continued, up to 8 rounds, each announced; then any `[stopped: ..]`.
+/// 0 on a reply; 1 on an API error or no response, with the history back
+/// to before the user turn (its recorded length, not one element off, so
+/// a paused round's replies go too); 130 after a signal.
+pub fn call(args: &mut request::Args, t: &mut dyn transport::Transport) -> i32 {
+    use serde_json::Value;
     use stream::safe;
 
-    let t0 = std::time::Instant::now();
-    let Ok(got) = exchange(t, &request::body(args).to_string(), &betas(args)) else {
-        // Ctrl-C: what was printed stands and nothing more is done, as a
-        // killed script does nothing more
-        return 130;
-    };
-    if got.bytes == 0 {
-        eprintln!("ask-claude: no response (the request failed or timed out)");
-        return 1;
-    }
-    // each arm is the script's: not SSE is an HTTP error body; a reply jq
-    // cannot fold is an error, not an empty turn that vanishes
-    let folded = match (&got.sse, &got.events) {
-        (false, _) => Err(api_error(&got.body)),
-        (true, None) => Err("the reply could not be parsed".to_string()),
-        (true, Some(events)) => {
-            reassemble::message(events).map_err(|_| "the reply could not be parsed".to_string())
-        }
-    };
-    let msg = match folded {
-        Ok(msg) => match or(&msg["error"]["message"], &serde_json::Value::Null) {
-            serde_json::Value::Null => msg,
-            m => {
-                eprintln!("ask-claude: API error: {}", safe(&text(m)));
+    let turns = |args: &request::Args| args.messages.as_array().map_or(0, Vec::len);
+    let n0 = turns(args);
+    let betas = betas(args);
+    let skills = !args.skills.is_empty();
+    let mut rounds = 0;
+    // the container to run in: with skills, the chat's, so files persist
+    // across turns; without, only a pause_turn continuation sends one back,
+    // the container its previous round ran in, and a new turn starts
+    // without one
+    let mut cid = String::new();
+    let msg = loop {
+        args.container_id = cid.clone();
+        let t0 = std::time::Instant::now();
+        let Ok(got) = exchange(t, &request::body(args).to_string(), &betas) else {
+            // Ctrl-C: what was printed stands and nothing more is done, as
+            // a killed script does nothing more
+            return 130;
+        };
+        let msg = match reply(&got) {
+            Ok(msg) => msg,
+            Err(failure) => {
+                eprintln!("ask-claude: {failure}");
+                if let Some(h) = args.messages.as_array_mut() {
+                    h.truncate(n0.saturating_sub(1));
+                }
                 return 1;
             }
-        },
-        Err(err) => {
-            eprintln!("ask-claude: API error: {err}");
-            return 1;
+        };
+        // the full content array, thinking blocks included, for the next turn
+        if let Some(h) = args.messages.as_array_mut() {
+            h.push(serde_json::json!({"role": "assistant", "content": msg["content"]}));
         }
+        let turn_cid = match or(&msg["container"]["id"], &Value::Null) {
+            Value::Null => String::new(),
+            id => text(id),
+        };
+        if !skills || !turn_cid.is_empty() {
+            cid = turn_cid;
+        }
+        eprintln!("{}", usage_line(&msg, t0.elapsed().as_secs()));
+        if msg["stop_reason"] == "pause_turn" && rounds < 8 {
+            rounds += 1;
+            eprintln!("[pause_turn: continuing, round {rounds}]");
+            continue;
+        }
+        break msg;
     };
 
+    match msg["stop_reason"].as_str() {
+        Some("end_turn") => {}
+        Some("refusal") => eprintln!(
+            "[stopped: refusal {}]",
+            safe(&text(or(&msg["stop_details"]["category"], &"".into())))
+        ),
+        Some("max_tokens") => eprintln!("[stopped: max_tokens reached, raise --max-tokens]"),
+        _ => eprintln!("[stopped: {}]", safe(&text(&msg["stop_reason"]))),
+    }
+    // a signal during the fold or the notices: the script would be gone
+    if transport::interrupted() {
+        return 130;
+    }
+    0
+}
+
+/// The message one round folds to, or the line `call` prints instead
+/// (after `ask-claude: `). Each arm is the script's: no bytes is no
+/// response; no `data:` line is an HTTP error body; a reply jq cannot fold
+/// is an error, not an empty turn that vanishes; an `error` event's
+/// message is an API error, and a null one is none.
+fn reply(got: &Received) -> Result<serde_json::Value, String> {
+    if got.bytes == 0 {
+        return Err("no response (the request failed or timed out)".into());
+    }
+    let parse_error = || "API error: the reply could not be parsed".to_string();
+    let msg = match &got.events {
+        _ if !got.sse => return Err(format!("API error: {}", api_error(&got.body))),
+        None => return Err(parse_error()),
+        Some(events) => reassemble::message(events).map_err(|_| parse_error())?,
+    };
+    match or(&msg["error"]["message"], &serde_json::Value::Null) {
+        serde_json::Value::Null => Ok(msg),
+        m => Err(format!("API error: {}", stream::safe(&text(m)))),
+    }
+}
+
+/// The line `call` prints after each round: model, tokens, cache counters,
+/// an advisor's own tokens (billed at its rates; the top-level usage is
+/// the executor's alone), seconds.
+fn usage_line(msg: &serde_json::Value, seconds: u64) -> String {
     let advisors: Vec<&serde_json::Value> = msg["usage"]["iterations"]
         .as_array()
         .into_iter()
@@ -339,33 +406,14 @@ pub fn one_shot(args: &request::Args, t: &mut dyn transport::Transport) -> i32 {
         )
     };
     let u = &msg["usage"];
-    eprintln!(
-        "{}",
-        safe(&format!(
-            "[{} in={} cache_read={} cache_write={} out={}{adv} {}s]",
-            text(&msg["model"]),
-            text(&u["input_tokens"]),
-            text(or(&u["cache_read_input_tokens"], &0.into())),
-            text(or(&u["cache_creation_input_tokens"], &0.into())),
-            text(&u["output_tokens"]),
-            t0.elapsed().as_secs()
-        ))
-    );
-
-    match msg["stop_reason"].as_str() {
-        Some("end_turn") => {}
-        Some("refusal") => eprintln!(
-            "[stopped: refusal {}]",
-            safe(&text(or(&msg["stop_details"]["category"], &"".into())))
-        ),
-        Some("max_tokens") => eprintln!("[stopped: max_tokens reached, raise --max-tokens]"),
-        _ => eprintln!("[stopped: {}]", safe(&text(&msg["stop_reason"]))),
-    }
-    // a signal during the fold or the notices: the script would be gone
-    if transport::interrupted() {
-        return 130;
-    }
-    0
+    stream::safe(&format!(
+        "[{} in={} cache_read={} cache_write={} out={}{adv} {seconds}s]",
+        text(&msg["model"]),
+        text(&u["input_tokens"]),
+        text(or(&u["cache_read_input_tokens"], &0.into())),
+        text(or(&u["cache_creation_input_tokens"], &0.into())),
+        text(&u["output_tokens"]),
+    ))
 }
 
 /// jq's `$a // $b`: `$b` when `$a` is null or false.

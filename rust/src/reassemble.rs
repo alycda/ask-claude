@@ -107,7 +107,7 @@ pub fn message(events: &[Value]) -> Result<Value, serde_json::Error> {
 /// serde_json refuses the text. A high surrogate with no low one after it
 /// is refused by both. (jq also reads a bare `nan` as null; serde_json
 /// refuses it, and that one difference is left alone.)
-fn fromjson(text: &str) -> Result<Value, serde_json::Error> {
+pub(crate) fn fromjson(text: &str) -> Result<Value, serde_json::Error> {
     serde_json::from_str(text).or_else(|e| match lone_lows_replaced(text) {
         Some(fixed) => serde_json::from_str(&fixed),
         None => Err(e),

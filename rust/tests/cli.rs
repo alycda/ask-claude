@@ -215,6 +215,47 @@ fn r1_invalid_utf8_is_replaced_after_the_escapes_are_undone() {
         .stdout("x\u{FFFD}\n");
 }
 
+/// A tool input that is not JSON when its block stops is a reply jq cannot
+/// fold, and `call` in lib/messages.bash says so as an API error and
+/// exits 1, under `max_tokens` and `end_turn` alike: no usage line, no
+/// stop notice, only the newline the printer gave `message_stop`.
+/// Oracle: `ASK_CLAUDE_REPLAY=<this stream> ./ask-claude ping` prints
+/// "\n", ends stderr with the line below (after jq's own complaint) and
+/// exits 1.
+#[test]
+fn r2_a_tool_input_that_is_not_json_is_the_bash_parse_error() {
+    for stop_reason in ["max_tokens", "end_turn"] {
+        let dir = tempfile::tempdir().unwrap();
+        let sse = dir.path().join("cut.sse");
+        let events = [
+            r#"{"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":0}}}"#,
+            r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_FIXTURE01","name":"bash","input":{}}}"#,
+            r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\": \"ls"}}"#,
+            r#"{"type":"content_block_stop","index":0}"#,
+            &format!(
+                r#"{{"type":"message_delta","delta":{{"stop_reason":"{stop_reason}","stop_sequence":null}},"usage":{{"output_tokens":3}}}}"#
+            ),
+            r#"{"type":"message_stop"}"#,
+        ];
+        let body: String = events.iter().map(|e| format!("data: {e}\n\n")).collect();
+        std::fs::write(&sse, body).unwrap();
+
+        bin()
+            .arg("ping")
+            .env("ANTHROPIC_API_KEY", "sk-ant-test-not-a-key")
+            .env("XDG_STATE_HOME", dir.path().join("state"))
+            .env("ASK_CLAUDE_REPLAY", &sse)
+            .assert()
+            .code(1)
+            .stdout("\n")
+            .stderr(
+                predicate::str::ends_with("ask-claude: API error: the reply could not be parsed\n")
+                    .and(predicate::str::contains("in=").not())
+                    .and(predicate::str::contains("[stopped").not()),
+            );
+    }
+}
+
 mod which {
     /// `usage` on PATH, or None.
     pub fn which_usage() -> Option<std::path::PathBuf> {

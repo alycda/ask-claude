@@ -51,6 +51,23 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     for f in $(history_file 2>/dev/null); do jq -e 'length==0' "$f"; done
 }
 
+@test "one-shot: a tool input that is not JSON is an API error, whatever the stop reason" {
+    for stop in max_tokens end_turn; do
+        {
+            printf 'data: %s\n\n' '{"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":0}}}'
+            printf 'data: %s\n\n' '{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_FIXTURE01","name":"bash","input":{}}}'
+            printf 'data: %s\n\n' '{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\": \"ls"}}'
+            printf 'data: %s\n\n' '{"type":"content_block_stop","index":0}'
+            printf 'data: {"type":"message_delta","delta":{"stop_reason":"%s"},"usage":{"output_tokens":3}}\n\n' "$stop"
+            printf 'data: %s\n\n' '{"type":"message_stop"}'
+        } >"$TMP/cut.sse"
+        run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/cut.sse" "$BIN" "ping"
+        [ "$status" -eq 1 ]
+        [ "$(tail -n 1 <<<"$stderr")" = "ask-claude: API error: the reply could not be parsed" ]
+        for f in $(history_file 2>/dev/null); do jq -e 'length==0' "$f"; done
+    done
+}
+
 @test "one-shot: refusal is reported with its category" {
     run --separate-stderr replay refusal "ping"
     [ "$status" -eq 0 ]

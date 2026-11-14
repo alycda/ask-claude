@@ -124,6 +124,101 @@ fn r2_tool_inputs_are_parsed_from_their_partials_and_partial_is_gone() {
     );
 }
 
+/// The events of a reply that is one `tool_use` block, its input streamed
+/// as the `input_json_delta` partials given (none for a call with no
+/// arguments), stopped with `stop` (`None`: cut off before
+/// `content_block_stop`), the turn ending on `stop_reason`.
+fn tool_use_reply(partials: &[&str], stop: Option<()>, stop_reason: &str) -> Vec<Value> {
+    use serde_json::json;
+    let mut ev = vec![
+        json!({"type":"message_start","message":{"id":"msg_FIXTURE01","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}),
+        json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_FIXTURE01","name":"bash","input":{}}}),
+    ];
+    for p in partials {
+        ev.push(json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":p}}));
+    }
+    if stop.is_some() {
+        ev.push(json!({"type":"content_block_stop","index":0}));
+    }
+    ev.push(json!({"type":"message_delta","delta":{"stop_reason":stop_reason,"stop_sequence":null},"usage":{"output_tokens":3}}));
+    ev.push(json!({"type":"message_stop"}));
+    ev
+}
+
+/// A tool_use block that streams no input_json_delta folds to an empty
+/// input object, not a missing one or a string: the partial starts at "" and
+/// the fold parses what it has, as lib/reassemble.jq does.
+#[test]
+fn r2_a_tool_use_with_no_input_delta_folds_to_an_empty_input() {
+    let m = reassemble::message(&tool_use_reply(&[], Some(()), "tool_use")).unwrap();
+    assert_eq!(m["content"][0]["input"], serde_json::json!({}));
+    assert!(m["content"][0].get("partial").is_none(), "{m}");
+    assert_eq!(m["stop_reason"], "tool_use");
+}
+
+/// A tool input that is not JSON when its block stops is the reply jq
+/// cannot fold: `fromjson` fails at `content_block_stop`, before the
+/// stop reason is read, so it fails under `max_tokens` (the one way the
+/// API sends a cut input) and under `end_turn` alike. Oracle: jq 1.8.2
+/// on both streams exits 5, "Unfinished string at EOF".
+#[test]
+fn r2_a_tool_input_that_is_not_json_fails_the_fold_whatever_the_stop_reason() {
+    for stop_reason in ["max_tokens", "end_turn"] {
+        let ev = tool_use_reply(&[r#"{"command": "#, r#""ls"#], Some(()), stop_reason);
+        assert!(
+            reassemble::message(&ev).is_err(),
+            "{stop_reason}: {:?}",
+            reassemble::message(&ev)
+        );
+    }
+}
+
+/// A reply cut off before its block stops keeps the partial as it was and
+/// the `{}` input of `content_block_start`: jq parses a partial only at
+/// the stop. Oracle: `jq -s -f lib/reassemble.jq` on this stream.
+#[test]
+fn r2_a_tool_use_cut_off_before_its_stop_keeps_its_partial() {
+    let ev = tool_use_reply(&[r#"{"command": "ls"#], None, "max_tokens");
+    let m = reassemble::message(&ev).unwrap();
+    assert_eq!(
+        m["content"],
+        serde_json::json!([{"type":"tool_use","id":"toolu_FIXTURE01","name":"bash","input":{},"partial":"{\"command\": \"ls"}])
+    );
+}
+
+/// jq reads a lone low surrogate escape as U+FFFD, where serde_json refuses
+/// the text, and a pair as the one character it encodes. Oracle: jq 1.8.2
+/// folds this stream to {"s":"a\u{FFFD}b","t":"😀"}.
+#[test]
+fn r2_a_lone_low_surrogate_in_a_tool_input_is_the_replacement_character() {
+    let ev = tool_use_reply(&[r#"{"s":"a\udc00b","t":"😀"}"#], Some(()), "tool_use");
+    let m = reassemble::message(&ev).unwrap();
+    assert_eq!(
+        m["content"][0]["input"],
+        serde_json::json!({"s": "a\u{FFFD}b", "t": "\u{1F600}"})
+    );
+}
+
+/// Numbers in a tool input fold to jq's values. jq 1.8.2 keeps each
+/// literal and prints `{"a":1.0,"b":1E+3,"c":-0,"d":1.10,"e":18446744073709551615,"f":1.5E-7}`;
+/// serde_json prints `1000.0`, `-0.0` and `1.1` for three of them, the same
+/// numbers in another spelling, so the fold is held to jq by value, and a
+/// float stays a float. (An integer past u64 is where the two part:
+/// serde_json rounds it to an f64, jq 1.8 keeps every digit.)
+#[test]
+fn r2_numbers_in_a_tool_input_fold_to_jqs_values() {
+    let partial = r#"{"a":1.0,"b":1e3,"c":-0,"d":1.10,"e":18446744073709551615,"f":1.5e-7}"#;
+    let m = reassemble::message(&tool_use_reply(&[partial], Some(()), "tool_use")).unwrap();
+    let jq: Value = serde_json::from_str(
+        r#"{"a":1.0,"b":1E+3,"c":-0,"d":1.10,"e":18446744073709551615,"f":1.5E-7}"#,
+    )
+    .unwrap();
+    let input = &m["content"][0]["input"];
+    assert_eq!(input, &jq);
+    assert!(input["a"].is_f64(), "1.0 is not the integer 1: {input}");
+    assert_eq!(input["e"].as_u64(), Some(u64::MAX));
+}
+
 // ---- R3: the request builder ----
 
 fn args(
@@ -216,6 +311,39 @@ fn r3_request_web_mcp_and_everything() {
         )),
         json("request/everything.json")
     );
+}
+
+/// `Args::tools` goes after every entry the builder already writes, code
+/// execution, web and MCP alike, and is the whole list when there are none
+/// (KTD12: the local tools append, so every existing golden holds without
+/// them). Empty, it changes nothing: the goldens above.
+#[test]
+fn r3_args_tools_are_sent_after_every_built_in_entry() {
+    let bash = serde_json::json!({
+        "name": "bash",
+        "description": "a declaration the tool loop fills in",
+        "input_schema": {"type": "object", "properties": {}}
+    });
+    let pptx = r#"[{"skill_id":"pptx","version":"latest","type":"anthropic"}]"#;
+    let mut everything = args(
+        "",
+        "",
+        pptx,
+        "",
+        true,
+        &["https://mcp.deepwiki.com/mcp"],
+        "tok_FIXTURE",
+    );
+    everything.tools = vec![bash.clone()];
+    let mut want = json("request/everything.json");
+    want["tools"].as_array_mut().unwrap().push(bash.clone());
+    assert_eq!(request::body(&everything), want);
+
+    let mut plain = args("", "", "", "", false, &[], "");
+    plain.tools = vec![bash.clone()];
+    let mut want = json("request/plain.json");
+    want["tools"] = serde_json::json!([bash]);
+    assert_eq!(request::body(&plain), want);
 }
 
 /// The object keys of a JSON text in document order, read off the text
@@ -322,6 +450,19 @@ fn r4_safe_keeps_tab_and_newline_and_drops_every_other_control_character() {
         "a]0;ownedbc\td\n"
     );
     assert_eq!(stream::safe("plain"), "plain");
+}
+
+/// A reply carrying ESC, BEL, CSI (both the 7-bit `ESC [` and the C1
+/// U+009B), CR and DEL prints none of them through the printer, and tab
+/// and newline survive. Oracle: this event through `jq -rj -f
+/// lib/stream.jq` prints these bytes.
+#[test]
+fn r4_a_reply_with_esc_bel_csi_cr_and_del_prints_none_of_them() {
+    let event: Value = serde_json::from_str(
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a\u001b[31mred\u001b[0m\u0007b\rc\u007fd\u009b2Je\tf\ng"}}"#,
+    )
+    .unwrap();
+    assert_eq!(stream::line(&event), "a[31mred[0mbcd2Je\tf\ng");
 }
 
 // ---- R6: sessions ----

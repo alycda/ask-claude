@@ -14,6 +14,7 @@
 #USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000" global=#true
 #USAGE flag "--web" help="let the model search and fetch the web (server tools; searches cost extra)" global=#true
 #USAGE flag "--mcp <url>" help="an MCP server (https) the model may call; repeatable; its token in ASK_CLAUDE_MCP_TOKEN_<HOST>, or ASK_CLAUDE_MCP_TOKEN for a lone server" var=#true global=#true
+#USAGE flag "--mcp-tool <host:tool>" help="only these tools of that --mcp server, e.g. mcp.example.com:search; repeatable; a server not named keeps all its tools" var=#true global=#true
 #USAGE flag "--advisor <model>" help="a model the reply may consult mid-turn (server tool, at most 3 calls a turn, billed at that model's rates); must be at least as capable as -m" global=#true
 #USAGE flag "-V --version" help="print the version"
 #USAGE cmd "list" help="chats on disk, newest first"
@@ -57,7 +58,7 @@
 set -uo pipefail
 # The script carries its own copy of VERSION, read by --version below;
 # `just bump` rewrites this line and `just check-version-line` compares them.
-readonly ASK_CLAUDE_VERSION=0.3.0
+readonly ASK_CLAUDE_VERSION=0.3.1
 # History holds whole conversations, including -f file contents: every file
 # and directory this script creates is private to the user, whatever the
 # shell's umask.

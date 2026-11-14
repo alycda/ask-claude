@@ -4,18 +4,22 @@
 #     jq -n --arg m MODEL --argjson max N --arg sys SYSTEM --arg eff EFFORT \
 #           --arg skills SKILLS_JSON --arg cid CONTAINER_ID \
 #           --arg web 1-or-empty --arg mcp "https://a/mcp https://b/sse" \
-#           --arg advisor ADVISOR_MODEL \
+#           --arg advisor ADVISOR_MODEL --arg mcptools "a.example:search b.example:read" \
 #           --slurpfile msgs history.json -f lib/request.jq
 #
 # -n means there is no input: everything comes from the variables.
-#   $m, $sys, $eff, $skills, $cid   strings; "" means "not given"
+#   $m, $sys, $eff, $skills, $cid   strings; "" means "not given"; $cid without
+#                                   $skills goes out as the plain container id
 #   $max                            a number (--argjson parses it)
 #   $msgs                           an ARRAY of the file's JSON values
 #                                   (--slurpfile), so the history is $msgs[0]
 #   $skills                         JSON text from lib/skills.jq; fromjson parses it
 #   $web                            "" or anything: add the web search and fetch tools
+#                                   (the dynamic-filtering versions, whatever the model)
 #   $mcp                            MCP server URLs, space-separated; "" means none
 #   $advisor                        the advisor tool's model; "" means no advisor
+#   $mcptools                       --mcp-tool entries, host:tool, space-separated;
+#                                   "" means every server offers all its tools
 #
 # The tests compare with tests/fixtures/request/*.json byte for byte, so key
 # order matters: `A + B` keeps A's keys first, then adds B's. Build the base
@@ -38,11 +42,27 @@
 #   cache_control  {type: "ephemeral"}   cache the growing conversation
 def words: split(" ") | map(select(length > 0));
 def host: capture("^[a-z]+://(?<h>[^/:]+)").h | gsub("[^A-Za-z0-9_-]"; "-");
-# $web, $mcp and $advisor are newer than the other arguments: read through $ARGS.named so
-# a caller that does not pass them (the goldens of 0.1.0) still works
+# the URL's hostname as written, lower-cased: what an --mcp-tool entry names
+def hostname: capture("^[a-z]+://(?<h>[^/:]+)").h | ascii_downcase;
+# $web, $mcp, $advisor and $mcptools are newer than the other arguments: read
+# through $ARGS.named so a caller that does not pass them (the goldens of
+# 0.1.0) still works
 def web: $ARGS.named.web // "";
 def mcp: $ARGS.named.mcp // "";
 def advisor: $ARGS.named.advisor // "";
+def mcptools: $ARGS.named.mcptools // "";
+# toolset: the mcp_toolset for the server at this URL. With no --mcp-tool for
+# its host the server offers every tool it lists. With one or more, it is an
+# allowlist: every tool off by default, the named ones on. The script refuses
+# an entry that names no --mcp host before it gets here, because a rule that
+# matches nothing would read as a rule and allow everything.
+def toolset:
+  hostname as $h
+  | [mcptools | words[] | select(split(":")[0] | ascii_downcase == $h) | sub("^[^:]*:"; "")] as $allow
+  | {type: "mcp_toolset", mcp_server_name: host}
+    + (if ($allow | length) > 0 then
+         {default_config: {enabled: false}, configs: ($allow | map({key: ., value: {enabled: true}}) | from_entries)}
+       else {} end);
 # mcp_token: the authorization_token for the server at this URL. A token is
 # one server's credential, so ASK_CLAUDE_MCP_TOKEN reaches a lone server
 # only; each server takes ASK_CLAUDE_MCP_TOKEN_<HOST>, the host upper-cased
@@ -81,15 +101,24 @@ def advisor_used:
                                       + (mcp_token as $t | if $t != "" then {authorization_token: $t} else {} end)]}
    else {} end)
 # tools, in this order: code_execution for skills, the web tools, one
-# mcp_toolset per server, the advisor (3 calls a turn at most, less what this
+# mcp_toolset per server (an allowlist when --mcp-tool names it), the advisor (3 calls a turn at most, less what this
 # turn's paused replies used, and left out at 0: each call is a sub-inference
 # at the advisor model's rates); the key is left out when there are none
 + (([ (if $skills != "" then {type: "code_execution_20260521", name: "code_execution"} else empty end),
-      (if web != "" then {type: "web_search_20250305", name: "web_search", max_uses: 5},
-                           {type: "web_fetch_20250910", name: "web_fetch", max_uses: 5} else empty end) ]
-    + (if mcp != "" then [mcp | words[] | {type: "mcp_toolset", mcp_server_name: (. | host)}] else [] end)
+      # dynamic filtering: the model filters results in code before they
+      # reach its context. The API provisions that code execution itself and
+      # shares one container with the skills' code_execution (20260120 or
+      # later is accepted alongside). Sent whatever the
+      # model: one without programmatic tool calling (Haiku 4.5, and the
+      # retired 3.x, 4.0 and 4.1) gets the API's own 400.
+      (if web != "" then {type: "web_search_20260318", name: "web_search", max_uses: 5},
+                         {type: "web_fetch_20260318", name: "web_fetch", max_uses: 5} else empty end) ]
+    + (if mcp != "" then [mcp | words[] | toolset] else [] end)
     + (if advisor != "" and advisor_used < 3 then [{type: "advisor_20260301", name: "advisor", model: advisor, max_uses: (3 - advisor_used)}] else [] end)) as $tools
    | if ($tools | length) > 0 then {tools: $tools} else {} end)
 + (if $skills != "" then
       {container: (({skills: ($skills | fromjson)}) + (if $cid != "" then {id: $cid} else {} end))}
+    # without skills, a container id is a pause_turn continuation's (the
+    # caller sends one only then): the plain string form the API takes
+    elif $cid != "" then {container: $cid}
     else {} end)

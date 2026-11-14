@@ -35,8 +35,8 @@ reassemble() { events "$1" | jq -s -f "$ROOT/lib/reassemble.jq"; }
     reassemble text | jq -e '.usage.input_tokens>0 and .usage.output_tokens>0'
 }
 
-@test "reassemble: web search, web fetch and MCP blocks fold like the oracle's, MCP input included" {
-    for f in web-search web-fetch mcp; do
+@test "reassemble: web search, web fetch, dynamic filtering and MCP blocks fold like the oracle's, MCP input included" {
+    for f in web-search web-fetch web-dynamic mcp; do
         events "$f" | jq -s -f "$ROOT/lib/reassemble.jq" > "$TMP/out.json"
         assert_golden "$FIX/sse/$f.message.json" "$TMP/out.json"
     done

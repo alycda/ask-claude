@@ -4,7 +4,7 @@
 # the history, stream the reply, fold it back into the history.
 #
 # reads:   usage_model usage_max_tokens usage_system usage_effort usage_web
-#          usage_mcp usage_advisor ASK_CLAUDE_REPLAY ASK_CLAUDE_REQUEST_LOG
+#          usage_mcp usage_mcp_tool usage_advisor ASK_CLAUDE_REPLAY ASK_CLAUDE_REQUEST_LOG
 #          ASK_CLAUDE_BETA_LOG; LIB (ask-claude), API (config), SAFE
 #          (common), HIST (ask-claude, chat)
 # sets:    betas (call sets it, transport reads it: a global, not an argument)
@@ -50,7 +50,7 @@ transport() {
 # with the history rolled back to before this ask. A pause_turn (server tool
 # still working) is continued automatically, up to 8 rounds.
 call() {
-  local body resp err stop rounds=0 n0 log t0 skills cid failure chat
+  local body resp err stop rounds=0 n0 log t0 skills cid failure chat rtools turn_cid=""
   n0=$(jq length "$HIST")
   chat=$(basename "$HIST" .json)
   # Skills run in Anthropic's code-execution sandbox, so -s also adds the
@@ -66,12 +66,24 @@ call() {
     betas="$betas,advisor-tool-2026-03-01"
   fi
   while :; do
+    # the container to run in. With skills, the chat's container, so files
+    # persist across turns. Without, only a pause_turn continuation sends one
+    # back: the container the previous round of this turn ran in (dynamic web
+    # filtering runs code there), so the paused work continues where it was
+    # instead of in a new container. A new turn starts without one.
     cid=""
-    [ -n "$skills" ] && [ -s "$HIST.container" ] && cid=$(cat "$HIST.container")
+    if [ -n "$skills" ]; then
+      [ -s "$HIST.container" ] && cid=$(cat "$HIST.container")
+    else
+      cid=$turn_cid
+    fi
     body=$(jq -n -c --arg m "$usage_model" --argjson max "$usage_max_tokens" \
       --arg sys "${usage_system:-}" --arg eff "${usage_effort:-}" \
-      --arg skills "$skills" --arg cid "$cid" --arg web "${usage_web:+1}" --arg mcp "${usage_mcp:-}" --arg advisor "${usage_advisor:-}" \
+      --arg skills "$skills" --arg cid "$cid" --arg web "${usage_web:+1}" --arg mcp "${usage_mcp:-}" --arg advisor "${usage_advisor:-}" --arg mcptools "${usage_mcp_tool:-}" \
       --slurpfile msgs "$HIST" -f "$LIB/request.jq")
+    # the tools this request enables, for the event log: what the model could
+    # reach, recorded on every line of the request, failed ones included
+    rtools=$(printf '%s' "$body" | jq -c '.tools // null')
     log="$HIST.sse" t0=$SECONDS
     : >"$log"
     # tee the raw SSE to $log, strip "data: " with builtins, print text live
@@ -82,7 +94,7 @@ call() {
     [ -s "$log" ] || {
       rm -f "$log"
       echo "ask-claude: no response (curl failed or timed out)" >&2
-      echo null | event messages $rounds $((SECONDS - t0)) no_response "$chat"
+      echo null | event messages $rounds $((SECONDS - t0)) no_response "$chat" "$rtools"
       rollback_to $((n0 - 1))
       return 1
     }
@@ -105,18 +117,27 @@ call() {
     if [ -n "$err" ]; then
       rm -f "$log"
       echo "ask-claude: API error: $err" >&2
-      printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "$failure" "$chat"
+      printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "$failure" "$chat" "$rtools"
       # a container the API no longer accepts (expired, deleted) would fail
       # every later turn of this chat: forget it, the next turn starts a new one
-      [ -n "$cid" ] && case "$err" in *[Cc]ontainer*) rm -f "$HIST.container" ;; esac
+      # only the skills container is a file: a pause_turn continuation's
+      # in-memory id (no -s) must not delete the chat's skills container
+      [ -n "$skills" ] && [ -n "$cid" ] && case "$err" in *[Cc]ontainer*) rm -f "$HIST.container" ;; esac
       rollback_to $((n0 - 1))
       return 1
     fi
     # keep the full content array (thinking blocks included) for the next turn
     printf '%s' "$resp" | jq '{role:"assistant", content:.content}' >"$HIST.turn"
     jq --slurpfile t "$HIST.turn" '. + $t' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST" && rm -f "$HIST.turn"
-    printf '%s' "$resp" | jq -r '.container.id // empty' >"$HIST.container.tmp"
-    if [ -s "$HIST.container.tmp" ]; then mv "$HIST.container.tmp" "$HIST.container"; else rm -f "$HIST.container.tmp"; fi
+    turn_cid=$(printf '%s' "$resp" | jq -r '.container.id // empty')
+    # $HIST.container is the skills container, kept across turns. A reply
+    # without -s can carry a container too (dynamic web filtering), and
+    # writing it here would replace the skills container of a chat that used
+    # -s earlier, orphaning its files: that id lives in turn_cid alone.
+    if [ -n "$skills" ]; then
+      printf '%s' "$turn_cid" >"$HIST.container.tmp"
+      if [ -s "$HIST.container.tmp" ]; then mv "$HIST.container.tmp" "$HIST.container"; else rm -f "$HIST.container.tmp"; fi
+    fi
     rm -f "$log"
     stop=$(printf '%s' "$resp" | jq -r "$SAFE"'.stop_reason | safe')
     # the top-level usage is the executor's alone; an advisor's tokens are in
@@ -125,7 +146,7 @@ call() {
       ([.usage.iterations[]? | select(.type == "advisor_message")]) as $a
       | (if ($a | length) > 0 then " advisor=\($a[0].model) in=\($a | map(.input_tokens // 0) | add) out=\($a | map(.output_tokens // 0) | add)" else "" end) as $adv
       | "[\(.model) in=\(.usage.input_tokens) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) out=\(.usage.output_tokens)\($adv) \($s)s]" | safe' >&2
-    printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "" "$chat"
+    printf '%s' "$resp" | event messages $rounds $((SECONDS - t0)) "" "$chat" "$rtools"
     if [ "$stop" = "pause_turn" ] && [ $rounds -lt 8 ]; then
       rounds=$((rounds + 1))
       echo "[pause_turn: continuing, round $rounds]" >&2

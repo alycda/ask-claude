@@ -57,9 +57,26 @@ request2() { # sys eff skills cid web mcp
         -f "$ROOT/lib/request.jq"
 }
 
-@test "request: --web adds the basic web search and web fetch server tools" {
+@test "request: --web adds the web search and web fetch server tools, with dynamic filtering" {
     request2 "" "" "" "" 1 "" > "$TMP/out.json"
     assert_golden "$FIX/request/web.json" "$TMP/out.json"
+    jq -e '[.tools[].type] == ["web_search_20260318", "web_fetch_20260318"]' "$TMP/out.json"
+}
+
+# --web sends the same tools whatever the model: ask-claude does not special-
+# case model ids. A model without programmatic tool calling (Haiku 4.5, and
+# the retired 3.x, 4.0 and 4.1) gets the API's own 400 (0.3.1).
+web_types() { # model
+    jq -n -c --arg m "$1" --argjson max 16000 --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web 1 \
+        --slurpfile msgs "$FIX/request/history-one-turn.json" -f "$ROOT/lib/request.jq" | jq -c '[.tools[].type]'
+}
+
+@test "request: --web sends the dynamic versions for every model id and alias" {
+    local m
+    for m in claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5 claude-fable-5-1 claude-opus-4-6 claude-sonnet-4-6 \
+        claude-opus-4-8 haiku sonnet opus fable claude-haiku-4-5 claude-sonnet-4-5-20250929 us.anthropic.claude-opus-5-5-v1:0; do
+        [ "$(web_types "$m")" = '["web_search_20260318","web_fetch_20260318"]' ] || { echo "dynamic expected for $m"; return 1; }
+    done
 }
 
 @test "request: --mcp adds a server per URL, named after its host, and one toolset each" {
@@ -151,4 +168,38 @@ advisor_request() {
 @test "request: calls from an earlier turn do not count" {
     advisor_history 0 3
     advisor_request | jq -e '.tools[0].max_uses == 3'
+}
+
+# --mcp-tool: a server named by one or more entries offers only those tools
+# (0.3.1). The toolset becomes an allowlist: every tool off, the named ones on.
+
+request_mcptools() { # mcp mcptools
+    jq -n --arg m claude-opus-5-5 --argjson max 16000 \
+        --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web "" --arg mcp "$1" --arg advisor "" \
+        --arg mcptools "$2" \
+        --slurpfile msgs "$FIX/request/history-one-turn.json" -f "$ROOT/lib/request.jq"
+}
+
+@test "request: --mcp-tool makes that server's toolset an allowlist; a server it does not name keeps every tool" {
+    request_mcptools "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" \
+        "mcp.deepwiki.com:read_wiki_structure mcp.deepwiki.com:ask_question" > "$TMP/out.json"
+    assert_golden "$FIX/request/mcp-tool.json" "$TMP/out.json"
+    jq -e '.tools[0].default_config == {enabled: false}
+        and .tools[0].configs == {read_wiki_structure: {enabled: true}, ask_question: {enabled: true}}' "$TMP/out.json"
+    jq -e '.tools[1] == {type: "mcp_toolset", mcp_server_name: "mcp-example-com"}' "$TMP/out.json"
+}
+
+@test "request: --mcp-tool matches the host whatever its case, and ignores the URL's port and path" {
+    request_mcptools "https://MCP.Example.com:8443/sse" "mcp.EXAMPLE.com:search" |
+        jq -e '.tools[0].configs == {search: {enabled: true}}'
+}
+
+@test "request: without --mcp-tool the MCP golden is untouched" {
+    request_mcptools "https://mcp.deepwiki.com/mcp https://mcp.example.com/sse" "" > "$TMP/out.json"
+    assert_golden "$FIX/request/mcp.json" "$TMP/out.json"
+}
+
+@test "request: a container id without skills goes out as the plain id (a pause_turn continuation)" {
+    request "" "" "" container_FIXTURE | jq -e '.container == "container_FIXTURE"'
+    request "" "" "" "" | jq -e 'has("container") | not'
 }

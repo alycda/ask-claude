@@ -7,7 +7,7 @@
 # reads:   ASK_CLAUDE_EVENTS ANTHROPIC_API_KEY ASK_CLAUDE_VERSION;
 #          LIB STATE (ask-claude), HOST (config)
 # sets:    SAFE DOLLARS (read by every module that prints API text)
-# defines: event error_kind headers api_error sse_data
+# defines: safe_text event error_kind headers api_error sse_data
 
 # SAFE: prefix for every jq program that prints text to the terminal (the
 # live printer has its own copy in lib/stream.jq). Replies and error messages
@@ -16,6 +16,10 @@
 # go too (they reorder what the user reads); the marks U+200E, U+200F and
 # U+061C stay.
 SAFE='def safe: if type == "string" then explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159) and (. < 8234 or . > 8238) and (. < 8294 or . > 8297)))) | implode else . end; '
+# safe_text <string>: the string through safe, for a value the shell holds
+# itself rather than a jq program's output, such as a root from the
+# environment (lib/config.bash, tests/record-session.sh)
+safe_text() { printf '%s' "$1" | jq -Rrs "$SAFE"'safe'; }
 # DOLLARS: cents as the API gives them (a string) to "$1.23", for the usage
 # line, `agent list` and `agent budget`
 # shellcheck disable=SC2016  # a jq program, not a shell string

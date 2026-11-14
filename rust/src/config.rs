@@ -59,7 +59,7 @@ pub fn check(r: &RequestFlags) -> Result<Config, String> {
         let rest = base_url
             .split_once("://")
             .map_or(&*base_url, |(_, rest)| rest);
-        let host = &rest[..rest.find('/').unwrap_or(rest.len())];
+        let host = crate::stream::safe(&rest[..rest.find('/').unwrap_or(rest.len())]);
         eprintln!("ask-claude: ANTHROPIC_BASE_URL is set; requests go to {host}");
     }
 
@@ -147,7 +147,8 @@ const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 fn base_url_gate(url: &str, source: &str) -> Result<(), String> {
     if url.contains('@') {
         return Err(format!(
-            "{source} must not carry user info (an @), got: {url}"
+            "{source} must not carry user info (an @), got: {}",
+            crate::stream::safe(url)
         ));
     }
     if url.starts_with("https://") {
@@ -175,7 +176,8 @@ fn base_url_gate(url: &str, source: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "{source} must be https:// (or http:// on localhost), got: {url}"
+            "{source} must be https:// (or http:// on localhost), got: {}",
+            crate::stream::safe(url)
         ))
     }
 }

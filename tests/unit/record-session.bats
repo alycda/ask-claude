@@ -40,6 +40,38 @@ data: {"type":"agent.tool_result","id":"sevt_res","tool_use_id":"sevt_tool","ses
     [ "$(stat -c %a "$TMP/idmap" 2>/dev/null || stat -f %Lp "$TMP/idmap")" = 600 ]
 }
 
+# record [VAR=value...]: stream session sesn_x into $TMP/t.sse with the
+# given environment, through a curl that logs its arguments and sends nothing
+record() {
+    mkdir -p "$TMP/bin"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$@" >>"%s/curl.log"\n' "$TMP" >"$TMP/bin/curl"
+    chmod +x "$TMP/bin/curl"
+    run --separate-stderr env PATH="$TMP/bin:$PATH" ANTHROPIC_API_KEY=sk-ant-test-not-a-key \
+        ASK_CLAUDE_AGENT=agent_x ASK_CLAUDE_ENVIRONMENT=env_x ASK_CLAUDE_SESSION=sesn_x "$@" bash "$REC" t "" "$TMP"
+}
+
+@test "record-session: ANTHROPIC_BASE_URL passes ask-claude's gate before the key is sent" {
+    record ANTHROPIC_BASE_URL=http://proxy.corp
+    [ "$status" -eq 2 ]
+    [ "$stderr" = "record-session: ANTHROPIC_BASE_URL must be https:// (or http:// on localhost), got: http://proxy.corp" ]
+    [ ! -e "$TMP/curl.log" ]
+    record ANTHROPIC_BASE_URL=http://localhost:@example.com
+    [ "$status" -eq 2 ]
+    grep -q 'ANTHROPIC_BASE_URL must not carry user info' <<<"$stderr"
+    [ ! -e "$TMP/curl.log" ]
+}
+
+@test "record-session: a root from ANTHROPIC_BASE_URL is announced, through safe; the default is not" {
+    record ANTHROPIC_BASE_URL=$'https://x\e]0;pwned\a/'
+    [ "$status" -eq 0 ]
+    grep -qxF 'record-session: ANTHROPIC_BASE_URL is set; requests go to x]0;pwned' <<<"$stderr"
+    refute grep -q $'[\e\a]' <<<"$stderr"
+    grep -qxF $'https://x\e]0;pwned\a/v1/sessions/sesn_x/events/stream' "$TMP/curl.log"
+    record ANTHROPIC_BASE_URL=https://api.anthropic.com/
+    [ "$status" -eq 0 ]
+    refute grep -q 'ANTHROPIC_BASE_URL' <<<"$stderr"
+}
+
 @test "record-session: without ASK_CLAUDE_IDMAP each stream numbers from 01" {
     local s2='data: {"type":"agent.tool_result","id":"sevt_res","tool_use_id":"sevt_tool"}'
     run bash "$REC" --redact <<<"$s2"

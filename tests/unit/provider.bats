@@ -57,6 +57,21 @@ load helpers
     grep -q 'must be https' <<<"$stderr"
 }
 
+@test "base url: what the notice and the refusals print of the root goes through safe" {
+    # the variable is not typed at this prompt: an https root with a title
+    # sequence passes the gate, and its host is announced without it
+    run --separate-stderr env ANTHROPIC_BASE_URL=$'https://x\e]0;pwned\a/' ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" "hi"
+    [ "$status" -eq 0 ]
+    grep -qxF 'ask-claude: ANTHROPIC_BASE_URL is set; requests go to x]0;pwned' <<<"$stderr"
+    refute grep -q $'[\e\a]' <<<"$stderr"
+    run --separate-stderr env ANTHROPIC_BASE_URL=$'http://x\e[2J/' "$BIN" "hi"
+    [ "$status" -eq 2 ]
+    [ "$stderr" = "ask-claude: ANTHROPIC_BASE_URL must be https:// (or http:// on localhost), got: http://x[2J/" ]
+    run --separate-stderr env ANTHROPIC_BASE_URL=$'http://localhost:@x\e[2J' "$BIN" "hi"
+    [ "$status" -eq 2 ]
+    [ "$stderr" = "ask-claude: ANTHROPIC_BASE_URL must not carry user info (an @), got: http://localhost:@x[2J" ]
+}
+
 @test "base url: from the environment it is announced on stderr once; the flag wins and says nothing" {
     run --separate-stderr env ANTHROPIC_BASE_URL=http://localhost:9/some/path ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" "hi"
     [ "$status" -eq 0 ]

@@ -101,7 +101,7 @@ pub struct RequestFlags {
 
     /// only these tools of that --mcp server, e.g. mcp.example.com:search; repeatable; a server not named keeps all its tools
     #[arg(long, global = true, value_name = "mcp-tool")]
-    pub mcp_tool: Vec<String>
+    pub mcp_tool: Vec<String>,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

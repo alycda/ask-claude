@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use crate::{history, request, transport};
 
 /// One read of the next line.
-enum Read {
+pub(crate) enum Read {
     /// a line, its newline gone
     Line(String),
     /// the end of input: the epilogue runs, as after `/quit`
@@ -27,13 +27,13 @@ enum Read {
 
 /// Where the lines come from: plain lines off a pipe, line editing on a
 /// terminal (KTD5).
-enum Input {
+pub(crate) enum Input {
     Pipe(transport::Lines),
     Terminal(Box<reedline::Reedline>),
 }
 
 impl Input {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         use std::io::IsTerminal;
         let (stdin, stdout, stderr) = (
             std::io::stdin().is_terminal(),
@@ -59,7 +59,7 @@ impl Input {
         Self::Terminal(Box::new(editor))
     }
 
-    fn read(&mut self) -> Read {
+    pub(crate) fn read(&mut self) -> Read {
         use transport::Next;
         match self {
             Self::Pipe(lines) => match lines.next() {
@@ -221,7 +221,7 @@ fn is_empty(turns: &Value) -> bool {
 }
 
 /// Print to stdout now: the reply before it went out the same way.
-fn out(text: &str) {
+pub(crate) fn out(text: &str) {
     let mut stdout = std::io::stdout().lock();
     let _ = stdout.write_all(text.as_bytes());
     let _ = stdout.flush();

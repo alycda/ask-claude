@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::cli::{AgentArgs, Cli};
+use crate::cli::{AgentArgs, AgentCommand, Cli};
 use crate::stream::safe;
 use crate::transport::sessions::{self, Sessions};
 use crate::transport::{self, Next};
@@ -41,7 +41,24 @@ pub fn run(
     let sessions = state.join("sessions");
     match &args.command {
         None => {}
-        Some(_) => todo!("U6: agent list, resume, files, budget, archive, trace and tools"),
+        Some(AgentCommand::List) => return list(cfg),
+        Some(AgentCommand::Resume { session }) => {
+            // the session first, as `agent resume` finds it before the checks
+            let id = match session::find(&sessions, session) {
+                Ok(id) => id,
+                Err(refused) => return crate::refuse(&refused),
+            };
+            let mut agent = match Agent::new(args, cfg, sessions, log) {
+                Ok(agent) => agent,
+                Err(code) => return code,
+            };
+            eprintln!("resuming {id}");
+            if let Some(text) = agent.history(&id) {
+                eprint!("{text}");
+            }
+            return agent.chat(Some(id));
+        }
+        Some(_) => todo!("U6 step 3: agent files, budget, archive, trace; agent tools"),
     }
     let mut agent = match Agent::new(args, cfg, sessions, log) {
         Ok(agent) => agent,
@@ -52,7 +69,62 @@ pub fn run(
     }
     match &args.prompt {
         Some(prompt) => agent.one_shot(prompt),
-        None => todo!("U6: the session chat"),
+        None => agent.chat(None),
+    }
+}
+
+/// `agent list`, `session_list`: the API's sessions, newest first, one
+/// line each, `id  status  cost  title`, through safe; 0 whatever the API
+/// said, as the script's `exit 0` after it.
+fn list(cfg: &config::Config) -> i32 {
+    let Some(api_key) = crate::need_key(&cfg.provider) else {
+        return 2;
+    };
+    let mut t = match open(cfg, api_key) {
+        Ok(t) => t,
+        Err(refused) => return crate::refuse(&refused),
+    };
+    let page = t
+        .call("GET", "/sessions?order=desc&limit=50", None)
+        .unwrap_or_else(|e| {
+            crate::failed(&e);
+            NO_RESPONSE.to_string()
+        });
+    if let Some(err) = api_error(&page) {
+        eprintln!("ask-claude: API error: {err}");
+        return 0;
+    }
+    let Ok(page) = serde_json::from_str::<Value>(&page) else {
+        return 0;
+    };
+    let cell = |v: &Value| match v {
+        Value::Null => String::new(),
+        v => crate::text(v),
+    };
+    for s in each(&page["data"]) {
+        let empty = Value::from("");
+        let cost = crate::or(&s["usage"]["list_cost"]["amount"], &"0".into()).clone();
+        // jq stops at the row whose cost it cannot read
+        let Some(cost) = dollars(&cost) else {
+            break;
+        };
+        let row = [
+            cell(&s["id"]),
+            cell(&s["status"]),
+            cost,
+            cell(crate::or(&s["title"], &empty)),
+        ];
+        crate::chat::out(&(safe(&row.join("  ")) + "\n"));
+    }
+    0
+}
+
+/// jq's `.[]?`: an array's elements, an object's values, else nothing.
+fn each(v: &Value) -> Vec<&Value> {
+    match v {
+        Value::Array(a) => a.iter().collect(),
+        Value::Object(o) => o.values().collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -120,9 +192,83 @@ impl<'a> Agent<'a> {
     fn call(&mut self, method: &str, path: &str, body: Option<&str>) -> String {
         self.t.call(method, path, body).unwrap_or_else(|e| {
             crate::failed(&e);
-            r#"{"error":{"type":"no_response","message":"no response (curl failed or timed out)"}}"#
-                .to_string()
+            NO_RESPONSE.to_string()
         })
+    }
+
+    /// `session_history`: the session's messages so far, from the API,
+    /// as `you:` and `agent:` lines; None after the API error.
+    fn history(&mut self, id: &str) -> Option<String> {
+        let path = format!("/sessions/{id}/events?types[]=user.message&types[]=agent.message");
+        let page = self.call("GET", &path, None);
+        if let Some(err) = api_error(&page) {
+            eprintln!("ask-claude: API error: {err}");
+            return None;
+        }
+        Some(session::history(
+            &serde_json::from_str(&page).unwrap_or_default(),
+        ))
+    }
+
+    /// `session_loop`: one turn per line until `/quit`, `/exit` or the end
+    /// of input. With no session yet the first line creates one, so
+    /// quitting first leaves nothing; `/new` drops the session and the
+    /// next line creates another; `/history` prints it. On the way out,
+    /// the command that resumes it. 0, or 130 after a signal, with no
+    /// epilogue (R6).
+    fn chat(&mut self, mut id: Option<String>) -> i32 {
+        use crate::chat::{Input, Read, out};
+        eprintln!(
+            "ask-claude: agent {}  (/new starts another session, /quit exits)",
+            self.agent
+        );
+        let mut input = Input::new();
+        loop {
+            let line = match input.read() {
+                Read::Line(line) => line,
+                Read::End => break,
+                Read::Interrupted => return 130,
+            };
+            match line.as_str() {
+                "" => continue,
+                "/quit" | "/exit" => break,
+                "/history" => {
+                    if let Some(text) = id.clone().and_then(|id| self.history(&id)) {
+                        out(&text);
+                    }
+                    continue;
+                }
+                "/new" => {
+                    id = None;
+                    eprintln!("new session on the next line");
+                    continue;
+                }
+                _ => {}
+            }
+            let rc = match id.clone() {
+                Some(id) => self.turn(&id, Some(user_message(&line))),
+                None => {
+                    // a create that failed was said; the next line tries again
+                    let Some(new) = self.create(&line) else {
+                        continue;
+                    };
+                    let rc = self.turn(&new, None);
+                    if rc == 0 {
+                        self.remember(&new);
+                    }
+                    id = Some(new);
+                    rc
+                }
+            };
+            if rc == 130 {
+                return 130;
+            }
+            out("\n");
+        }
+        if let Some(id) = id {
+            eprintln!("resume with: ask-claude agent resume {id}");
+        }
+        0
     }
 
     /// The one shot: a new session whose first event is the prompt, one
@@ -302,6 +448,17 @@ impl<'a> Agent<'a> {
             Some(r#"{"events":[{"type":"user.interrupt"}]}"#),
         );
     }
+}
+
+/// The body `ma_call` stands in for a request that got no response.
+const NO_RESPONSE: &str =
+    r#"{"error":{"type":"no_response","message":"no response (curl failed or timed out)"}}"#;
+
+/// The events of a line typed in a session chat.
+fn user_message(line: &str) -> String {
+    crate::tojson(&serde_json::json!({
+        "events": [{"type": "user.message", "content": [{"type": "text", "text": line}]}]
+    }))
 }
 
 /// The sessions transport: the API or `ASK_CLAUDE_REPLAY`, inside the

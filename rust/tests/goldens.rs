@@ -126,9 +126,9 @@ fn r2_tool_inputs_are_parsed_from_their_partials_and_partial_is_gone() {
 
 /// The events of a reply that is one `tool_use` block, its input streamed
 /// as the `input_json_delta` partials given (none for a call with no
-/// arguments), stopped with `stop` (`None`: cut off before
-/// `content_block_stop`), the turn ending on `stop_reason`.
-fn tool_use_reply(partials: &[&str], stop: Option<()>, stop_reason: &str) -> Vec<Value> {
+/// arguments), its block stopped when `stopped` (cut off before
+/// `content_block_stop` when not), the turn ending on `stop_reason`.
+fn tool_use_reply(partials: &[&str], stopped: bool, stop_reason: &str) -> Vec<Value> {
     use serde_json::json;
     let mut ev = vec![
         json!({"type":"message_start","message":{"id":"msg_FIXTURE01","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}),
@@ -137,7 +137,7 @@ fn tool_use_reply(partials: &[&str], stop: Option<()>, stop_reason: &str) -> Vec
     for p in partials {
         ev.push(json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":p}}));
     }
-    if stop.is_some() {
+    if stopped {
         ev.push(json!({"type":"content_block_stop","index":0}));
     }
     ev.push(json!({"type":"message_delta","delta":{"stop_reason":stop_reason,"stop_sequence":null},"usage":{"output_tokens":3}}));
@@ -150,7 +150,7 @@ fn tool_use_reply(partials: &[&str], stop: Option<()>, stop_reason: &str) -> Vec
 /// the fold parses what it has, as lib/reassemble.jq does.
 #[test]
 fn r2_a_tool_use_with_no_input_delta_folds_to_an_empty_input() {
-    let m = reassemble::message(&tool_use_reply(&[], Some(()), "tool_use")).unwrap();
+    let m = reassemble::message(&tool_use_reply(&[], true, "tool_use")).unwrap();
     assert_eq!(m["content"][0]["input"], serde_json::json!({}));
     assert!(m["content"][0].get("partial").is_none(), "{m}");
     assert_eq!(m["stop_reason"], "tool_use");
@@ -164,7 +164,7 @@ fn r2_a_tool_use_with_no_input_delta_folds_to_an_empty_input() {
 #[test]
 fn r2_a_tool_input_that_is_not_json_fails_the_fold_whatever_the_stop_reason() {
     for stop_reason in ["max_tokens", "end_turn"] {
-        let ev = tool_use_reply(&[r#"{"command": "#, r#""ls"#], Some(()), stop_reason);
+        let ev = tool_use_reply(&[r#"{"command": "#, r#""ls"#], true, stop_reason);
         assert!(
             reassemble::message(&ev).is_err(),
             "{stop_reason}: {:?}",
@@ -178,7 +178,7 @@ fn r2_a_tool_input_that_is_not_json_fails_the_fold_whatever_the_stop_reason() {
 /// the stop. Oracle: `jq -s -f lib/reassemble.jq` on this stream.
 #[test]
 fn r2_a_tool_use_cut_off_before_its_stop_keeps_its_partial() {
-    let ev = tool_use_reply(&[r#"{"command": "ls"#], None, "max_tokens");
+    let ev = tool_use_reply(&[r#"{"command": "ls"#], false, "max_tokens");
     let m = reassemble::message(&ev).unwrap();
     assert_eq!(
         m["content"],
@@ -191,7 +191,7 @@ fn r2_a_tool_use_cut_off_before_its_stop_keeps_its_partial() {
 /// folds this stream to {"s":"a\u{FFFD}b","t":"😀"}.
 #[test]
 fn r2_a_lone_low_surrogate_in_a_tool_input_is_the_replacement_character() {
-    let ev = tool_use_reply(&[r#"{"s":"a\udc00b","t":"😀"}"#], Some(()), "tool_use");
+    let ev = tool_use_reply(&[r#"{"s":"a\udc00b","t":"😀"}"#], true, "tool_use");
     let m = reassemble::message(&ev).unwrap();
     assert_eq!(
         m["content"][0]["input"],
@@ -208,7 +208,7 @@ fn r2_a_lone_low_surrogate_in_a_tool_input_is_the_replacement_character() {
 #[test]
 fn r2_numbers_in_a_tool_input_fold_to_jqs_values() {
     let partial = r#"{"a":1.0,"b":1e3,"c":-0,"d":1.10,"e":18446744073709551615,"f":1.5e-7}"#;
-    let m = reassemble::message(&tool_use_reply(&[partial], Some(()), "tool_use")).unwrap();
+    let m = reassemble::message(&tool_use_reply(&[partial], true, "tool_use")).unwrap();
     let jq: Value = serde_json::from_str(
         r#"{"a":1.0,"b":1E+3,"c":-0,"d":1.10,"e":18446744073709551615,"f":1.5E-7}"#,
     )
@@ -217,6 +217,94 @@ fn r2_numbers_in_a_tool_input_fold_to_jqs_values() {
     assert_eq!(input, &jq);
     assert!(input["a"].is_f64(), "1.0 is not the integer 1: {input}");
     assert_eq!(input["e"].as_u64(), Some(u64::MAX));
+}
+
+/// Events from text lines, as `jq -s` reads them.
+fn lines(text: &str) -> Vec<Value> {
+    text.lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
+/// jq keys a block by `$e.index|tostring` and orders the blocks by
+/// `sort_by(.key|tonumber)`: a negative and a fractional index are blocks
+/// of their own, and the string "2" is the block of 2. Oracle: jq 1.8.2's
+/// `jq -s -f lib/reassemble.jq` folds this stream to the content below.
+#[test]
+fn r2_blocks_are_keyed_and_ordered_as_jq_keys_them() {
+    let ev = lines(
+        r#"{"type":"content_block_start","index":"2","content_block":{"type":"text","text":"two"}}
+{"type":"content_block_start","index":1.5,"content_block":{"type":"text","text":"half"}}
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"zero"}}
+{"type":"content_block_start","index":-1,"content_block":{"type":"text","text":"neg"}}
+{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"+"}}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"+"}}"#,
+    );
+    let m = reassemble::message(&ev).unwrap();
+    assert_eq!(
+        m["content"].to_string(),
+        r#"[{"type":"text","text":"neg"},{"type":"text","text":"zero+"},{"type":"text","text":"half"},{"type":"text","text":"two+"}]"#
+    );
+}
+
+/// A block whose index is no number fails the fold where jq's FINISH
+/// fails, `string ("null") cannot be parsed as a number`: a missing or
+/// null index, or one that is not a number at all. A content block that
+/// is not an object fails at jq's `.type`. Oracle: jq 1.8.2 exits 5 on
+/// each of these streams.
+#[test]
+fn r2_a_block_jq_cannot_key_or_read_fails_the_fold() {
+    for index in [
+        r#""#,
+        r#""index":null,"#,
+        r#""index":"abc","#,
+        r#""index":true,"#,
+    ] {
+        for event in [
+            format!(
+                r#"{{"type":"content_block_start",{index}"content_block":{{"type":"text","text":"a"}}}}"#
+            ),
+            format!(
+                r#"{{"type":"content_block_delta",{index}"delta":{{"type":"text_delta","text":"a"}}}}"#
+            ),
+        ] {
+            let got = reassemble::message(&lines(&event));
+            assert!(got.is_err(), "{event}: {got:?}");
+        }
+    }
+    for block in [r#""x""#, "5", "[]", "true"] {
+        let ev = lines(&format!(
+            "{}\n{}",
+            format_args!(r#"{{"type":"content_block_start","index":0,"content_block":{block}}}"#),
+            r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"x"}}"#
+        ));
+        let got = reassemble::message(&ev);
+        assert!(got.is_err(), "{block}: {got:?}");
+    }
+}
+
+/// What jq folds without a block to act on: a stop for an index with no
+/// block (`null | has("partial")` is false) and a delta of a type it does
+/// not know (`else .`) leave the content as it was, and a null content
+/// block takes its deltas. Oracle: jq 1.8.2 folds these to the content
+/// below.
+#[test]
+fn r2_events_without_a_block_change_nothing_as_in_jq() {
+    let ev = lines(
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"a"}}
+{"type":"content_block_stop","index":3}
+{"type":"content_block_delta","index":4,"delta":{"type":"citations_delta","citation":{}}}
+{"type":"content_block_stop"}"#,
+    );
+    let m = reassemble::message(&ev).unwrap();
+    assert_eq!(m["content"].to_string(), r#"[{"type":"text","text":"a"}]"#);
+
+    let ev = lines(
+        r#"{"type":"content_block_start","index":0,"content_block":null}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"x"}}"#,
+    );
+    let m = reassemble::message(&ev).unwrap();
+    assert_eq!(m["content"].to_string(), r#"[{"text":"x"}]"#);
 }
 
 // ---- R3: the request builder ----
@@ -316,7 +404,8 @@ fn r3_request_web_mcp_and_everything() {
 /// `Args::tools` goes after every entry the builder already writes, code
 /// execution, web and MCP alike, and is the whole list when there are none
 /// (KTD12: the local tools append, so every existing golden holds without
-/// them). Empty, it changes nothing: the goldens above.
+/// them). Empty, it changes nothing: the goldens above. Held by text, so
+/// the `tools` key keeps its place too: before `container`, after the rest.
 #[test]
 fn r3_args_tools_are_sent_after_every_built_in_entry() {
     let bash = serde_json::json!({
@@ -337,13 +426,13 @@ fn r3_args_tools_are_sent_after_every_built_in_entry() {
     everything.tools = vec![bash.clone()];
     let mut want = json("request/everything.json");
     want["tools"].as_array_mut().unwrap().push(bash.clone());
-    assert_eq!(request::body(&everything), want);
+    assert_eq!(request::body(&everything).to_string(), want.to_string());
 
     let mut plain = args("", "", "", "", false, &[], "");
     plain.tools = vec![bash.clone()];
     let mut want = json("request/plain.json");
     want["tools"] = serde_json::json!([bash]);
-    assert_eq!(request::body(&plain), want);
+    assert_eq!(request::body(&plain).to_string(), want.to_string());
 }
 
 /// The object keys of a JSON text in document order, read off the text

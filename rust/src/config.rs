@@ -70,33 +70,20 @@ pub fn check(r: &RequestFlags) -> Result<Config, String> {
 
     // usage joins a repeated flag's values with spaces, and the script
     // splits them again
-    let mcp: Vec<&str> = r.mcp.iter().flat_map(|m| m.split_whitespace()).collect();
+    let mcp: Vec<&str> = r.mcp.iter().flat_map(|m| words(m)).collect();
     let mut vars = String::new();
     for v in &mcp {
-        let Some(rest) = v.strip_prefix("https://") else {
+        if !v.starts_with("https://") {
             return Err(format!("--mcp takes https URLs, got: {v}"));
-        };
-        // the variable lib/request.jq reads for this server's token
-        let h: String = host(rest)
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '_' {
-                    c.to_ascii_uppercase()
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        vars.push_str(&format!(" ASK_CLAUDE_MCP_TOKEN_{h}"));
+        }
+        // the variable the request reads for this server's token
+        vars.push_str(&format!(" {}", crate::request::token_variable(v)));
     }
 
     // hosts fold case ASCII only, exactly as request.jq's ascii_downcase
     // does, so an entry cannot pass here and match nothing in the request
-    let hosts: Vec<String> = mcp
-        .iter()
-        .map(|v| host(v.strip_prefix("https://").unwrap_or(v)).to_ascii_lowercase())
-        .collect();
-    for t in r.mcp_tool.iter().flat_map(|m| m.split_whitespace()) {
+    let hosts: Vec<String> = mcp.iter().map(|v| crate::request::hostname(v)).collect();
+    for t in r.mcp_tool.iter().flat_map(|m| words(m)) {
         let Some((h, tool)) = t.split_once(':').filter(|(h, tool)| {
             !h.is_empty()
                 && h.bytes()
@@ -178,7 +165,7 @@ fn anthropic_base_url(r: &RequestFlags) -> Result<String, String> {
         let rest = base_url
             .split_once("://")
             .map_or(&*base_url, |(_, rest)| rest);
-        let host = &rest[..rest.find('/').unwrap_or(rest.len())];
+        let host = crate::stream::safe(&rest[..rest.find('/').unwrap_or(rest.len())]);
         eprintln!("ask-claude: ANTHROPIC_BASE_URL is set; requests go to {host}");
     }
     Ok(base_url)
@@ -243,7 +230,8 @@ fn anthropic_only(r: &RequestFlags) -> Result<(), String> {
 fn base_url_gate(url: &str, source: &str) -> Result<(), String> {
     if url.contains('@') {
         return Err(format!(
-            "{source} must not carry user info (an @), got: {url}"
+            "{source} must not carry user info (an @), got: {}",
+            crate::stream::safe(url)
         ));
     }
     if url.starts_with("https://") {
@@ -271,13 +259,15 @@ fn base_url_gate(url: &str, source: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "{source} must be https:// (or http:// on localhost), got: {url}"
+            "{source} must be https:// (or http:// on localhost), got: {}",
+            crate::stream::safe(url)
         ))
     }
 }
 
-/// An authority's host the way the script cuts it: up to the first `/` or
-/// `:` (`${h%%[/:]*}`), user info included.
-fn host(rest: &str) -> &str {
-    &rest[..rest.find(['/', ':']).unwrap_or(rest.len())]
+/// `for v in ${usage_mcp:-}`: a value's words as bash splits them on the
+/// default IFS (space, tab, newline) and no other whitespace, so the check
+/// counts and reads the entries the script counts and reads.
+fn words(value: &str) -> impl Iterator<Item = &str> {
+    value.split([' ', '\t', '\n']).filter(|w| !w.is_empty())
 }

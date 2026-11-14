@@ -9,7 +9,7 @@
 # sets:    BASE_URL API HOST (read by common, messages, agent-api, agent-turn),
 #          base_url_from mcp_count mcp_vars mcp_hosts h t state_owner
 # defines: need_key ascii_lower
-# calls:   die (ask-claude)
+# calls:   die (ask-claude), safe_text (common)
 
 # Providers. The bash version speaks the Messages API only; the OpenAI
 # chat-completions shape (OpenAI, Venice at its own base URL) is the Rust
@@ -31,16 +31,18 @@ esac
 # it to -p anthropic. usage does not say which of the two the value came
 # from, so a value equal to the variable's counts as the variable's: they
 # differ only when the flag repeats the variable, and then what the
-# messages below say is still true.
+# messages below say is still true. The variable is not typed at this
+# prompt and may carry terminal codes, so what they print of the root goes
+# through safe.
 BASE_URL="${usage_base_url:-https://api.anthropic.com}"
 base_url_from=--base-url
 [ -z "${ANTHROPIC_BASE_URL:-}" ] || [ "$BASE_URL" != "$ANTHROPIC_BASE_URL" ] || base_url_from=ANTHROPIC_BASE_URL
 case "$BASE_URL" in
-*@*) die "$base_url_from must not carry user info (an @), got: $BASE_URL" ;;
+*@*) die "$base_url_from must not carry user info (an @), got: $(safe_text "$BASE_URL")" ;;
 https://*) ;;
 *)
   [[ $BASE_URL =~ ^http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/.*)?$ ]] ||
-    die "$base_url_from must be https:// (or http:// on localhost), got: $BASE_URL"
+    die "$base_url_from must be https:// (or http:// on localhost), got: $(safe_text "$BASE_URL")"
   ;;
 esac
 # shellcheck disable=SC2034  # read by lib/messages.bash
@@ -51,7 +53,7 @@ HOST="${HOST%%/*}"
 # The variable is often exported for other tools, and the key goes where it
 # points: a root from it that is not the default is said once, on stderr.
 if [ "$base_url_from" = ANTHROPIC_BASE_URL ] && [ "${BASE_URL%/}" != https://api.anthropic.com ]; then
-  echo "ask-claude: ANTHROPIC_BASE_URL is set; requests go to $HOST" >&2
+  echo "ask-claude: ANTHROPIC_BASE_URL is set; requests go to $(safe_text "$HOST")" >&2
 fi
 
 # --mcp: servers the model may call through the MCP connector; https only,

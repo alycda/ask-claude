@@ -336,6 +336,12 @@ fn exchange(
         }
         Err(e) => failed(&e),
     }
+    // a signal that came with the body's end or a failed read, or before a
+    // send that failed: the script would be gone with its user turn
+    // dangling, not rolled back after an error of its own
+    if transport::interrupted() {
+        return Err(Interrupted);
+    }
     Ok(got)
 }
 
@@ -345,27 +351,44 @@ fn failed(e: &std::io::Error) {
     eprintln!("ask-claude: {}", stream::safe(&e.to_string()));
 }
 
-/// The bash `api_error` of a body that is not a stream: its
-/// `.error.message`, or "unreadable response" for a body that is not JSON
-/// or carries none.
-fn api_error(body: &str) -> String {
+/// `api_error` in `lib/common.bash` as `$(api_error ...)` reads it: jq's
+/// `.error.message // empty | safe` over every JSON value of the body, one
+/// line each, "unreadable response" once jq fails (a value that is not
+/// JSON, or not an object, or an `.error` that is not one), the trailing
+/// newlines dropped; None when that leaves nothing (no `.error`, a null or
+/// false message, an empty body). The Messages path and the sessions
+/// requests share it.
+pub(crate) fn api_error(body: &str) -> Option<String> {
     use serde_json::Value;
-    let message = match serde_json::from_str::<Value>(body) {
-        Ok(Value::Null) => Some(String::new()),
-        Ok(Value::Object(o)) => match o.get("error") {
-            None | Some(Value::Null) => Some(String::new()),
-            Some(Value::Object(e)) => Some(match e.get("message") {
-                None | Some(Value::Null) | Some(Value::Bool(false)) => String::new(),
-                Some(m) => stream::safe(&text(m)),
-            }),
-            Some(_) => None,
-        },
-        _ => None,
-    };
-    match message {
-        Some(m) if !m.is_empty() => m,
-        _ => "unreadable response".into(),
+    let mut out = Vec::new();
+    for value in serde_json::Deserializer::from_str(body).into_iter::<Value>() {
+        let Ok(value) = value else {
+            out.push("unreadable response".to_string());
+            break;
+        };
+        let error = match &value {
+            Value::Null => continue,
+            Value::Object(o) => o.get("error").unwrap_or(&Value::Null),
+            _ => {
+                out.push("unreadable response".to_string());
+                break;
+            }
+        };
+        let m = match error {
+            Value::Null => continue,
+            Value::Object(e) => or(e.get("message").unwrap_or(&Value::Null), &Value::Null),
+            _ => {
+                out.push("unreadable response".to_string());
+                break;
+            }
+        };
+        if !m.is_null() {
+            out.push(stream::safe(&text(m)));
+        }
     }
+    let joined = out.join("\n");
+    let text = joined.trim_end_matches('\n');
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// R5: the one shot, as the end of the bash script runs it: a new Chat
@@ -485,7 +508,10 @@ pub fn call(
         // filtering); it must not replace the skills container of a chat
         // that used -s earlier, so it lives in turn_cid alone
         if skills && !turn_cid.is_empty() {
-            let _ = history::replace(&container, turn_cid.as_bytes());
+            // reported as the script's failed redirect is, and the turn goes on
+            if let Err(e) = history::replace(&container, turn_cid.as_bytes()) {
+                eprintln!("ask-claude: cannot save {}: {e}", container.display());
+            }
         }
         let seconds = t0.elapsed().as_secs();
         eprintln!("{}", usage_line(&msg, seconds));
@@ -553,7 +579,11 @@ fn reply(got: &Received) -> Result<serde_json::Value, Failure> {
     let msg = match &got.events {
         _ if !got.sse => {
             return Err(failed(
-                format!("API error: {}", api_error(&got.body)),
+                // `[ -n "$err" ] || err="unreadable response"`
+                format!(
+                    "API error: {}",
+                    api_error(&got.body).unwrap_or_else(|| "unreadable response".into())
+                ),
                 &error_kind(&got.body),
                 Value::Null,
             ));
@@ -563,10 +593,15 @@ fn reply(got: &Received) -> Result<serde_json::Value, Failure> {
     };
     match or(&msg["error"]["message"], &Value::Null) {
         Value::Null => Ok(msg),
-        m => {
-            let message = format!("API error: {}", stream::safe(&text(m)));
-            Err(failed(message, &error_kind(&msg.to_string()), msg))
-        }
+        // `$(... '.error.message // empty | safe')`: a message safe leaves
+        // empty, once `$(..)` cuts its trailing newlines, is none either
+        m => match stream::safe(&text(m)).trim_end_matches('\n') {
+            "" => Ok(msg),
+            m => {
+                let message = format!("API error: {m}");
+                Err(failed(message, &error_kind(&msg.to_string()), msg))
+            }
+        },
     }
 }
 
@@ -591,7 +626,9 @@ fn error_kind(body: &str) -> String {
         Value::Null => "unknown".into(),
         Value::Object(e) => match or(e.get("type").unwrap_or(&Value::Null), &Value::Null) {
             Value::Null => "unknown".into(),
-            t => text(t),
+            // the script takes it through `$(...)`, which drops trailing
+            // newlines, before `ident` tests its shape
+            t => text(t).trim_end_matches('\n').to_string(),
         },
         _ => "unreadable".into(),
     }
@@ -637,11 +674,12 @@ fn or<'a>(a: &'a serde_json::Value, b: &'a serde_json::Value) -> &'a serde_json:
     }
 }
 
-/// jq's `"\(x)"`: a string as itself, anything else as its JSON text.
-fn text(v: &serde_json::Value) -> String {
+/// jq's `"\(x)"` and `tostring`: a string as itself, anything else as its
+/// JSON text, [`tojson`]'s (DEL escaped, as jq escapes it).
+pub(crate) fn text(v: &serde_json::Value) -> String {
     match v {
         serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
+        other => tojson(other),
     }
 }
 
@@ -661,4 +699,13 @@ fn url_host<'a>(url: &'a str, stop: &[char]) -> Option<&'a str> {
 /// is the same bytes either binary shows.
 pub(crate) fn tojson(v: &serde_json::Value) -> String {
     v.to_string().replace('\u{7f}', "\\u007f")
+}
+
+/// jq's `.[]?`: an array's elements, an object's values, else nothing.
+pub(crate) fn each(v: &serde_json::Value) -> Vec<&serde_json::Value> {
+    match v {
+        serde_json::Value::Array(a) => a.iter().collect(),
+        serde_json::Value::Object(o) => o.values().collect(),
+        _ => Vec::new(),
+    }
 }

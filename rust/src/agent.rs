@@ -16,6 +16,7 @@ use crate::local_mcp::LocalMcp;
 use crate::stream::safe;
 use crate::transport::sessions::{self, Sessions};
 use crate::transport::{self, Next};
+use crate::{api_error, each, text};
 use crate::{config, event, session};
 
 /// The custom-tool rounds a turn answers before it gives up on the
@@ -122,29 +123,34 @@ fn list(cfg: &config::Config) -> i32 {
     0
 }
 
-/// jq's `.[]?`: an array's elements, an object's values, else nothing.
-fn each(v: &Value) -> Vec<&Value> {
-    match v {
-        Value::Array(a) => a.iter().collect(),
-        Value::Object(o) => o.values().collect(),
-        _ => Vec::new(),
-    }
-}
-
 /// `agent tools`: the `--local-mcp` server's tools as custom tool
 /// definitions, printed as jq prints them; no key, agent or environment,
-/// since only the local server is asked. The server stops on the way out.
+/// since only the local server is asked. The server stops on the way out,
+/// Ctrl-C during its handshake included (the script's EXIT trap).
 fn tools(args: &AgentArgs) -> i32 {
     let Some(command) = args.local_mcp.as_deref().filter(|c| !c.is_empty()) else {
         return crate::refuse("agent tools needs --local-mcp <command> (or ASK_CLAUDE_LOCAL_MCP)");
     };
+    transport::catch_signals();
     let server = match LocalMcp::start(command) {
         Ok(server) => server,
-        Err(refused) => return crate::refuse(&refused),
+        Err(refused) => return not_started(&refused),
     };
     let text = serde_json::to_string_pretty(&server.definitions()).unwrap_or_default();
     crate::chat::out(&(text.replace('\u{7f}', "\\u007f") + "\n"));
     0
+}
+
+/// The exit code after a `--local-mcp` server that did not start: 130 with
+/// no message when a signal cut its handshake short (the script dies of
+/// the signal, its EXIT trap stopping the server), else 2 after the
+/// refusal. The server was stopped when the start gave up.
+fn not_started(refused: &str) -> i32 {
+    if transport::interrupted() {
+        130
+    } else {
+        crate::refuse(refused)
+    }
 }
 
 /// The session an `agent <command> <session>` names (`session_find`), or
@@ -519,12 +525,14 @@ impl<'a> Agent<'a> {
         }
         let api_key = crate::need_key(&cfg.provider).ok_or(2)?;
         let t = open(cfg, api_key).map_err(|m| crate::refuse(&m))?;
+        // before the server starts, so Ctrl-C in its handshake still stops
+        // it (the server has its own process group and outlives this one)
+        transport::catch_signals();
         // last, so a bad flag or a missing key fails before a server starts
         let local = match args.local_mcp.as_deref().filter(|c| !c.is_empty()) {
-            Some(command) => Some(LocalMcp::start(command).map_err(|m| crate::refuse(&m))?),
+            Some(command) => Some(LocalMcp::start(command).map_err(|m| not_started(&m))?),
             None => None,
         };
-        transport::catch_signals();
         Ok(Self {
             t,
             gate,
@@ -736,7 +744,7 @@ impl<'a> Agent<'a> {
         let fold = loop {
             let mut got = Streamed::default();
             let lines = match self.t.stream(id) {
-                Ok(reply) => Some(transport::lines(reply)),
+                Ok(reply) => Some(transport::lines(Box::new(ToTurnEnd::new(reply)))),
                 Err(e) => {
                     got.failure = e.to_string();
                     None
@@ -784,7 +792,7 @@ impl<'a> Agent<'a> {
                         .as_array()
                         .into_iter()
                         .flatten()
-                        .map(tostring)
+                        .map(text)
                         .collect();
                     eprintln!(
                         "ask-claude: the session waits on something this version cannot answer ({}); interrupting",
@@ -817,7 +825,7 @@ impl<'a> Agent<'a> {
         }
         // at the cap the last round was counted but not answered
         self.event(&fold, rounds.min(ROUNDS), t0, "", id);
-        let stop = safe(&tostring(crate::or(&fold["stop_reason"], &"".into())));
+        let stop = safe(&text(crate::or(&fold["stop_reason"], &"".into())));
         match stop.as_str() {
             "end_turn" | "" => 0,
             "requires_action" => {
@@ -1069,6 +1077,53 @@ impl Streamed {
     }
 }
 
+/// A session stream read up to the turn's end and no further, as
+/// `session_stream_read`'s `sed` quits at the first idle or termination
+/// and the script then kills its curl. The line that ends the turn is the
+/// last one handed over, and the reply is dropped as it is read, which
+/// closes the connection: the reader thread ends there instead of holding
+/// the stream open beside the next round's, until another event or the
+/// 1800 s limit.
+struct ToTurnEnd {
+    /// None once the turn's end or the reply's has been read
+    reply: Option<std::io::BufReader<transport::Reply>>,
+    /// the line being handed over, from `at`
+    line: Vec<u8>,
+    at: usize,
+}
+
+impl ToTurnEnd {
+    fn new(reply: transport::Reply) -> Self {
+        Self {
+            reply: Some(std::io::BufReader::new(reply)),
+            line: Vec::new(),
+            at: 0,
+        }
+    }
+}
+
+impl std::io::Read for ToTurnEnd {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::io::BufRead;
+        if self.at == self.line.len() {
+            let Some(reply) = self.reply.as_mut() else {
+                return Ok(0);
+            };
+            self.line.clear();
+            self.at = 0;
+            if reply.read_until(b'\n', &mut self.line)? == 0
+                || ends_turn(&crate::sse::decode(&self.line))
+            {
+                self.reply = None;
+            }
+        }
+        let n = buf.len().min(self.line.len() - self.at);
+        buf[..n].copy_from_slice(&self.line[self.at..self.at + n]);
+        self.at += n;
+        Ok(n)
+    }
+}
+
 /// Whether a stream line is the turn's end: `sed`'s
 /// `/"type":"session.status_idle"/q` and its `status_terminated` twin,
 /// the dot any one character.
@@ -1081,41 +1136,6 @@ fn ends_turn(line: &str) -> bool {
                 .iter()
                 .any(|end| rest.as_str().starts_with(end))
     })
-}
-
-/// `api_error` in `lib/common.bash` over a sessions response: the API's
-/// `.error.message` through safe, "unreadable response" for a body that
-/// is not JSON, and None when there is no error (no `.error`, a null
-/// message, an empty body).
-fn api_error(body: &str) -> Option<String> {
-    let mut out = Vec::new();
-    for value in serde_json::Deserializer::from_str(body).into_iter::<Value>() {
-        let Ok(value) = value else {
-            out.push("unreadable response".to_string());
-            break;
-        };
-        let error = match &value {
-            Value::Null => continue,
-            Value::Object(o) => o.get("error").unwrap_or(&Value::Null),
-            _ => {
-                out.push("unreadable response".to_string());
-                break;
-            }
-        };
-        let m = match error {
-            Value::Null => continue,
-            Value::Object(e) => crate::or(e.get("message").unwrap_or(&Value::Null), &Value::Null),
-            _ => {
-                out.push("unreadable response".to_string());
-                break;
-            }
-        };
-        if !m.is_null() {
-            out.push(safe(&crate::text(m)));
-        }
-    }
-    let text = out.join("\n");
-    (!text.is_empty()).then_some(text)
 }
 
 /// A fold's error message, as `api_error` reads it from the fold: None
@@ -1142,14 +1162,6 @@ fn id_of(body: &str) -> Option<String> {
         _ => &Value::Null,
     };
     (!id.is_null()).then(|| crate::text(id))
-}
-
-/// jq's `tostring`: a string as itself, anything else as its JSON.
-fn tostring(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => crate::tojson(other),
-    }
 }
 
 /// `DOLLARS` in `lib/common.bash`: cents, as the API gives them, as
@@ -1222,6 +1234,25 @@ mod tests {
         assert_eq!(
             api_error(r#"{"error":{"message":"a\u001b[2Jb"}}"#).as_deref(),
             Some("a[2Jb")
+        );
+        // each as the script's `$(api_error ...)` reads it, checked against it
+        assert_eq!(api_error(r#"{"error":{"message":false}}"#), None);
+        assert_eq!(api_error(r#"{"error":{"message":""}}"#), None);
+        assert_eq!(
+            api_error(r#"{"error":{"message":"a\n"}}"#).as_deref(),
+            Some("a")
+        );
+        assert_eq!(
+            api_error(r#"{"error":{"message":"a"}}{"error":{"message":"b"}}"#).as_deref(),
+            Some("a\nb")
+        );
+        assert_eq!(
+            api_error(r#"{"error":{"message":"a"}}{"error":{"message":""}}"#).as_deref(),
+            Some("a")
+        );
+        assert_eq!(
+            api_error(r#"{"error":{"message":"a"}} x"#).as_deref(),
+            Some("a\nunreadable response")
         );
     }
 

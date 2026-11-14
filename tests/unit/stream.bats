@@ -74,21 +74,25 @@ no_bidi() {
         | jq --unbuffered -rj -f "$ROOT/lib/stream.jq" > "$TMP/out.txt"
     printf 'abcdefghij\xe2\x80\x8ex\xe2\x80\x8fy\xd8\x9cz' > "$TMP/expected.txt"
     assert_golden "$TMP/expected.txt" "$TMP/out.txt"
-    no_bidi "$TMP/out.txt"
 }
 
-@test "stream: a reply through the binary prints no bidi formatting character, and keeps U+200F" {
+@test "stream: a reply through the binary prints no bidi formatting character on stdout or stderr, and keeps U+200F" {
     {
-        printf 'data: %s\n\n' '{"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":0}}}'
+        printf 'data: %s\n\n' '{"type":"message_start","message":{"model":"claude\u202e-opus-5-5","usage":{"input_tokens":1,"output_tokens":0}}}'
         printf 'data: %s\n\n' '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}'
         printf 'data: %s\n\n' '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a\u202eb\u2066c\u200fd"}}'
         printf 'data: %s\n\n' '{"type":"content_block_stop","index":0}'
-        printf 'data: %s\n\n' '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}'
+        printf 'data: %s\n\n' '{"type":"message_delta","delta":{"stop_reason":"stop\u2066_sequence"},"usage":{"output_tokens":3}}'
         printf 'data: %s\n\n' '{"type":"message_stop"}'
     } > "$TMP/bidi.sse"
-    ASK_CLAUDE_REPLAY="$TMP/bidi.sse" "$BIN" "ping" > "$TMP/out.txt" 2>/dev/null
+    # bats fails the test on a non-zero status here (errexit)
+    ASK_CLAUDE_REPLAY="$TMP/bidi.sse" "$BIN" "ping" > "$TMP/out.txt" 2> "$TMP/err.txt"
     printf 'abc\xe2\x80\x8fd\n' > "$TMP/expected.txt"
     assert_golden "$TMP/expected.txt" "$TMP/out.txt"
+    # the usage and stopped lines on stderr carry API values too: through safe
+    no_bidi "$TMP/err.txt"
+    grep -q '^\[claude-opus-5-5 in=1 ' "$TMP/err.txt"
+    grep -qx '\[stopped: stop_sequence\]' "$TMP/err.txt"
 }
 
 @test "stream: an API error message through the binary prints no bidi formatting character" {

@@ -2,8 +2,8 @@
 # shellcheck disable=SC2012,SC2059  # ls counts files in a test; a format string from the test itself
 load helpers
 
-chat() { # stdin script
-    printf "$1" | ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN"
+chat() { # stdin script, then args
+    printf "$1" | ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" "${@:2}"
 }
 STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
 
@@ -64,16 +64,23 @@ again'
     [ "$(grep -c '^you: ' <<<"$output")" -eq 1 ]
 }
 
-# bats test_tags=pty
-@test "chat: the bash running the loop supports bracketed paste (>= 5.1)" {
+# The two checks below pin the bash that usage's shebang resolves from PATH,
+# not the binary under test, so both are bash-only. Only the second needs a
+# terminal name readline reports bracketed paste for.
+
+# bats test_tags=bash-only
+@test "chat: the bash running the loop is new enough for bracketed paste (>= 5.1)" {
     # usage's shebang resolves `bash` from PATH; the same resolution happens here
     bash -c '(( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) ))'
+}
+
+# bats test_tags=pty,bash-only
+@test "chat: the bash running the loop has bracketed paste on (>= 5.1)" {
     bash -ic 'bind -v' 2>/dev/null | grep -q 'enable-bracketed-paste on'
 }
 
 @test "chat: an empty prompt argument is no prompt, the chat loop and no request" {
-    run --separate-stderr bash -c 'printf "/quit\n" | ASK_CLAUDE_REPLAY="$1" ASK_CLAUDE_REQUEST_LOG="$2" "$3" ""' _ \
-        "$FIX/sse/text.sse" "$TMP/requests.jsonl" "$BIN"
+    run --separate-stderr chat '/quit\n' ''
     [ "$status" -eq 0 ]
     grep -q '(/new resets, /quit exits)' <<<"$stderr"
     [ ! -s "$TMP/requests.jsonl" ]

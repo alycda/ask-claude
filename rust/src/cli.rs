@@ -51,11 +51,34 @@ impl Cli {
         let given = |id| matches.value_source(id) == Some(ValueSource::CommandLine);
         cli.request.model_given = given("model");
         cli.request.base_url_given = given("base_url");
-        // The script tests `[ -z "${usage_prompt:-}" ]`, so an empty prompt
-        // is no prompt: the chat, not a turn the API refuses as empty.
-        cli.prompt = cli.prompt.filter(|p| !p.is_empty());
-        if let Some(Command::Agent(agent)) = cli.command.as_mut() {
-            agent.prompt = agent.prompt.take().filter(|p| !p.is_empty());
+        // The script reads every optional value as `${usage_x:-}`, so an
+        // empty one is no value: `''` as the prompt is the chat, not a turn
+        // the API refuses as empty, and `-f ''` is no file. Once here, for
+        // every optional value, rather than at each use.
+        let r = &mut cli.request;
+        let mut optional = vec![
+            &mut cli.prompt,
+            &mut cli.file,
+            &mut r.system,
+            &mut r.skills,
+            &mut r.base_url,
+            &mut r.advisor,
+        ];
+        match cli.command.as_mut() {
+            Some(Command::Resume { chat }) => optional.push(chat),
+            Some(Command::Agent(a)) => optional.extend([
+                &mut a.prompt,
+                &mut a.agent,
+                &mut a.environment,
+                &mut a.repo,
+                &mut a.local_mcp,
+            ]),
+            Some(Command::List) | None => {}
+        }
+        for v in optional {
+            if v.as_deref() == Some("") {
+                *v = None;
+            }
         }
         cli
     }

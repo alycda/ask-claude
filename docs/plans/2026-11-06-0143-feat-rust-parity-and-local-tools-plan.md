@@ -56,7 +56,7 @@ versions.
 
 ### Problem Frame
 
-felixia cannot run Claude Code, and Docker is too heavy beside Immich on it.
+The target machine cannot run Claude Code, and Docker is too heavy beside Immich on it.
 ask-claude in bash runs there, but it is a client, not an assistant: it cannot
 edit a file or run a command. The CodeCrafters course that started this project
 builds exactly that loop. The repository already planned the loop as empty TODO
@@ -70,7 +70,7 @@ through, which matters once a command is displayed for approval.
 
 - **The three pieces are planned together, over merging the compound-engineering
   docs line first.** (session-settled: user-directed — chosen over the docs
-  merge: the port and the loop are the work felixia waits on) Governs R1 to R24.
+  merge: the port and the loop are the work the target machine waits on) Governs R1 to R24.
 - **Local tools are built in the Rust binary only; bash never gets a tool loop
   and stays the oracle for what it already does.** (session-settled:
   user-approved — chosen over tools in bash first: the TODO graph places 1.1.0
@@ -244,7 +244,7 @@ through, which matters once a command is displayed for approval.
 - Marketplaces beyond the repository's own: `extraKnownMarketplaces` entries and
   `enabledPlugins` hints from any `settings.json`.
 - An override for the bash tool's 120 s timeout, as an environment variable
-  validated like `--max-tokens`; the first build that exceeds it on felixia is
+  validated like `--max-tokens`; the first build that exceeds it on the target machine is
   the evidence for the default.
 - Adopting the `web_search_20260209` and later tool variants, which require a
   code execution tool alongside them.
@@ -700,7 +700,7 @@ Dependencies outside the units:
   blocked.
 - D5. The vendored coding-tutor plugin and root marketplace on the TODO line,
   rebased under U14 before it starts. Blocks U14.
-- D6. The audit lead's owner-observed check: whether any machine, felixia
+- D6. The audit lead's owner-observed check: whether any machine, the target machine
   included, puts the state directory where another account can create or symlink
   it. Blocks the wording "closed" in U5 and the standards line.
 - D7. One read of Claude Code's skills documentation to settle precedence,

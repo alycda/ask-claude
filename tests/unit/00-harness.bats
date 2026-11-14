@@ -40,7 +40,8 @@ sessions() { sed -n 's/^data: //p' "$FIX/sessions/$1.sse"; }
         sessions "$f" | jq -e 'select(.type=="session.status_idle" or .type=="session.status_terminated")' >/dev/null
         last=$(sessions "$f" | tail -n 1 | jq -r .type)
         [ "$last" = session.status_idle ] || [ "$last" = session.status_terminated ]
-        [ -f "$FIX/sessions/$f.stream.txt" ]
+        present "$FIX/sessions/$f.stream.txt"
+        present "$FIX/sessions/$f.fold.json"
         jq -e 'has("stop_reason") and has("event_ids") and has("asks") and has("custom") and has("usage") and has("error")' "$FIX/sessions/$f.fold.json" >/dev/null
     done
 }

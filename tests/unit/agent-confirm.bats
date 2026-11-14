@@ -92,6 +92,20 @@ confirm_fixture() {
     if grep -qF 'echo safe\\nid' <<<"$stderr"; then return 1; fi
 }
 
+# The input approved is the input shown: a bidi formatting character safe
+# would drop (U+2066), a mark and a zero-width space it would keep invisible
+# (U+200F, U+200B) and a C1 control (U+0085) are written as JSON escapes,
+# not dropped. bash-only until the Rust renderer escapes the same set.
+# bats test_tags=bash-only
+@test "confirm: bidi and invisible characters in the input are shown as escapes, not dropped" {
+    confirm_fixture "$TMP/fx"
+    sed -i.bak 's/"echo pong"/"cat a\\u2066b\\u200fc\\u200bd\\u0085e"/' "$TMP/fx/1.sse"
+    ASK_CLAUDE_CONFIRM=allow run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/fx" \
+        ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" agent "ping" </dev/null
+    [ "$status" -eq 0 ]
+    grep -qF 'allowed bash ({"command":"cat a\u2066b\u200fc\u200bd\u0085e"})' <<<"$stderr"
+}
+
 # no_controls: stderr carries no ESC, BEL or C1 CSI byte
 no_controls() { ! LC_ALL=C grep -q $'[\x1b\x07\x9b]' <<<"$stderr"; }
 

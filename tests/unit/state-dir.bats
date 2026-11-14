@@ -51,6 +51,26 @@ refused() {
     refused 'cannot create'
 }
 
+# `${XDG_STATE_HOME:-$HOME/.local/state}` under `set -u`: with neither set
+# the script stops at the unbound HOME; it never falls back to a relative
+# .local/state under the current directory.
+@test "state-dir: no XDG_STATE_HOME and no HOME is refused, nothing made under the cwd" {
+    mkdir -p "$TMP/cwd"
+    cd "$TMP/cwd"
+    run --separate-stderr env -u XDG_STATE_HOME -u HOME ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" hi
+    [ "$status" -ne 0 ]
+    grep -q 'HOME: unbound variable' <<<"$stderr"
+    [ -z "$(ls -A "$TMP/cwd")" ]
+    [ ! -e "$TMP/requests.jsonl" ]
+    # an empty HOME names the root, which only root can write
+    [ "$(id -u)" -ne 0 ] || return 0
+    run --separate-stderr env -u XDG_STATE_HOME HOME= ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" hi
+    [ "$status" -eq 2 ]
+    grep -q 'cannot create /.local/state/ask-claude' <<<"$stderr"
+    [ -z "$(ls -A "$TMP/cwd")" ]
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
 # bats test_tags=bash-only
 @test "state-dir: a directory another account owns is refused" {
     # the script compares the directory's owner with id -u; a shim reports

@@ -30,6 +30,14 @@ request() { sed -n "$1p" "$TMP/requests.jsonl"; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+@test "files: an empty -f is no file, nothing uploaded or attached" {
+    run --separate-stderr replay -f '' "summarize"
+    [ "$status" -eq 0 ]
+    [ "$output" = "pong" ]
+    [ "$(wc -l < "$TMP/requests.jsonl")" -eq 1 ]
+    request 1 | jq -e 'has("resources")|not'
+}
+
 @test "files: list prints name, size and id" {
     run --separate-stderr replay files sesn_FIXTURE01
     [ "$status" -eq 0 ]

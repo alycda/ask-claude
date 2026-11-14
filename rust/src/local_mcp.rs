@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 
 use crate::session::{self, LocalTools};
 use crate::stream::safe;
+use crate::{each, text};
 
 /// How long a read waits before it looks at the interrupt flag again.
 const TICK: Duration = Duration::from_millis(50);
@@ -219,7 +220,7 @@ impl LocalMcp {
                 }
                 continue;
             }
-            if tostring(message.get("id").unwrap_or(&Value::Null)) == want {
+            if text(message.get("id").unwrap_or(&Value::Null)) == want {
                 return Ok(Value::Object(message));
             }
         }
@@ -292,10 +293,17 @@ impl LocalTools for LocalMcp {
 
     /// `local_mcp_call`: the custom tool use as `tools/call`, and its
     /// answer as a `user.custom_tool_result`; a server that has exited or
-    /// does not answer in time gives an error result instead.
+    /// does not answer in time gives an error result instead. After a
+    /// signal nothing more is sent: Ctrl-C ends the script's answer
+    /// subshell, so no later call of the round runs on the server, and the
+    /// turn posts none of these results.
     fn call(&mut self, tool_use: &Value) -> Value {
-        let id = tostring(&tool_use["id"]);
+        let id = text(&tool_use["id"]);
         let exited = || session::custom_error(&id, "Tool failed: the local MCP server has exited.");
+        let interrupted = || session::custom_error(&id, "Tool failed: interrupted.");
+        if crate::transport::interrupted() {
+            return interrupted();
+        }
         let arguments = crate::or(&tool_use["input"], &json!({})).clone();
         if !self.send(&json!({
             "jsonrpc": "2.0", "id": tool_use["id"], "method": "tools/call",
@@ -306,7 +314,8 @@ impl LocalTools for LocalMcp {
         match self.read(&id) {
             Ok(resp) => result(&id, &resp),
             Err(Unanswered::Exited) => exited(),
-            Err(Unanswered::Late | Unanswered::Interrupted) => session::custom_error(
+            Err(Unanswered::Interrupted) => interrupted(),
+            Err(Unanswered::Late) => session::custom_error(
                 &id,
                 &format!(
                     "Tool failed: the local MCP server did not answer within {}s.",
@@ -337,7 +346,7 @@ pub fn result(id: &str, resp: &Value) -> Value {
         let text = format!(
             "Tool failed: MCP error {}: {}",
             crate::text(or(&e["code"], &Value::from("?"))),
-            tostring(or(&e["message"], &Value::from("no message")))
+            text(or(&e["message"], &Value::from("no message")))
         );
         return head(json!([{"type": "text", "text": text}]), true);
     }
@@ -347,7 +356,7 @@ pub fn result(id: &str, resp: &Value) -> Value {
     let texts: Vec<Value> = each(&r["content"])
         .into_iter()
         .map(|c| match c["type"].as_str() {
-            Some("text") => tostring(&c["text"]),
+            Some("text") => text(&c["text"]),
             Some("resource") if c["resource"]["text"].is_string() => format!(
                 "Resource {}:\n{}",
                 uri(&c["resource"]["uri"]),
@@ -381,23 +390,6 @@ pub fn result(id: &str, resp: &Value) -> Value {
         json!([{"type": "text", "text": "(the tool returned no content)"}])
     };
     head(content, r["isError"] == true)
-}
-
-/// jq's `.[]?`: an array's elements, an object's values, else nothing.
-fn each(v: &Value) -> Vec<&Value> {
-    match v {
-        Value::Array(a) => a.iter().collect(),
-        Value::Object(o) => o.values().collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// jq's `tostring`: a string as itself, anything else as its JSON.
-fn tostring(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => crate::tojson(other),
-    }
 }
 
 /// `local_mcp_alive`: a process of the group is running. A zombie is

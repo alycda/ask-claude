@@ -86,6 +86,18 @@ ONE='[{"role":"user","content":"second"}]'
     [ "${lines[0]%%  *}" = "20260101T000000" ]
 }
 
+@test "list and resume: a chat file holding a number counts its absolute value, as jq length does" {
+    mkchat 20260101T000000 202601010000 "$ONE"
+    mkchat 20260102T000000 202601020000 '-5'
+    run --separate-stderr "$BIN" list
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "20260102T000000  5 turns  " ]
+    # the newest chat with turns is the number, not the older chat
+    run --separate-stderr bash -c "printf '/quit\n' | ASK_CLAUDE_REPLAY='$FIX/sse/text.sse' '$BIN' resume"
+    grep -q '20260102T000000' <<<"$stderr"
+    refute grep -q '20260101T000000' <<<"$stderr"
+}
+
 @test "resume: a name with a path part or a glob character exits 2 before any lookup" {
     mkchat 20260101T000000 202601010000 "$TWO"
     for name in ../20260101 'x/y' '2026*' '2026?' '[2]026'; do

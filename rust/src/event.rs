@@ -185,16 +185,31 @@ fn or_zero(v: Value) -> Value {
     if v.is_null() { Value::from(0) } else { v }
 }
 
-/// jq's `add` over numbers: whole while every term is, else a float.
+/// jq's `add` over numbers: one term as it is (`null + x` is `x`), a sum
+/// whole while every term is, else a float as jq prints it ([`sum`]).
 fn add(terms: impl Iterator<Item = Value>) -> Value {
     let terms: Vec<Value> = terms.collect();
+    if let [only] = terms.as_slice() {
+        return only.clone();
+    }
     let whole: Option<i64> = terms
         .iter()
         .try_fold(0i64, |sum, t| t.as_i64().and_then(|n| sum.checked_add(n)));
     match whole {
         Some(sum) => Value::from(sum),
-        None => serde_json::Number::from_f64(terms.iter().filter_map(Value::as_f64).sum())
-            .map_or(Value::Null, Value::Number),
+        None => sum(terms.iter().filter_map(Value::as_f64).sum()),
+    }
+}
+
+/// A sum jq computed in doubles, as it prints one: a whole sum below 1e16
+/// with no fraction (`2.0 + 3` is `5`, where serde writes `5.0`), any
+/// other as serde writes it, which is jq's text for the sums token counts
+/// make (not for exponents: serde writes `1e16`, jq `1e+16`).
+pub(crate) fn sum(f: f64) -> Value {
+    if f.fract() == 0.0 && f.abs() < 1e16 {
+        Value::from(f as i64)
+    } else {
+        serde_json::Number::from_f64(f).map_or(Value::Null, Value::Number)
     }
 }
 
@@ -254,14 +269,6 @@ fn cents(v: &Value) -> Value {
     }
 }
 
-/// jq's `"\(x)"`.
-fn interpolate(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => crate::tojson(other),
-    }
-}
-
 /// The `tools` field: what the request let the model reach, each server
 /// tool by its versioned type, an MCP server as `mcp:<server>` or one
 /// `mcp:<server>:<tool>` per tool of an allowlist, through `toolname`;
@@ -282,7 +289,7 @@ fn tools(given: &Value) -> Option<Value> {
         }
         let server = match or(&t["mcp_server_name"]) {
             Value::Null => "?".to_string(),
-            s => interpolate(s),
+            s => crate::text(s),
         };
         // `.default_config.enabled? == false`: on a default_config that is
         // neither an object nor null the test is empty, and so is the entry
@@ -380,7 +387,10 @@ impl Log {
 }
 
 /// Append `bytes` in one write, the file created 0600 when missing and
-/// never opened through a symlink.
+/// never opened through a symlink. SIGXFSZ is ignored while it writes, so
+/// a log at the `ulimit -f` limit is a write error (EFBIG), skipped like
+/// any other, and not the end of this process: the script appends from a
+/// subshell for the same reason.
 fn append(file: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut opts = std::fs::OpenOptions::new();
@@ -390,7 +400,17 @@ fn append(file: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
-    opts.open(file)?.write_all(bytes)
+    let mut log = opts.open(file)?;
+    // SAFETY: signal(2) only sets this process's disposition of SIGXFSZ
+    #[cfg(unix)]
+    let before = unsafe { libc::signal(libc::SIGXFSZ, libc::SIG_IGN) };
+    let written = log.write_all(bytes);
+    #[cfg(unix)]
+    if before != libc::SIG_ERR {
+        // SAFETY: the disposition signal(2) returned above, put back
+        unsafe { libc::signal(libc::SIGXFSZ, before) };
+    }
+    written
 }
 
 /// `date -u +%Y-%m-%dT%H:%M:%SZ`, from the days since the epoch by the
@@ -431,5 +451,42 @@ mod tests {
         assert_eq!(super::utc(951_825_599), "2000-02-29T11:59:59Z");
         assert_eq!(super::utc(4_107_542_400), "2100-03-01T00:00:00Z");
         assert_eq!(super::utc(1_794_700_800), "2026-11-15T00:00:00Z");
+    }
+
+    /// Against jq 1.8.2: `[2.0, 3] | add` prints 5, `[2.5, 3] | add` 5.5,
+    /// `[2.0] | add` 2.0 (one term is never added); `-5.0 + 0` prints -5.
+    #[test]
+    fn add_prints_a_whole_sum_as_jq_does() {
+        use serde_json::{Value, json};
+        let add =
+            |terms: Value| crate::tojson(&super::add(terms.as_array().unwrap().iter().cloned()));
+        assert_eq!(add(json!([2.0, 3])), "5");
+        assert_eq!(add(json!([2.5, 3])), "5.5");
+        assert_eq!(add(json!([2.0])), "2.0");
+        assert_eq!(add(json!([2, 3])), "5");
+        assert_eq!(crate::tojson(&super::sum(-5.0)), "-5");
+    }
+
+    /// The session fold's cache_write, `lib/session-fold.jq` under jq
+    /// 1.8.2: ephemeral counts of 2.0 and 3 make 5, of 2.5 and 3 make 5.5.
+    #[test]
+    fn a_session_cache_write_sum_prints_as_jq_does() {
+        use serde_json::json;
+        let cache_write = |five: f64| {
+            let usage = json!({"type": "session.usage", "usage": {"cache_creation": {
+                "ephemeral_5m_input_tokens": five, "ephemeral_1h_input_tokens": 3}}});
+            crate::tojson(&crate::session::fold(&[usage])["usage"]["cache_write"])
+        };
+        assert_eq!(cache_write(2.0), "5");
+        assert_eq!(cache_write(2.5), "5.5");
+    }
+
+    /// The one `"\(x)"` / `tostring` for the crate: jq 1.8.2 prints
+    /// `{"a":"\u007f"}` for `{"a": "\u007f"} | tostring`, DEL escaped.
+    #[test]
+    fn text_escapes_del_as_jq_tostring_does() {
+        let v = serde_json::json!({"a": "\u{7f}"});
+        assert_eq!(crate::text(&v), r#"{"a":"\u007f"}"#);
+        assert_eq!(crate::text(&serde_json::json!("\u{7f}")), "\u{7f}");
     }
 }

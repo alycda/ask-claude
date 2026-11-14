@@ -133,7 +133,6 @@ fn each(v: &Value) -> Vec<&Value> {
 struct Agent<'a> {
     t: Box<dyn Sessions + Send>,
     gate: session::Gate,
-    #[allow(dead_code)]
     log: &'a event::Log,
     /// `$STATE/sessions`, the stubs `list` and `resume` read
     sessions: PathBuf,
@@ -286,10 +285,11 @@ impl<'a> Agent<'a> {
     }
 
     /// `session_create`: POST /v1/sessions with the prompt as its first
-    /// event; the new session's id, or None after the API error. The id
-    /// names a file and goes into URLs, so one that is not an id is
-    /// refused here.
+    /// event; the new session's id, or None after the API error and its
+    /// line in the event log. The id names a file and goes into URLs, so
+    /// one that is not an id is refused here.
     fn create(&mut self, prompt: &str) -> Option<String> {
+        let t0 = Instant::now();
         let body = session::create_body(&session::CreateArgs {
             agent: self.agent.clone(),
             environment: self.environment.clone(),
@@ -301,15 +301,25 @@ impl<'a> Agent<'a> {
         let Some(id) = id_of(&resp) else {
             let err = api_error(&resp).unwrap_or_else(|| "unreadable response".into());
             eprintln!("ask-claude: API error: {err}");
+            self.event(&Value::Null, 0, t0, &crate::error_kind(&resp), "");
             return None;
         };
         if !session::id_ok(&id) {
             eprintln!(
                 "ask-claude: API error: the session id is not one (sesn_ and letters, digits, _ or -)"
             );
+            self.event(&Value::Null, 0, t0, "unreadable", "");
             return None;
         }
         Some(id)
+    }
+
+    /// `event session ...`: one line in the event log for a session
+    /// request, its input the fold or null, `chat` the session or "".
+    fn event(&self, input: &Value, round: u64, t0: Instant, error: &str, chat: &str) {
+        let seconds = t0.elapsed().as_secs();
+        self.log
+            .record("session", input, round, seconds, error, chat, &Value::Null);
     }
 
     /// `session_remember`; a stub that cannot be written is said, and the
@@ -325,10 +335,11 @@ impl<'a> Agent<'a> {
     /// streams it takes. Prints the reply as it arrives and the usage line
     /// on stderr. 0 when the session is idle, 1 on a session error, a
     /// terminated session, no response, or a request the API refused; 130
-    /// after a signal.
+    /// after a signal. One line in the event log, whatever the outcome.
     fn turn(&mut self, id: &str, mut events: Option<String>) -> i32 {
         let t0 = Instant::now();
         let mut rounds: u64 = 0;
+        let null = Value::Null;
         let fold = loop {
             let mut got = Streamed::default();
             let lines = match self.t.stream(id) {
@@ -345,6 +356,8 @@ impl<'a> Agent<'a> {
                 let resp = self.call("POST", &format!("/sessions/{id}/events"), Some(&body));
                 if let Some(err) = api_error(&resp) {
                     eprintln!("ask-claude: API error: {err}");
+                    // ma_call's own body for no response says no_response
+                    self.event(&null, rounds, t0, &crate::error_kind(&resp), id);
                     return 1;
                 }
             }
@@ -352,19 +365,23 @@ impl<'a> Agent<'a> {
                 interrupted = got.read(lines);
             }
             if interrupted || transport::interrupted() {
-                return self.interrupt(id);
+                return self.interrupt(id, rounds, t0);
             }
             if !got.sse {
                 eprintln!("ask-claude: no response from the stream ({})", got.detail());
+                self.event(&null, rounds, t0, "no_response", id);
                 return 1;
             }
             let Some(evs) = &got.events else {
                 eprintln!("ask-claude: the stream could not be parsed");
+                self.event(&null, rounds, t0, "parse", id);
                 return 1;
             };
             let fold = session::fold(evs);
             if let Some(err) = message(&fold) {
                 eprintln!("ask-claude: session error: {err}");
+                let kind = crate::text(crate::or(&fold["error"]["type"], &"unknown".into()));
+                self.event(&fold, rounds, t0, &kind, id);
                 return 1;
             }
             if fold["stop_reason"] == "requires_action" {
@@ -380,6 +397,7 @@ impl<'a> Agent<'a> {
                         "ask-claude: the session waits on something this version cannot answer ({}); interrupting",
                         safe(&ids.join(" "))
                     );
+                    self.event(&fold, rounds, t0, "unanswerable", id);
                     self.post_interrupt(id);
                     return 1;
                 }
@@ -392,7 +410,7 @@ impl<'a> Agent<'a> {
                     events = Some(crate::tojson(&self.answer(&fold)));
                     // a signal while the terminal was asked
                     if transport::interrupted() {
-                        return self.interrupt(id);
+                        return self.interrupt(id, rounds, t0);
                     }
                     continue;
                 }
@@ -404,6 +422,8 @@ impl<'a> Agent<'a> {
         if let Some(line) = usage_line(id, &fold, seconds) {
             eprintln!("{line}");
         }
+        // at the cap the last round was counted but not answered
+        self.event(&fold, rounds.min(ROUNDS), t0, "", id);
         let stop = safe(&tostring(crate::or(&fold["stop_reason"], &"".into())));
         match stop.as_str() {
             "end_turn" | "" => 0,
@@ -447,11 +467,12 @@ impl<'a> Agent<'a> {
         )
     }
 
-    /// After Ctrl-C (or SIGTERM, SIGHUP) in a turn: the session is told to
-    /// stop too, then 130 (R6, KTD11). The reader thread is left to the
-    /// process exit.
-    fn interrupt(&mut self, id: &str) -> i32 {
+    /// After Ctrl-C (or SIGTERM, SIGHUP) in a turn: an `interrupted` line
+    /// in the event log, the session told to stop too, then 130 (R6,
+    /// KTD11). The reader thread is left to the process exit.
+    fn interrupt(&mut self, id: &str, rounds: u64, t0: Instant) -> i32 {
         eprintln!("[interrupted: sending user.interrupt]");
+        self.event(&Value::Null, rounds, t0, "interrupted", id);
         self.post_interrupt(id);
         130
     }

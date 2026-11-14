@@ -10,7 +10,7 @@
 #USAGE flag "-s --skills <skills>" help="comma-separated <skill_id>[@<version>]" global=#true
 #USAGE flag "-f --file <file>" help="prepend this file's contents to the prompt" global=#true
 #USAGE flag "-p --provider <provider>" help="anthropic|openai; only anthropic is implemented in bash" default="anthropic" global=#true
-#USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" global=#true
+#USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" env="ANTHROPIC_BASE_URL" global=#true
 #USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000" global=#true
 #USAGE flag "--web" help="let the model search and fetch the web (server tools; searches cost extra)" global=#true
 #USAGE flag "--mcp <url>" help="an MCP server (https) the model may call; repeatable; its token in ASK_CLAUDE_MCP_TOKEN_<HOST>, or ASK_CLAUDE_MCP_TOKEN for a lone server" var=#true global=#true

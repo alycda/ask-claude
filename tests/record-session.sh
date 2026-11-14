@@ -14,7 +14,8 @@
 # ASK_CLAUDE_IDMAP=<file> keeps the id map across those runs: each run loads
 # it, extends it and writes it back, so the tool_use answered in stream 2 has
 # the same FIXTURE id it had in stream 1. The file holds real ids: keep it out
-# of the repo (it is created 0600).
+# of the repo (it is created 0600). ANTHROPIC_BASE_URL, when set, is the API
+# root, as it is for ask-claude.
 # Ids and the agent's name are the only things redacted: keep prompts free of
 # anything private. `tests/record-session.sh --redact` runs the redaction on
 # stdin alone (tests/unit/record-session.bats).
@@ -59,7 +60,8 @@ name="${1:?name}"
 prompt="${2:-}"
 dir="${3:-$(dirname "$0")/fixtures/sessions}"
 : "${ANTHROPIC_API_KEY:?}" "${ASK_CLAUDE_AGENT:?}" "${ASK_CLAUDE_ENVIRONMENT:?}"
-api="${ASK_CLAUDE_BASE_URL:-https://api.anthropic.com}/v1"
+api="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+api="${api%/}/v1"
 headers=$(mktemp)
 trap 'rm -f "$headers"' EXIT
 chmod 600 "$headers"

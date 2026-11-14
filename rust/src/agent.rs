@@ -275,7 +275,8 @@ impl<'a> Agent<'a> {
     /// turn, and the session remembered when the turn went well.
     fn one_shot(&mut self, prompt: &str) -> i32 {
         let Some(id) = self.create(prompt) else {
-            return 1;
+            // a signal during the create: there is no session to stop
+            return if transport::interrupted() { 130 } else { 1 };
         };
         let rc = self.turn(&id, None);
         if rc == 0 {
@@ -351,7 +352,7 @@ impl<'a> Agent<'a> {
                 interrupted = got.read(lines);
             }
             if interrupted || transport::interrupted() {
-                return 130;
+                return self.interrupt(id);
             }
             if !got.sse {
                 eprintln!("ask-claude: no response from the stream ({})", got.detail());
@@ -389,6 +390,10 @@ impl<'a> Agent<'a> {
                 }
                 if rounds <= ROUNDS {
                     events = Some(crate::tojson(&self.answer(&fold)));
+                    // a signal while the terminal was asked
+                    if transport::interrupted() {
+                        return self.interrupt(id);
+                    }
                     continue;
                 }
             }
@@ -440,6 +445,15 @@ impl<'a> Agent<'a> {
             &mut ask_tty,
             &mut std::io::stderr(),
         )
+    }
+
+    /// After Ctrl-C (or SIGTERM, SIGHUP) in a turn: the session is told to
+    /// stop too, then 130 (R6, KTD11). The reader thread is left to the
+    /// process exit.
+    fn interrupt(&mut self, id: &str) -> i32 {
+        eprintln!("[interrupted: sending user.interrupt]");
+        self.post_interrupt(id);
+        130
     }
 
     /// Stop the session's work: POST `user.interrupt`, its answer unread.

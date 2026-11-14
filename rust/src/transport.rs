@@ -41,7 +41,8 @@ impl Transport for Http {
             .send(body)
             .map_err(io::Error::other)?
             .body_mut()
-            .read_to_string()
+            .read_to_vec()
+            .map(|raw| crate::sse::decode(&raw))
             .map_err(io::Error::other)
     }
 }
@@ -69,10 +70,11 @@ impl Transport for Replay {
             writeln!(f, "{body}")?;
         }
         self.turn += 1;
-        if self.path.is_dir() {
-            std::fs::read_to_string(self.path.join(format!("{}.sse", self.turn)))
+        let raw = if self.path.is_dir() {
+            std::fs::read(self.path.join(format!("{}.sse", self.turn)))?
         } else {
-            std::fs::read_to_string(&self.path)
-        }
+            std::fs::read(&self.path)?
+        };
+        Ok(crate::sse::decode(&raw))
     }
 }

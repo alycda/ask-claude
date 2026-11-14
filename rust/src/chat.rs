@@ -162,6 +162,7 @@ pub fn run_loop(
     t: &mut dyn transport::Transport,
     state: &Path,
     mut chat: PathBuf,
+    log: &crate::event::Log,
 ) -> i32 {
     eprintln!(
         "ask-claude: {}, history {}  (/new resets, /quit exits)",
@@ -199,7 +200,7 @@ pub fn run_loop(
             turns.push(json!({"role": "user", "content": line}));
         }
         crate::keep(&chat, &args.messages);
-        if crate::call(args, t, &chat) == 130 {
+        if crate::call(args, t, &chat, log) == 130 {
             return 130;
         }
         out("\n");

@@ -66,6 +66,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         Ok(state) => state,
         Err(refused) => return refuse(&refused),
     };
+    let log = event::Log::new(&state, &cfg.base_url);
     match &cli.command {
         None => {}
         Some(cli::Command::List) => {
@@ -93,7 +94,7 @@ pub fn run(cli: cli::Cli) -> i32 {
             eprint!("{}", history::text(&turns));
             let mut args = request_args(r, &cfg, turns);
             transport::catch_signals();
-            return chat::run_loop(&mut args, &mut t, &state, chat);
+            return chat::run_loop(&mut args, &mut t, &state, chat, &log);
         }
         Some(cli::Command::Agent(_)) => todo!("R7: agent"),
     }
@@ -109,7 +110,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         let chat = history::new_chat(&state);
         keep(&chat, &args.messages);
         transport::catch_signals();
-        return chat::run_loop(&mut args, &mut t, &state, chat);
+        return chat::run_loop(&mut args, &mut t, &state, chat, &log);
     };
 
     // -f: the file's contents, trailing newlines dropped as `$(cat ..)`
@@ -136,7 +137,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         Err(refused) => return refuse(&refused),
     };
     transport::catch_signals();
-    one_shot(&mut args, &mut t, &state)
+    one_shot(&mut args, &mut t, &state, &log)
 }
 
 /// `die` in the script: the message on stderr, exit 2.
@@ -355,10 +356,11 @@ pub fn one_shot(
     args: &mut request::Args,
     t: &mut dyn transport::Transport,
     state: &std::path::Path,
+    log: &event::Log,
 ) -> i32 {
     let chat = history::new_chat(state);
     keep(&chat, &args.messages);
-    let rc = call(args, t, &chat);
+    let rc = call(args, t, &chat, log);
     if rc != 130 && args.messages.as_array().is_none_or(Vec::is_empty) {
         let _ = std::fs::remove_file(&chat);
     }
@@ -383,11 +385,13 @@ pub(crate) fn keep(chat: &std::path::Path, turns: &serde_json::Value) {
 /// on an API error or no response, with the history back to before the
 /// user turn (its recorded length, not one element off, so a paused
 /// round's replies go too); 130 after a signal, the file as it was, the
-/// user turn dangling as a killed script leaves it.
+/// user turn dangling as a killed script leaves it. Each round is a line
+/// in the event log, a failed one included.
 pub fn call(
     args: &mut request::Args,
     t: &mut dyn transport::Transport,
     chat: &std::path::Path,
+    log: &event::Log,
 ) -> i32 {
     use serde_json::Value;
     use stream::safe;
@@ -397,7 +401,8 @@ pub fn call(
     let betas = betas(args);
     let skills = !args.skills.is_empty();
     let container = history::container_file(chat);
-    let mut rounds = 0;
+    let name = history::name(chat);
+    let mut rounds: u64 = 0;
     // the container to run in: with skills, the chat's, kept in a file
     // beside it so files persist across turns; without, only a pause_turn
     // continuation sends one back, the container its previous round ran
@@ -412,13 +417,28 @@ pub fn call(
             turn_cid.clone()
         };
         let t0 = std::time::Instant::now();
-        let Ok(got) = exchange(t, &request::body(args).to_string(), &betas) else {
+        let body = request::body(args);
+        // what the request let the model reach, for the event log, failed
+        // requests included
+        let tools = or(&body["tools"], &Value::Null).clone();
+        let Ok(got) = exchange(t, &body.to_string(), &betas) else {
             return 130;
         };
         let msg = match reply(&got) {
             Ok(msg) => msg,
             Err(failure) => {
-                eprintln!("ask-claude: {failure}");
+                eprintln!("ask-claude: {}", failure.message);
+                let seconds = t0.elapsed().as_secs();
+                log.record(
+                    "messages",
+                    &failure.input,
+                    rounds,
+                    seconds,
+                    &failure.kind,
+                    &name,
+                    &tools,
+                );
+                let failure = failure.message;
                 // a container the API no longer accepts would fail every
                 // later turn: forget it, the next turn starts a new one
                 // (only the skills container is a file)
@@ -447,7 +467,9 @@ pub fn call(
         if skills && !turn_cid.is_empty() {
             let _ = history::replace(&container, turn_cid.as_bytes());
         }
-        eprintln!("{}", usage_line(&msg, t0.elapsed().as_secs()));
+        let seconds = t0.elapsed().as_secs();
+        eprintln!("{}", usage_line(&msg, seconds));
+        log.record("messages", &msg, rounds, seconds, "", &name, &tools);
         if msg["stop_reason"] == "pause_turn" && rounds < 8 {
             rounds += 1;
             eprintln!("[pause_turn: continuing, round {rounds}]");
@@ -472,24 +494,86 @@ pub fn call(
     0
 }
 
-/// The message one round folds to, or the line `call` prints instead
-/// (after `ask-claude: `). Each arm is the script's: no bytes is no
-/// response; no `data:` line is an HTTP error body; a reply jq cannot fold
-/// is an error, not an empty turn that vanishes; an `error` event's
-/// message is an API error, and a null one is none.
-fn reply(got: &Received) -> Result<serde_json::Value, String> {
+/// A round that gave no message: the line `call` prints (after
+/// `ask-claude: `), and for the event log the failure's category and what
+/// the line is built from (the folded message, or null).
+#[derive(Debug)]
+struct Failure {
+    message: String,
+    kind: String,
+    input: serde_json::Value,
+}
+
+/// The message one round folds to, or its [`Failure`]. Each arm is the
+/// script's: no bytes is no response; no `data:` line is an HTTP error
+/// body; a reply jq cannot fold is an error, not an empty turn that
+/// vanishes; an `error` event's message is an API error, and a null one is
+/// none.
+fn reply(got: &Received) -> Result<serde_json::Value, Failure> {
+    use serde_json::Value;
+    let failed = |message: String, kind: &str, input: Value| Failure {
+        message,
+        kind: kind.to_string(),
+        input,
+    };
     if got.bytes == 0 {
-        return Err("no response (the request failed or timed out)".into());
+        return Err(failed(
+            "no response (the request failed or timed out)".into(),
+            "no_response",
+            Value::Null,
+        ));
     }
-    let parse_error = || "API error: the reply could not be parsed".to_string();
+    let parse_error = || {
+        failed(
+            "API error: the reply could not be parsed".into(),
+            "parse",
+            Value::Null,
+        )
+    };
     let msg = match &got.events {
-        _ if !got.sse => return Err(format!("API error: {}", api_error(&got.body))),
+        _ if !got.sse => {
+            return Err(failed(
+                format!("API error: {}", api_error(&got.body)),
+                &error_kind(&got.body),
+                Value::Null,
+            ));
+        }
         None => return Err(parse_error()),
         Some(events) => reassemble::message(events).map_err(|_| parse_error())?,
     };
-    match or(&msg["error"]["message"], &serde_json::Value::Null) {
-        serde_json::Value::Null => Ok(msg),
-        m => Err(format!("API error: {}", stream::safe(&text(m)))),
+    match or(&msg["error"]["message"], &Value::Null) {
+        Value::Null => Ok(msg),
+        m => {
+            let message = format!("API error: {}", stream::safe(&text(m)));
+            Err(failed(message, &error_kind(&msg.to_string()), msg))
+        }
+    }
+}
+
+/// `error_kind` in `lib/common.bash`, the event log's category for an
+/// error body: the first JSON value's `error.type`, "unknown" for an
+/// object without one, "unreadable" for anything jq cannot read that way
+/// (not JSON, not an object, an `error` that is not an object).
+fn error_kind(body: &str) -> String {
+    use serde_json::Value;
+    let mut values = serde_json::Deserializer::from_str(body).into_iter::<Value>();
+    let first = match values.next() {
+        Some(Ok(v)) => v,
+        _ => return "unreadable".into(),
+    };
+    if values.any(|v| v.is_err()) {
+        return "unreadable".into();
+    }
+    let Value::Object(o) = first else {
+        return "unreadable".into();
+    };
+    match o.get("error").unwrap_or(&Value::Null) {
+        Value::Null => "unknown".into(),
+        Value::Object(e) => match or(e.get("type").unwrap_or(&Value::Null), &Value::Null) {
+            Value::Null => "unknown".into(),
+            t => text(t),
+        },
+        _ => "unreadable".into(),
     }
 }
 

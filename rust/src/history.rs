@@ -240,6 +240,102 @@ pub fn name(chat: &Path) -> String {
     file.strip_suffix(".json").unwrap_or(&file).to_string()
 }
 
+/// The Chats on disk, newest first: `ls -1t "$STATE"/*.json`, so no
+/// hidden file and nothing but `.json` (the event log is `.jsonl`), ties
+/// by name. Only regular files: the script's next step, `jq`, reads each.
+fn chats(state: &Path) -> Vec<PathBuf> {
+    let Ok(dir) = std::fs::read_dir(state) else {
+        return Vec::new();
+    };
+    let mut found: Vec<(std::time::SystemTime, String, PathBuf)> = dir
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            if name.starts_with('.') || !name.ends_with(".json") {
+                return None;
+            }
+            let path = entry.path();
+            let meta = std::fs::metadata(&path).ok().filter(|m| m.is_file())?;
+            Some((meta.modified().ok()?, name, path))
+        })
+        .collect();
+    found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    found.into_iter().map(|(_, _, path)| path).collect()
+}
+
+/// A Chat's turns as stored, or None when the file is not JSON.
+pub fn load(chat: &Path) -> Option<Value> {
+    serde_json::from_slice(&std::fs::read(chat).ok()?).ok()
+}
+
+/// `jq length`: what the script counts as a Chat's turns.
+fn length(v: &Value) -> Option<usize> {
+    match v {
+        Value::Array(a) => Some(a.len()),
+        Value::Object(o) => Some(o.len()),
+        Value::String(s) => Some(s.chars().count()),
+        Value::Null => Some(0),
+        _ => None,
+    }
+}
+
+/// `list`, `list_chats` in `lib/chat.bash`: one line per Chat, newest
+/// first: its name, its turn count, and its first prompt cut at 60
+/// characters (nothing when that turn is not plain text), through `safe`.
+pub fn list(state: &Path) -> String {
+    let mut out = String::new();
+    for chat in chats(state) {
+        let turns = load(&chat);
+        let count = turns
+            .as_ref()
+            .and_then(length)
+            .map_or(String::new(), |n| n.to_string());
+        let first = turns
+            .as_ref()
+            .and_then(Value::as_array)
+            .and_then(|t| t.iter().find(|turn| turn["role"] == "user"))
+            .and_then(|turn| turn["content"].as_str())
+            .map_or(String::new(), |s| {
+                crate::stream::safe(&s.chars().take(60).collect::<String>())
+            });
+        out.push_str(&format!("{}  {count} turns  {first}\n", name(&chat)));
+    }
+    out
+}
+
+/// The Chat `resume` continues, `find_chat` in `lib/chat.bash`: the one
+/// whose name starts with `name`, or with no name the newest that has
+/// turns (an empty file from an aborted start is skipped). `Err` is the
+/// script's message for exit 2. A name is a name: a path part or a glob
+/// character is refused, so it never leaves the state directory.
+pub fn find(state: &Path, name: Option<&str>) -> Result<PathBuf, String> {
+    let nothing = || "nothing to resume (see `ask-claude list`)".to_string();
+    let Some(name) = name.filter(|n| !n.is_empty()) else {
+        return chats(state)
+            .into_iter()
+            .find(|chat| load(chat).as_ref().and_then(length).is_some_and(|n| n > 0))
+            .ok_or_else(nothing);
+    };
+    if name.contains(['/', '*', '?', '[']) {
+        return Err("resume takes a chat name from `ask-claude list`".into());
+    }
+    // the glob "$STATE/$name"*.json: the name, anything, then .json
+    let matches: Vec<PathBuf> = chats(state)
+        .into_iter()
+        .filter(|chat| {
+            let file = chat.file_name().unwrap_or_default().to_string_lossy();
+            file.len() >= name.len() + ".json".len() && file.starts_with(name)
+        })
+        .collect();
+    match matches.len() {
+        0 => Err(nothing()),
+        1 => Ok(matches.into_iter().next().unwrap_or_default()),
+        n => Err(format!(
+            "\"{name}\" matches {n} chats, see `ask-claude list`"
+        )),
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;

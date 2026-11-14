@@ -51,7 +51,8 @@ pub mod chat;
 /// error, 2 bad input, 130 after Ctrl-C). The order is the script's: the
 /// checks of `lib/config.bash` and the state directory for every form,
 /// then the form; for the one shot, the key, `-f`, then the request; for
-/// the chat loop, the key, then a new Chat.
+/// the chat loop, the key, then a new Chat; for `resume`, the Chat, then
+/// the key; `list` needs no key.
 pub fn run(cli: cli::Cli) -> i32 {
     let r = &cli.request;
     let cfg = match config::check(r) {
@@ -62,8 +63,36 @@ pub fn run(cli: cli::Cli) -> i32 {
         Ok(state) => state,
         Err(refused) => return refuse(&refused),
     };
-    if cli.command.is_some() {
-        todo!("R6, R7: list, resume, agent");
+    match &cli.command {
+        None => {}
+        Some(cli::Command::List) => {
+            print!("{}", history::list(&state));
+            return 0;
+        }
+        Some(cli::Command::Resume { chat }) => {
+            let chat = match history::find(&state, chat.as_deref()) {
+                Ok(chat) => chat,
+                Err(refused) => return refuse(&refused),
+            };
+            let Some(api_key) = need_key() else {
+                return 2;
+            };
+            // the script would go on with a file jq cannot read and fail
+            // every turn; this stops at the start instead
+            let Some(turns) = history::load(&chat).filter(serde_json::Value::is_array) else {
+                return refuse(&format!("cannot read {}", chat.display()));
+            };
+            let mut t = match open_transport(&cfg, api_key) {
+                Ok(t) => t,
+                Err(refused) => return refuse(&refused),
+            };
+            eprintln!("resuming {}", chat.display());
+            eprint!("{}", history::text(&turns));
+            let mut args = request_args(r, &cfg, turns);
+            transport::catch_signals();
+            return chat::run_loop(&mut args, &mut t, &state, chat);
+        }
+        Some(cli::Command::Agent(_)) => todo!("R7: agent"),
     }
     let Some(api_key) = need_key() else {
         return 2;

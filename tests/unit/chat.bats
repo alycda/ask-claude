@@ -70,3 +70,11 @@ again'
     bash -c '(( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) ))'
     bash -ic 'bind -v' 2>/dev/null | grep -q 'enable-bracketed-paste on'
 }
+
+@test "chat: an empty prompt argument is no prompt, the chat loop and no request" {
+    run --separate-stderr bash -c 'printf "/quit\n" | ASK_CLAUDE_REPLAY="$1" ASK_CLAUDE_REQUEST_LOG="$2" "$3" ""' _ \
+        "$FIX/sse/text.sse" "$TMP/requests.jsonl" "$BIN"
+    [ "$status" -eq 0 ]
+    grep -q '(/new resets, /quit exits)' <<<"$stderr"
+    [ ! -s "$TMP/requests.jsonl" ]
+}

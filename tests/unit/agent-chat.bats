@@ -108,3 +108,10 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     jq -r -f "$ROOT/lib/session-history.jq" "$FIX/sessions/chat/events.json" > "$TMP/out.txt"
     assert_golden "$FIX/sessions/chat/history.txt" "$TMP/out.txt"
 }
+
+@test "chat: an empty prompt argument is no prompt, the chat and no session" {
+    run --separate-stderr chat '/quit\n' ''
+    [ "$status" -eq 0 ]
+    [ "$(requests)" -eq 0 ]
+    [ -z "$(ls "$(STATE_DIR)"/sessions 2>/dev/null)" ]
+}

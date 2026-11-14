@@ -57,10 +57,13 @@ pub fn run(cli: cli::Cli) -> i32 {
             return 2;
         }
     };
-    if let Err(refused) = history::state_dir() {
-        eprintln!("ask-claude: {refused}");
-        return 2;
-    }
+    let state = match history::state_dir() {
+        Ok(state) => state,
+        Err(refused) => {
+            eprintln!("ask-claude: {refused}");
+            return 2;
+        }
+    };
     if cli.command.is_some() {
         todo!("R6, R7: list, resume, agent");
     }
@@ -134,7 +137,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         }
     };
     transport::catch_signals();
-    one_shot(&mut args, &mut t)
+    one_shot(&mut args, &mut t, &state)
 }
 
 /// The `anthropic-beta` value of a request, as `call` in
@@ -281,21 +284,48 @@ fn api_error(body: &str) -> String {
     }
 }
 
-/// R5: the one shot, one user turn whose history is `args.messages`.
-pub fn one_shot(args: &mut request::Args, t: &mut dyn transport::Transport) -> i32 {
-    call(args, t)
+/// R5: the one shot, as the end of the bash script runs it: a new Chat
+/// holding the user turn (`args.messages`), one [`call`], and the Chat's
+/// file removed when the turn left it empty, since an empty Chat leaves no
+/// file.
+pub fn one_shot(
+    args: &mut request::Args,
+    t: &mut dyn transport::Transport,
+    state: &std::path::Path,
+) -> i32 {
+    let chat = history::new_chat(state);
+    keep(&chat, &args.messages);
+    let rc = call(args, t, &chat);
+    if rc != 130 && args.messages.as_array().is_none_or(Vec::is_empty) {
+        let _ = std::fs::remove_file(&chat);
+    }
+    rc
+}
+
+/// Save the Chat; a write that fails is reported and the turn goes on, as
+/// a failed redirect in the script does.
+fn keep(chat: &std::path::Path, turns: &serde_json::Value) {
+    if let Err(e) = history::save(chat, turns) {
+        eprintln!("ask-claude: cannot save {}: {e}", chat.display());
+    }
 }
 
 /// One user turn on the Messages path, `call` in `lib/messages.bash`:
-/// `args.messages` is the history, its last element the user turn. Each
-/// round's stream is printed to stdout as `lib/stream.jq` prints it while
-/// it arrives, the reply is appended to the history, the `[model in=..]`
-/// line goes to stderr; a `pause_turn` (a server tool still working) is
-/// continued, up to 8 rounds, each announced; then any `[stopped: ..]`.
-/// 0 on a reply; 1 on an API error or no response, with the history back
-/// to before the user turn (its recorded length, not one element off, so
-/// a paused round's replies go too); 130 after a signal.
-pub fn call(args: &mut request::Args, t: &mut dyn transport::Transport) -> i32 {
+/// `args.messages` is the history, its last element the user turn, and
+/// `chat` its file, written after every change. Each round's stream is
+/// printed to stdout as `lib/stream.jq` prints it while it arrives, the
+/// reply is appended to the history, the `[model in=..]` line goes to
+/// stderr; a `pause_turn` (a server tool still working) is continued, up
+/// to 8 rounds, each announced; then any `[stopped: ..]`. 0 on a reply; 1
+/// on an API error or no response, with the history back to before the
+/// user turn (its recorded length, not one element off, so a paused
+/// round's replies go too); 130 after a signal, the file as it was, the
+/// user turn dangling as a killed script leaves it.
+pub fn call(
+    args: &mut request::Args,
+    t: &mut dyn transport::Transport,
+    chat: &std::path::Path,
+) -> i32 {
     use serde_json::Value;
     use stream::safe;
 
@@ -303,27 +333,39 @@ pub fn call(args: &mut request::Args, t: &mut dyn transport::Transport) -> i32 {
     let n0 = turns(args);
     let betas = betas(args);
     let skills = !args.skills.is_empty();
+    let container = history::container_file(chat);
     let mut rounds = 0;
-    // the container to run in: with skills, the chat's, so files persist
-    // across turns; without, only a pause_turn continuation sends one back,
-    // the container its previous round ran in, and a new turn starts
-    // without one
-    let mut cid = String::new();
+    // the container to run in: with skills, the chat's, kept in a file
+    // beside it so files persist across turns; without, only a pause_turn
+    // continuation sends one back, the container its previous round ran
+    // in, and a new turn starts without one
+    let mut turn_cid = String::new();
     let msg = loop {
-        args.container_id = cid.clone();
+        args.container_id = if skills {
+            std::fs::read_to_string(&container)
+                .map(|id| id.trim_end_matches('\n').to_string())
+                .unwrap_or_default()
+        } else {
+            turn_cid.clone()
+        };
         let t0 = std::time::Instant::now();
         let Ok(got) = exchange(t, &request::body(args).to_string(), &betas) else {
-            // Ctrl-C: what was printed stands and nothing more is done, as
-            // a killed script does nothing more
             return 130;
         };
         let msg = match reply(&got) {
             Ok(msg) => msg,
             Err(failure) => {
                 eprintln!("ask-claude: {failure}");
+                // a container the API no longer accepts would fail every
+                // later turn: forget it, the next turn starts a new one
+                // (only the skills container is a file)
+                if skills && !args.container_id.is_empty() && failure.contains("ontainer") {
+                    let _ = std::fs::remove_file(&container);
+                }
                 if let Some(h) = args.messages.as_array_mut() {
                     h.truncate(n0.saturating_sub(1));
                 }
+                keep(chat, &args.messages);
                 return 1;
             }
         };
@@ -331,12 +373,16 @@ pub fn call(args: &mut request::Args, t: &mut dyn transport::Transport) -> i32 {
         if let Some(h) = args.messages.as_array_mut() {
             h.push(serde_json::json!({"role": "assistant", "content": msg["content"]}));
         }
-        let turn_cid = match or(&msg["container"]["id"], &Value::Null) {
+        keep(chat, &args.messages);
+        turn_cid = match or(&msg["container"]["id"], &Value::Null) {
             Value::Null => String::new(),
             id => text(id),
         };
-        if !skills || !turn_cid.is_empty() {
-            cid = turn_cid;
+        // a reply without -s can carry a container too (dynamic web
+        // filtering); it must not replace the skills container of a chat
+        // that used -s earlier, so it lives in turn_cid alone
+        if skills && !turn_cid.is_empty() {
+            let _ = history::replace(&container, turn_cid.as_bytes());
         }
         eprintln!("{}", usage_line(&msg, t0.elapsed().as_secs()));
         if msg["stop_reason"] == "pause_turn" && rounds < 8 {

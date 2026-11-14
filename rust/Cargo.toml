@@ -23,7 +23,9 @@ clap = { version = "=4.6.7", features = ["derive", "env"] }
 # conversion: the docs renderers (tera, roff, markdown) are not wanted here
 usage-lib = { version = "=7.3.0", default-features = false, features = ["clap"] }
 serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = "=1.0.154"
+# `preserve_order`: objects keep insertion order, as jq does and the goldens
+# record; without it every object serializes with its keys sorted
+serde_json = { version = "=1.0.154", features = ["preserve_order"] }
 # R5: POST /v1/messages. No `json` feature: the body is serde_json text
 # already, and the reply is SSE bytes for the printer, not one JSON value
 ureq = "=3.5.2"

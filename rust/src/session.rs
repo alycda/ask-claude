@@ -234,8 +234,12 @@ pub fn history(page: &Value) -> String {
 /// line, so nothing else passes (CODING_STANDARDS.md, values the API
 /// controls).
 pub fn id_ok(id: &str) -> bool {
-    let _ = id;
-    todo!("U5: session pure parts")
+    id.strip_prefix("sesn_").is_some_and(|rest| {
+        (1..=128).contains(&rest.len())
+            && rest
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    })
 }
 
 /// `session_remember`: the stub `agent list` and `agent resume` read,
@@ -247,16 +251,60 @@ pub fn remember(
     agent: &str,
     environment: &str,
 ) -> std::io::Result<()> {
-    let _ = (sessions, id, agent, environment);
-    todo!("U5: session pure parts")
+    if !id_ok(id) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "the session id is not one (sesn_ and letters, digits, _ or -)",
+        ));
+    }
+    std::fs::create_dir_all(sessions)?;
+    let stub = format!(
+        "agent={agent}\nenvironment={environment}\ncreated={}\n",
+        crate::history::stamp()
+    );
+    crate::history::replace(&sessions.join(id), stub.as_bytes())
 }
 
 /// `session_find`: the session `arg` names, a unique prefix (with or
 /// without `sesn_`) of one started here, or `arg` itself when it is a
-/// session id; `Err` is the message for exit 2.
+/// session id; `Err` is the message for exit 2. Only stubs whose names are
+/// ids count, and an `arg` passed on must be one: it goes into a URL.
 pub fn find(sessions: &std::path::Path, arg: &str) -> Result<String, String> {
-    let _ = (sessions, arg);
-    todo!("U5: session pure parts")
+    if arg.contains(['/', '*', '?', '[']) {
+        return Err("resume takes a session id or a prefix from `ask-claude agent list`".into());
+    }
+    // the glob "$SESSIONS/sesn_$arg"*: one pattern, so a match counts once
+    let prefix = if arg.starts_with("sesn_") {
+        arg.to_string()
+    } else {
+        format!("sesn_{arg}")
+    };
+    let found: Vec<String> = std::fs::read_dir(sessions)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with(&prefix) && id_ok(name))
+        .filter(|name| std::fs::metadata(sessions.join(name)).is_ok_and(|m| m.is_file()))
+        .collect();
+    match found.len() {
+        0 if id_ok(arg) => Ok(arg.to_string()),
+        0 => Err(format!(
+            "nothing to resume: \"{arg}\" is not a session id, nor a prefix of one started here"
+        )),
+        1 => Ok(found.into_iter().next().unwrap_or_default()),
+        n => Err(format!(
+            "\"{arg}\" matches {n} sessions, see `ask-claude agent list`"
+        )),
+    }
+}
+
+/// `ASK_CLAUDE_CONFIRM`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Policy {
+    Ask,
+    Allow,
+    Deny,
 }
 
 /// The confirmation gate (`session_confirm`, KTD9): `ASK_CLAUDE_CONFIRM`
@@ -265,15 +313,33 @@ pub fn find(sessions: &std::path::Path, arg: &str) -> Result<String, String> {
 /// one.
 #[derive(Debug)]
 pub struct Gate {
-    _todo: (),
+    policy: Policy,
+    /// the variable as set, for the line that names it; None when unset
+    /// or empty, as `[ -n "${ASK_CLAUDE_CONFIRM:-}" ]` reads it
+    named: Option<String>,
+    always: std::collections::HashSet<String>,
 }
 
 impl Gate {
     /// The gate for `ASK_CLAUDE_CONFIRM`'s value (unset or empty is ask);
     /// `Err` is the message for exit 2.
     pub fn new(value: Option<&str>) -> Result<Self, String> {
-        let _ = value;
-        todo!("U5: session pure parts")
+        let value = value.filter(|v| !v.is_empty());
+        let policy = match value.unwrap_or("ask") {
+            "ask" => Policy::Ask,
+            "allow" => Policy::Allow,
+            "deny" => Policy::Deny,
+            other => {
+                return Err(format!(
+                    "ASK_CLAUDE_CONFIRM must be ask, allow or deny, got: {other}"
+                ));
+            }
+        };
+        Ok(Self {
+            policy,
+            named: value.map(str::to_string),
+            always: std::collections::HashSet::new(),
+        })
     }
 
     /// Whether the call of `name` with `input` (both as shown: through
@@ -289,8 +355,41 @@ impl Gate {
         ask: &mut dyn FnMut(&str) -> Option<String>,
         err: &mut dyn std::io::Write,
     ) -> bool {
-        let _ = (name, input, tty, ask, err);
-        todo!("U5: session pure parts")
+        match self.policy {
+            Policy::Allow => return true,
+            Policy::Deny => return false,
+            Policy::Ask => {}
+        }
+        if !tty {
+            let _ = writeln!(
+                err,
+                "ask-claude: denied {name} ({input}): stdin is not a terminal (ASK_CLAUDE_CONFIRM=allow to allow unattended)"
+            );
+            return false;
+        }
+        if self.always.contains(name) {
+            return true;
+        }
+        let answer = ask(&format!("allow {name} {input}? [y/N/a(lways)] ")).unwrap_or_default();
+        match answer.as_str() {
+            "y" | "Y" | "yes" => true,
+            "a" | "A" | "always" => {
+                self.always.insert(name.to_string());
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The line after a denial the policy made, which names the variable;
+    /// none when it is unset.
+    fn denied(&self, err: &mut dyn std::io::Write, shown: &str, input: &str) {
+        if let Some(value) = &self.named {
+            let _ = writeln!(
+                err,
+                "ask-claude: denied {shown} ({input}): ASK_CLAUDE_CONFIRM={value}"
+            );
+        }
     }
 }
 
@@ -303,6 +402,22 @@ pub trait LocalTools {
     fn call(&mut self, tool_use: &Value) -> Value;
 }
 
+/// `custom_error` in `lib/local-mcp.bash`: an error result for a custom
+/// tool call, with `text` for the model.
+fn custom_error(id: &str, text: &str) -> Value {
+    serde_json::json!({
+        "type": "user.custom_tool_result", "custom_tool_use_id": id,
+        "content": [{"type": "text", "text": text}], "is_error": true
+    })
+}
+
+/// An event's id as the script reads it, `jq -r '.id // empty'`, or None
+/// when that is empty.
+fn event_id(e: &Value) -> Option<String> {
+    let id = crate::text(crate::or(&e["id"], &Value::Null));
+    (!e["id"].is_null() && e["id"] != false && !id.is_empty()).then_some(id)
+}
+
 /// `session_answer`: the events that answer what a fold waits on, as
 /// `{"events": [...]}`: a `user.tool_confirmation` per ask, through the
 /// gate, then a `user.custom_tool_result` per custom tool call, run on
@@ -312,10 +427,83 @@ pub fn answer(
     fold: &Value,
     gate: &mut Gate,
     tty: bool,
-    local: Option<&mut dyn LocalTools>,
+    mut local: Option<&mut dyn LocalTools>,
     ask: &mut dyn FnMut(&str) -> Option<String>,
     err: &mut dyn std::io::Write,
 ) -> Value {
-    let _ = (fold, gate, tty, local, ask, err);
-    todo!("U5: session pure parts")
+    use crate::stream::safe;
+    let list = |key: &str| fold[key].as_array().cloned().unwrap_or_default();
+    // the name and input as the terminal shows them: `.name | tostring`
+    // and `.input | tojson`, encoded once, through safe
+    let shown = |e: &Value| {
+        (
+            safe(&tostring(&e["name"])),
+            safe(&crate::tojson(&e["input"])),
+        )
+    };
+
+    let mut events = Vec::new();
+    for ask_event in list("asks") {
+        let Some(id) = event_id(&ask_event) else {
+            continue;
+        };
+        let (name, input) = shown(&ask_event);
+        let allowed = gate.confirm(&name, &input, tty, ask, err);
+        if allowed {
+            let _ = writeln!(err, "ask-claude: allowed {name} ({input})");
+        } else {
+            gate.denied(err, &name, &input);
+        }
+        events.push(serde_json::json!({
+            "type": "user.tool_confirmation", "tool_use_id": id,
+            "result": if allowed { "allow" } else { "deny" }
+        }));
+    }
+    for tool_use in list("custom") {
+        let Some(id) = event_id(&tool_use) else {
+            continue;
+        };
+        // the name for the model, as given; for the terminal, through safe
+        let name = tostring(&tool_use["name"]);
+        let Some(server) = local.as_deref_mut() else {
+            events.push(custom_error(
+                &id,
+                &format!(
+                    "Tool unavailable: ask-claude {} runs no local tools without --local-mcp. Do not call it again; answer the user without it.",
+                    crate::version()
+                ),
+            ));
+            continue;
+        };
+        if !server.has(&name) {
+            events.push(custom_error(
+                &id,
+                &format!(
+                    "Tool unavailable: the local MCP server has no tool named {name}. Do not call it again; answer the user without it."
+                ),
+            ));
+            continue;
+        }
+        let (shown_name, input) = shown(&tool_use);
+        let shown_name = format!("local {shown_name}");
+        if gate.confirm(&shown_name, &input, tty, ask, err) {
+            let _ = writeln!(err, "ask-claude: allowed {shown_name} ({input})");
+            events.push(server.call(&tool_use));
+        } else {
+            gate.denied(err, &shown_name, &input);
+            events.push(custom_error(
+                &id,
+                &format!("Tool call denied by the user: {name} did not run."),
+            ));
+        }
+    }
+    serde_json::json!({ "events": events })
+}
+
+/// jq's `tostring`: a string as itself, anything else as its JSON.
+fn tostring(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        other => crate::tojson(other),
+    }
 }

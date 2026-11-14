@@ -548,3 +548,10 @@ fn url_host<'a>(url: &'a str, stop: &[char]) -> Option<&'a str> {
     let host = &rest[..rest.find(stop).unwrap_or(rest.len())];
     (!host.is_empty()).then_some(host)
 }
+
+/// jq's `tojson` (and `jq -c`): compact JSON as serde writes it, with DEL
+/// escaped as `\u007f` the way jq escapes it, so a value shown for approval
+/// is the same bytes either binary shows.
+pub(crate) fn tojson(v: &serde_json::Value) -> String {
+    v.to_string().replace('\u{7f}', "\\u007f")
+}

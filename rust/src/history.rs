@@ -118,7 +118,7 @@ pub fn new_chat(state: &Path) -> PathBuf {
 
 /// `date +%Y%m%dT%H%M%S`.
 #[cfg(unix)]
-fn stamp() -> String {
+pub(crate) fn stamp() -> String {
     // SAFETY: time(2) with no out-pointer, and localtime_r(3) into a tm
     // this frame owns; a null return leaves the zeroed tm, never read
     // uninitialised.
@@ -140,7 +140,7 @@ fn stamp() -> String {
 }
 
 #[cfg(not(unix))]
-fn stamp() -> String {
+pub(crate) fn stamp() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());

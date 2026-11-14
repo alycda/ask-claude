@@ -45,6 +45,17 @@ impl Terminal {
     /// [`Terminal::start`], with stdout redirected to `stdout` when given,
     /// so only stderr and the keys are on the pty.
     fn start_with(dir: &Path, args: &[&str], stdout: Option<&Path>) -> Option<Self> {
+        Self::start_env(dir, args, stdout, &[])
+    }
+
+    /// [`Terminal::start_with`], with `env` set over the defaults (another
+    /// replay, the agent and environment ids).
+    fn start_env(
+        dir: &Path,
+        args: &[&str],
+        stdout: Option<&Path>,
+        env: &[(&str, &std::ffi::OsStr)],
+    ) -> Option<Self> {
         if Command::new("script").arg("--version").output().is_err() {
             eprintln!("skipped: no util-linux script to give the binary a terminal");
             return None;
@@ -84,6 +95,9 @@ impl Terminal {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        for (name, value) in env {
+            cmd.env(name, value);
+        }
         let mut child = cmd.spawn().unwrap();
         let keys = child.stdin.take().unwrap();
         let mut out = child.stdout.take().unwrap();
@@ -254,4 +268,97 @@ fn terminal_a_redirected_stdout_gets_no_terminal_codes() {
     assert!(file.contains("pong"), "{file:?}");
     assert!(file.contains("claude: pong"), "{file:?}");
     assert!(!file.contains('\x1b'), "{file:?}");
+}
+
+// ---- the tool confirmation of a session, asked on /dev/tty (KTD9) --------
+
+/// `agent ping` on a pty over the session replay `replay`.
+fn agent_on_terminal(dir: &Path, replay: &Path) -> Option<Terminal> {
+    let replay = replay.as_os_str();
+    Terminal::start_env(
+        dir,
+        &["agent", "ping"],
+        None,
+        &[
+            ("ASK_CLAUDE_REPLAY", replay),
+            ("ASK_CLAUDE_AGENT", "agent_FIXTURE".as_ref()),
+            ("ASK_CLAUDE_ENVIRONMENT", "env_FIXTURE".as_ref()),
+        ],
+    )
+}
+
+/// A replay directory whose turns ask for a bash call each, `calls` of
+/// them one stream after another, then end; agent-confirm.bats's
+/// confirm_fixture, one ask per stream.
+fn asking(dir: &Path, calls: usize) -> PathBuf {
+    let replay = dir.join("replay");
+    std::fs::create_dir_all(&replay).unwrap();
+    let usage = r#"data: {"type":"session.usage","usage":{"input_tokens":1,"output_tokens":1}}"#;
+    for n in 1..=calls {
+        let ask = format!(
+            r#"data: {{"type":"agent.tool_use","id":"sevt_T{n}","name":"bash","input":{{"command":"echo {n}"}}}}"#
+        );
+        let idle = format!(
+            r#"data: {{"type":"session.status_idle","stop_reason":{{"type":"requires_action","event_ids":["sevt_T{n}"]}}}}"#
+        );
+        std::fs::write(
+            replay.join(format!("{n}.sse")),
+            format!(": connected\n\n{ask}\n\n{usage}\n\n{idle}\n\n"),
+        )
+        .unwrap();
+    }
+    let end = r#"data: {"type":"session.status_idle","stop_reason":{"type":"end_turn"}}"#;
+    std::fs::write(
+        replay.join(format!("{}.sse", calls + 1)),
+        format!(": connected\n\n{usage}\n\n{end}\n\n"),
+    )
+    .unwrap();
+    replay
+}
+
+/// The confirmation results the request log holds, in order.
+fn results(dir: &Path) -> Vec<String> {
+    requests(dir)
+        .iter()
+        .flat_map(|r| r["events"].as_array().cloned().unwrap_or_default())
+        .filter(|e| e["type"] == "user.tool_confirmation")
+        .map(|e| e["result"].as_str().unwrap_or("").to_string())
+        .collect()
+}
+
+/// On a terminal the ask is a prompt in the script's words, the input
+/// encoded once: `y` allows, and the next ask is asked again; Enter alone
+/// denies.
+#[test]
+fn terminal_agent_asks_on_the_terminal_y_allows_enter_denies() {
+    let dir = tempfile::tempdir().unwrap();
+    let replay = asking(dir.path(), 2);
+    let Some(mut term) = agent_on_terminal(dir.path(), &replay) else {
+        return;
+    };
+    term.wait_for("", r#"allow bash {"command":"echo 1"}? [y/N/a(lways)] "#);
+    term.type_keys(b"y\r");
+    term.wait_for("", r#"allow bash {"command":"echo 2"}? [y/N/a(lways)] "#);
+    term.type_keys(b"\r");
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    assert!(screen.contains("ask-claude: allowed bash"), "{screen}");
+    assert_eq!(results(dir.path()), ["allow", "deny"], "{screen}");
+}
+
+/// `a` allows this call and every later call of that tool in this
+/// process, without asking again.
+#[test]
+fn terminal_agent_always_answers_the_rest_of_the_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let replay = asking(dir.path(), 2);
+    let Some(mut term) = agent_on_terminal(dir.path(), &replay) else {
+        return;
+    };
+    term.wait_for("", r#"allow bash {"command":"echo 1"}? [y/N/a(lways)] "#);
+    term.type_keys(b"a\r");
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    assert_eq!(results(dir.path()), ["allow", "allow"], "{screen}");
+    assert_eq!(screen.matches("[y/N/a(lways)]").count(), 1, "{screen}");
 }

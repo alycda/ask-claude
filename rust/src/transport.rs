@@ -21,8 +21,11 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 /// POST /v1/messages with the headers `headers` in `lib/common.bash`
-/// sends. The agent (KTD3): an error status is not an `Err`, its body (the
-/// API's `{"type":"error",..}`) comes back for the caller to report as the
+/// sends, or for `-p openai` POST /chat/completions with the key as a
+/// Bearer token and no Anthropic header, as
+/// `tests/providers/openai-compatible.hurl` sends it. The agent (KTD3): an
+/// error status is not an `Err`, its body (the API's `{"type":"error",..}`,
+/// or OpenAI's `{"error":{..}}`) comes back for the caller to report as the
 /// bash `API error`; no redirect is followed, so the key never goes where
 /// one points, as curl without `-L`; 1800 s for the whole request, as
 /// `curl --max-time 1800`, and 30 s to connect.
@@ -30,23 +33,31 @@ pub struct Http {
     agent: ureq::Agent,
     url: String,
     api_key: String,
+    bearer: bool,
 }
 
 impl Http {
-    /// `base_url` is the checked `--base-url`; one trailing slash is
-    /// dropped, as `${BASE_URL%/}` drops it.
-    pub fn new(base_url: &str, api_key: String) -> Self {
+    /// To the provider's checked root, one trailing slash dropped, as
+    /// `${BASE_URL%/}` drops it.
+    pub fn new(provider: &crate::config::Provider, api_key: String) -> Self {
+        use crate::config::Provider;
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .max_redirects(0)
             .timeout_global(Some(Duration::from_secs(1800)))
             .timeout_connect(Some(Duration::from_secs(30)))
             .build();
+        let base_url = provider.base_url();
         let root = base_url.strip_suffix('/').unwrap_or(base_url);
+        let (path, bearer) = match provider {
+            Provider::Anthropic { .. } => ("v1/messages", false),
+            Provider::OpenAiCompatible { .. } => ("chat/completions", true),
+        };
         Self {
             agent: ureq::Agent::new_with_config(config),
-            url: format!("{root}/v1/messages"),
+            url: format!("{root}/{path}"),
             api_key,
+            bearer,
         }
     }
 }
@@ -60,15 +71,18 @@ impl Transport for Http {
         let agent = self.agent.clone();
         let (url, key) = (self.url.clone(), self.api_key.clone());
         let (body, betas) = (body.to_string(), betas.to_string());
+        let bearer = self.bearer;
         Ok(Box::new(Deferred::Pending(Box::new(move || {
-            let response = agent
-                .post(&url)
-                .header("content-type", "application/json")
-                .header("x-api-key", &key)
-                .header("anthropic-version", "2026-10-21")
-                .header("anthropic-beta", &betas)
-                .send(&body)
-                .map_err(io::Error::other)?;
+            let request = agent.post(&url).header("content-type", "application/json");
+            let request = if bearer {
+                request.header("authorization", &format!("Bearer {key}"))
+            } else {
+                request
+                    .header("x-api-key", &key)
+                    .header("anthropic-version", "2026-10-21")
+                    .header("anthropic-beta", &betas)
+            };
+            let response = request.send(&body).map_err(io::Error::other)?;
             Ok(Box::new(response.into_body().into_reader()) as Reply)
         }))))
     }

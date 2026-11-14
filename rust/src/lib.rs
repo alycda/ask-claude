@@ -50,6 +50,9 @@ pub mod event;
 /// the chat loop (`chat_loop` in `lib/chat.bash`).
 pub mod chat;
 
+/// `-p openai`, the chat-completions shape.
+pub mod openai;
+
 /// Run the parsed CLI; the exit code is the bash script's (0 reply, 1 API
 /// error, 2 bad input, 130 after Ctrl-C). The order is the script's: the
 /// checks of `lib/config.bash` and the state directory for every form,
@@ -66,7 +69,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         Ok(state) => state,
         Err(refused) => return refuse(&refused),
     };
-    let log = event::Log::new(&state, &cfg.base_url);
+    let log = event::Log::new(&state, cfg.provider.base_url());
     match &cli.command {
         None => {}
         Some(cli::Command::List) => {
@@ -78,7 +81,7 @@ pub fn run(cli: cli::Cli) -> i32 {
                 Ok(chat) => chat,
                 Err(refused) => return refuse(&refused),
             };
-            let Some(api_key) = need_key() else {
+            let Some(api_key) = need_key(&cfg.provider) else {
                 return 2;
             };
             // the script would go on with a file jq cannot read and fail
@@ -94,11 +97,11 @@ pub fn run(cli: cli::Cli) -> i32 {
             eprint!("{}", history::text(&turns));
             let mut args = request_args(r, &cfg, turns);
             transport::catch_signals();
-            return chat::run_loop(&mut args, &mut t, &state, chat, &log);
+            return chat::run_loop(&mut args, &mut *t, &state, chat, &log);
         }
         Some(cli::Command::Agent(_)) => todo!("R7: agent"),
     }
-    let Some(api_key) = need_key() else {
+    let Some(api_key) = need_key(&cfg.provider) else {
         return 2;
     };
     let Some(prompt) = cli.prompt.as_deref() else {
@@ -110,7 +113,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         let chat = history::new_chat(&state);
         keep(&chat, &args.messages);
         transport::catch_signals();
-        return chat::run_loop(&mut args, &mut t, &state, chat, &log);
+        return chat::run_loop(&mut args, &mut *t, &state, chat, &log);
     };
 
     // -f: the file's contents, trailing newlines dropped as `$(cat ..)`
@@ -137,7 +140,7 @@ pub fn run(cli: cli::Cli) -> i32 {
         Err(refused) => return refuse(&refused),
     };
     transport::catch_signals();
-    one_shot(&mut args, &mut t, &state, &log)
+    one_shot(&mut args, &mut *t, &state, &log)
 }
 
 /// `die` in the script: the message on stderr, exit 2.
@@ -147,12 +150,14 @@ fn refuse(message: &str) -> i32 {
 }
 
 /// The key, or None after `need_key`'s message (lib/config.bash, word for
-/// word): checked where a request can happen, so `list` works without one.
-fn need_key() -> Option<String> {
-    match std::env::var("ANTHROPIC_API_KEY") {
+/// word, with the provider's variable): checked where a request can
+/// happen, so `list` works without one.
+fn need_key(provider: &config::Provider) -> Option<String> {
+    let var = provider.key_variable();
+    match std::env::var(var) {
         Ok(k) if !k.is_empty() => Some(k),
         _ => {
-            refuse("no key: export ANTHROPIC_API_KEY");
+            refuse(&format!("no key: export {var}"));
             None
         }
     }
@@ -171,7 +176,7 @@ fn request_args(
     request::Args {
         advisor: r.advisor.clone().unwrap_or_default(),
         mcp_tool: r.mcp_tool.join(" "),
-        model: r.model.clone(),
+        model: cfg.model.clone(),
         max_tokens: cfg.max_tokens,
         system: r.system.clone().unwrap_or_default(),
         effort: format!("{:?}", r.effort).to_lowercase(),
@@ -185,9 +190,12 @@ fn request_args(
     }
 }
 
-/// The API, or `ASK_CLAUDE_REPLAY`, inside the test logs; `Err` is a
-/// request log that is not private.
-fn open_transport(cfg: &config::Config, api_key: String) -> Result<transport::Logged, String> {
+/// The API, or `ASK_CLAUDE_REPLAY`, inside the test logs, spoken to in the
+/// provider's shape; `Err` is a request log that is not private.
+fn open_transport(
+    cfg: &config::Config,
+    api_key: String,
+) -> Result<Box<dyn transport::Transport + Send>, String> {
     let env_path = |name: &str| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())
@@ -195,13 +203,19 @@ fn open_transport(cfg: &config::Config, api_key: String) -> Result<transport::Lo
     };
     let inner: Box<dyn transport::Transport + Send> = match env_path("ASK_CLAUDE_REPLAY") {
         Some(path) => Box::new(transport::Replay::new(path)),
-        None => Box::new(transport::Http::new(&cfg.base_url, api_key)),
+        None => Box::new(transport::Http::new(&cfg.provider, api_key)),
     };
-    transport::Logged::new(
+    let logged = Box::new(transport::Logged::new(
         inner,
         env_path("ASK_CLAUDE_REQUEST_LOG"),
         env_path("ASK_CLAUDE_BETA_LOG"),
-    )
+    )?);
+    Ok(match cfg.provider {
+        config::Provider::Anthropic { .. } => logged,
+        config::Provider::OpenAiCompatible { .. } => {
+            Box::new(openai::OpenAiCompatible::new(logged))
+        }
+    })
 }
 
 /// The `anthropic-beta` value of a request, as `call` in

@@ -65,6 +65,9 @@ one, and `/quit` exits and prints the command to resume it.
 | --- | --- |
 | `ANTHROPIC_API_KEY` | required; there is no config-file fallback |
 | `ANTHROPIC_BASE_URL` | the API root when `--base-url` is not given, for `-p anthropic` only; the same https-or-localhost rule, and one line on stderr when it is not the default root |
+| `OPENAI_BASE_URL` | Rust binary, `-p openai`: the API root when `--base-url` is not given (`https://api.openai.com/v1` without it; Venice is `https://api.venice.ai/api/v1`); the same https-or-localhost rule |
+| `OPENAI_API_KEY` | Rust binary, `-p openai`: the key, sent as a Bearer token |
+| `OPENAI_MODEL` | Rust binary, `-p openai`: the model when `-m` is not given |
 | `XDG_STATE_HOME` | chats live in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/` |
 | `ASK_CLAUDE_REPLAY` | testing: read this recorded `.sse` file instead of calling the API |
 | `ASK_CLAUDE_REQUEST_LOG` | testing: append each request body to this file |
@@ -116,7 +119,7 @@ turn interrupted with Ctrl-C writes `interrupted`.
 | `ts` | UTC, ISO 8601, to the second |
 | `kind` | `messages` or `session` |
 | `chat` | the chat's name as `list` shows it, the session id, or `null` for a session that never started |
-| `host` | the API host and port from `--base-url` or `ANTHROPIC_BASE_URL`, no path |
+| `host` | the API host and port from `--base-url` or `ANTHROPIC_BASE_URL` (`OPENAI_BASE_URL` with `-p openai`), no path |
 | `model` | the replying model (`null` for sessions) |
 | `round` | `pause_turn` round from 0, or custom-tool rounds answered |
 | `seconds` | whole seconds, as in the footer |

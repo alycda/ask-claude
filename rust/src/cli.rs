@@ -3,7 +3,8 @@
 //! spec so `usage diff ../ask-claude <(ask-claude --usage-spec)` can say
 //! whether the two binaries still agree (docs/plan.md R0, the parity gate).
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::parser::ValueSource;
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 
 /// chat loop; /new resets, /quit exits
 #[derive(Parser, Debug)]
@@ -35,6 +36,23 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Option<Command>,
+}
+
+impl Cli {
+    /// `Cli::parse`, and what only the matches know: which of `-m` and
+    /// `--base-url` the command line gave, rather than a default or
+    /// `ANTHROPIC_BASE_URL` (clap's `value_source`; a global flag's source
+    /// is the deepest command's, propagated to the root).
+    pub fn parse_args() -> Self {
+        let matches = Self::command().get_matches();
+        let mut cli = Self::from_arg_matches(&matches)
+            .map_err(|e| e.format(&mut Self::command()))
+            .unwrap_or_else(|e| e.exit());
+        let given = |id| matches.value_source(id) == Some(ValueSource::CommandLine);
+        cli.request.model_given = given("model");
+        cli.request.base_url_given = given("base_url");
+        cli
+    }
 }
 
 /// The flags every form of a request takes; global, so they bind under the
@@ -104,6 +122,17 @@ pub struct RequestFlags {
     /// only these tools of that --mcp server, e.g. mcp.example.com:search; repeatable; a server not named keeps all its tools
     #[arg(long, global = true, value_name = "mcp-tool")]
     pub mcp_tool: Vec<String>,
+
+    /// `-m` came from the command line, not its default; filled by
+    /// [`Cli::parse_args`]. `-p openai` takes `OPENAI_MODEL` otherwise
+    #[arg(skip)]
+    pub model_given: bool,
+
+    /// `--base-url` came from the command line, not `ANTHROPIC_BASE_URL`;
+    /// filled by [`Cli::parse_args`]. `-p openai` drops the variable's
+    /// value (KTD17)
+    #[arg(skip)]
+    pub base_url_given: bool,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

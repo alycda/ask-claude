@@ -4,13 +4,13 @@
 // No panic reaches main: every input error is the bash exit code (KTD4).
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
-use clap::{CommandFactory, Parser};
+use clap::CommandFactory;
 
 use ask_claude::cli::Cli;
 
 fn main() {
     process_defaults();
-    let cli = Cli::parse();
+    let cli = Cli::parse_args();
     if cli.version {
         println!("ask-claude {}", ask_claude::version());
         return;

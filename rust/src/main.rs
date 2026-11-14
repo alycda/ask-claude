@@ -20,12 +20,17 @@ fn main() {
 
 /// The usage spec of this binary, with what clap_usage cannot see: the
 /// environment variables behind the `agent` flags, copied from each clap
-/// arg's `env`. (The bash spec's `unknown_flags "error"` has no field in
-/// this spec version; clap refuses unknown flags anyway, so `usage diff`
-/// reports it as a compatible difference.)
+/// arg's `env`. Two fix-ups keep `usage diff` against the bash spec quiet:
+/// `--usage-spec` itself is dropped (plumbing, not interface), and the bash
+/// spec's `unknown_flags "error"` is written in by hand, since usage-lib 5.x
+/// (all clap_usage 5.0.0 allows) has no field for it; clap refuses unknown
+/// flags anyway, so the line is true of this binary.
 fn usage_spec() -> String {
     let mut cmd = Cli::command();
     let mut spec = clap_usage::spec(&mut cmd, "ask-claude");
+    spec.cmd
+        .flags
+        .retain(|flag| !flag.long.iter().any(|l| l == "usage-spec"));
     let agent_cmd = cmd.find_subcommand("agent").expect("agent subcommand");
     if let Some(agent) = spec.cmd.subcommands.get_mut("agent") {
         for flag in agent.flags.iter_mut() {
@@ -41,5 +46,7 @@ fn usage_spec() -> String {
             }
         }
     }
-    spec.to_string()
+    let mut out = spec.to_string();
+    out.push_str("unknown_flags \"error\"\n");
+    out
 }

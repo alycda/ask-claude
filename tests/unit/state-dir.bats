@@ -68,3 +68,19 @@ refused() {
     # as root, chmod 700 succeeds on any directory; only the owner check stops it
     refused 'owned by uid 65534'
 }
+
+# The Rust twin of the chmod shim above, staged through the file system: a
+# directory root owns, which another account cannot chmod. bash needs the
+# shim instead, since its `usage` shebang is not on that account's PATH.
+# bats test_tags=rust-only
+@test "state-dir: a directory whose mode cannot be set is refused (another account, root only)" {
+    [ "$(id -u)" -eq 0 ] || skip "needs root to run the binary as an account that does not own the directory"
+    command -v setpriv >/dev/null || skip "needs setpriv (util-linux) to drop to another account"
+    mkdir -p "$XDG_STATE_HOME/ask-claude"
+    chmod 755 "$TMP" "$XDG_STATE_HOME" "$XDG_STATE_HOME/ask-claude"
+    run --separate-stderr setpriv --reuid=65534 --regid=65534 --clear-groups \
+        env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" hi
+    [ "$status" -eq 2 ]
+    grep -q 'cannot make .* private' <<<"$stderr"
+    [ "$(stat -c %a "$XDG_STATE_HOME/ask-claude" 2>/dev/null || stat -f %Lp "$XDG_STATE_HOME/ask-claude")" = "755" ]
+}

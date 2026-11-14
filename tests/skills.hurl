@@ -21,5 +21,5 @@ Content-Type: application/json
 HTTP 200
 [Asserts]
 jsonpath "$.container.id" isString
-jsonpath "$.content[*].type" includes "server_tool_use"
-jsonpath "$.content[*].type" includes "bash_code_execution_tool_result"
+jsonpath "$.content[*].type" contains "server_tool_use"
+jsonpath "$.content[*].type" contains "bash_code_execution_tool_result"

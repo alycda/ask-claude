@@ -191,7 +191,9 @@ pub enum AgentCommand {
         #[arg(value_name = "session")]
         session: String,
         /// files to download into the current directory
-        #[arg(value_name = "name")]
+        // zero or more, as the bash spec's `"[name]..."` says; clap's default of
+        // 1.. for a positional Vec reads as `var_min=1` to usage-lib 7
+        #[arg(value_name = "name", num_args = 0..)]
         name: Vec<String>,
     },
     /// change the spend cap of a session

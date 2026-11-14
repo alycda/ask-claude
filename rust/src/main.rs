@@ -18,35 +18,70 @@ fn main() {
     std::process::exit(ask_claude::run(cli));
 }
 
-/// The usage spec of this binary, with what clap_usage cannot see: the
-/// environment variables behind the `agent` flags, copied from each clap
-/// arg's `env`. Two fix-ups keep `usage diff` against the bash spec quiet:
-/// `--usage-spec` itself is dropped (plumbing, not interface), and the bash
-/// spec's `unknown_flags "error"` is written in by hand, since usage-lib 5.x
-/// (all clap_usage 5.0.0 allows) has no field for it; clap refuses unknown
-/// flags anyway, so the line is true of this binary.
+/// The usage spec of this binary, as `usage diff` compares it with the bash
+/// spec. usage-lib writes the bash spec's `unknown_flags "error"` itself,
+/// since clap refuses unknown flags; `--usage-spec` is dropped, plumbing and
+/// not interface; [`from_clap`] and [`drop_inherited_unknown_flags`] carry the
+/// rest.
 fn usage_spec() -> String {
-    let mut cmd = Cli::command();
-    let mut spec = clap_usage::spec(&mut cmd, "ask-claude");
+    let cmd = Cli::command();
+    let mut spec = usage::Spec::from(&cmd);
+    spec.bin = "ask-claude".to_string();
     spec.cmd
         .flags
         .retain(|flag| !flag.long.iter().any(|l| l == "usage-spec"));
-    let agent_cmd = cmd.find_subcommand("agent").expect("agent subcommand");
-    if let Some(agent) = spec.cmd.subcommands.get_mut("agent") {
-        for flag in agent.flags.iter_mut() {
-            let env = agent_cmd
-                .get_arguments()
-                .find(|arg| {
-                    arg.get_long()
-                        .is_some_and(|l| flag.long.iter().any(|f| f == l))
-                })
-                .and_then(|arg| arg.get_env());
-            if let Some(env) = env {
-                flag.env = Some(env.to_string_lossy().into_owned());
-            }
+    from_clap(&mut spec.cmd, &cmd);
+    let root = spec.cmd.unknown_flags.or(spec.unknown_flags);
+    drop_inherited_unknown_flags(&mut spec.cmd, root);
+    spec.to_string()
+}
+
+/// What usage-lib 7.3.0 leaves out or overstates, flag by flag in every
+/// command, read back from the clap arg the flag came from: the `env` behind
+/// `--agent` and friends (clap has the getter, usage-lib leaves `env` unset),
+/// and whether one occurrence takes several values. usage-lib reads
+/// `ArgAction::Append` as both "repeatable" and "several values each time",
+/// so `--mcp a b` would bind `b` as a second server where clap, and the bash
+/// spec, make it the prompt; only a delimiter or `num_args` above one does.
+fn from_clap(spec: &mut usage::SpecCommand, cmd: &clap::Command) {
+    for flag in spec.flags.iter_mut() {
+        let Some(arg) = cmd.get_arguments().find(|arg| {
+            arg.get_long()
+                .is_some_and(|l| flag.long.iter().any(|f| f == l))
+                || arg.get_short().is_some_and(|s| flag.short.contains(&s))
+        }) else {
+            continue;
+        };
+        if let Some(env) = arg.get_env() {
+            flag.env = Some(env.to_string_lossy().into_owned());
+        }
+        if let Some(value) = flag.arg.as_mut() {
+            value.var = arg.get_value_delimiter().is_some()
+                || arg.get_num_args().is_some_and(|n| n.max_values() > 1);
         }
     }
-    let mut out = spec.to_string();
-    out.push_str("unknown_flags \"error\"\n");
-    out
+    for (name, sub) in spec.subcommands.iter_mut() {
+        if let Some(cmd) = cmd.find_subcommand(name) {
+            from_clap(sub, cmd);
+        }
+    }
+}
+
+/// usage-lib states `unknown_flags=error` on every command clap made, and
+/// `usage diff` reads a command that does not state it as taking unknown
+/// flags as values, while usage's parser inherits the nearest stated mode,
+/// the root's included. The bash spec states it once, at the root, so a
+/// command that restates what it inherits says it no more; a command whose
+/// mode differs keeps it.
+fn drop_inherited_unknown_flags(
+    cmd: &mut usage::SpecCommand,
+    inherited: Option<usage::UnknownFlags>,
+) {
+    for sub in cmd.subcommands.values_mut() {
+        let own = sub.unknown_flags.or(inherited);
+        if sub.unknown_flags == inherited {
+            sub.unknown_flags = None;
+        }
+        drop_inherited_unknown_flags(sub, own);
+    }
 }

@@ -437,7 +437,7 @@ pub fn answer(
     ask: &mut dyn FnMut(&str) -> Option<String>,
     err: &mut dyn std::io::Write,
 ) -> Value {
-    use crate::stream::safe;
+    use crate::{stream::safe, tostring};
     let list = |key: &str| fold[key].as_array().cloned().unwrap_or_default();
     // the name and input as the terminal shows them: `.name | tostring`
     // and `.input | tojson`, encoded once, through safe
@@ -504,12 +504,4 @@ pub fn answer(
         }
     }
     serde_json::json!({ "events": events })
-}
-
-/// jq's `tostring`: a string as itself, anything else as its JSON.
-fn tostring(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => crate::tojson(other),
-    }
 }

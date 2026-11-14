@@ -21,8 +21,11 @@ use crate::transport::{Reply, Transport};
 /// The chat-completions body for a Messages body `request::body` made: the
 /// model, `max_tokens` as `max_completion_tokens`, a stream with its usage
 /// asked for, the system prompt as the first message, and each turn's
-/// content as text, a block array as its text blocks joined. Keys in the
-/// hurl contract's order.
+/// content as text, a block array as its text blocks joined. A turn with
+/// no text (a Chat from `-p anthropic` whose turn held only tool calls,
+/// tool results or thinking) has nothing to send and is left out, since
+/// several compatible APIs refuse an empty `content`. Keys in the hurl
+/// contract's order.
 pub fn body(messages_body: &Value) -> Value {
     let mut messages = Vec::new();
     if let Some(system) = messages_body["system"].as_str() {
@@ -38,6 +41,9 @@ pub fn body(messages_body: &Value) -> Value {
                 .collect(),
             _ => String::new(),
         };
+        if content.is_empty() {
+            continue;
+        }
         messages.push(json!({"role": turn["role"], "content": content}));
     }
     json!({
@@ -125,10 +131,13 @@ struct Chunks {
 }
 
 impl Chunks {
-    /// One line of the reply, its newline included, as Messages SSE.
+    /// One line of the reply, its newline included, as Messages SSE. A
+    /// `data:` field is taken with or without the space after the colon,
+    /// as SSE allows (one leading space is the separator, not the value).
     fn line(&mut self, line: Vec<u8>) -> Vec<u8> {
         let data = line
-            .strip_prefix(b"data: ")
+            .strip_prefix(b"data:")
+            .map(|d| d.strip_prefix(b" ").unwrap_or(d))
             .and_then(|d| d.strip_suffix(b"\n"))
             .map(|d| d.strip_suffix(b"\r").unwrap_or(d));
         let events = match data {
@@ -320,6 +329,20 @@ mod tests {
         );
     }
 
+    /// A `data:` field without the space after the colon is the same
+    /// chunk, as SSE reads it.
+    #[test]
+    fn a_data_field_without_the_space_is_translated() {
+        let spaced = translate(
+            "data: {\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\ndata: [DONE]\n",
+        );
+        let bare = translate(
+            "data:{\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\ndata:[DONE]\n",
+        );
+        assert_eq!(bare, spaced);
+        assert_eq!(bare.last(), Some(&json!({"type": "message_stop"})));
+    }
+
     /// A body that is not SSE passes through byte for byte, and so does a
     /// last `data:` line without its newline.
     #[test]
@@ -365,6 +388,37 @@ mod tests {
                 ],
             })
             .to_string()
+        );
+    }
+
+    /// A Chat that used tools on `-p anthropic`, continued here: the turns
+    /// that hold no text (the tool call, its result) are left out rather
+    /// than sent as an empty `content`.
+    #[test]
+    fn a_turn_with_no_text_is_left_out() {
+        let sent = body(&json!({
+            "model": "m",
+            "max_tokens": 64,
+            "messages": [
+                {"role": "user", "content": "list the files"},
+                {"role": "assistant", "content": [
+                    {"type": "thinking", "thinking": "hm", "signature": "s"},
+                    {"type": "tool_use", "id": "toolu_1", "name": "bash", "input": {"command": "ls"}},
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "toolu_1", "content": "a b"},
+                ]},
+                {"role": "assistant", "content": [{"type": "text", "text": "a and b"}]},
+                {"role": "user", "content": "thanks"},
+            ],
+        }));
+        assert_eq!(
+            sent["messages"],
+            json!([
+                {"role": "user", "content": "list the files"},
+                {"role": "assistant", "content": "a and b"},
+                {"role": "user", "content": "thanks"},
+            ])
         );
     }
 }

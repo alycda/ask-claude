@@ -427,15 +427,17 @@ impl<'a> Agent<'a> {
     }
 
     /// `session_answer`: the events that answer what `fold` waits on,
-    /// through the confirmation gate.
+    /// through the confirmation gate, which asks on the terminal when
+    /// stdin is one (`session_tty`) and `/dev/tty` can be read.
     fn answer(&mut self, fold: &Value) -> Value {
-        let mut ask = |_: &str| None;
+        use std::io::IsTerminal;
+        let tty = std::io::stdin().is_terminal() && std::fs::File::open("/dev/tty").is_ok();
         session::answer(
             fold,
             &mut self.gate,
-            false,
+            tty,
             None,
-            &mut ask,
+            &mut ask_tty,
             &mut std::io::stderr(),
         )
     }
@@ -447,6 +449,41 @@ impl<'a> Agent<'a> {
             &format!("/sessions/{id}/events"),
             Some(r#"{"events":[{"type":"user.interrupt"}]}"#),
         );
+    }
+}
+
+/// `read -r -p <prompt> </dev/tty` in `session_confirm`: the prompt on
+/// stderr, then one line from the terminal, its newline dropped. The read
+/// is on a thread, one byte at a time so it takes no more than the line,
+/// and the main thread looks at the interrupt flag while it waits (KTD3);
+/// None after a signal, or when the terminal cannot be read, which the
+/// gate takes as no.
+fn ask_tty(prompt: &str) -> Option<String> {
+    use std::io::Read;
+    let mut tty = std::fs::File::open("/dev/tty").ok()?;
+    eprint!("{prompt}");
+    let _ = std::io::stderr().flush();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut line = Vec::new();
+        let mut byte = [0u8; 1];
+        while let Ok(1) = tty.read(&mut byte) {
+            if byte[0] == b'\n' {
+                break;
+            }
+            line.push(byte[0]);
+        }
+        let _ = tx.send(String::from_utf8_lossy(&line).into_owned());
+    });
+    loop {
+        if transport::interrupted() {
+            return None;
+        }
+        match rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(line) => return Some(line),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
+        }
     }
 }
 

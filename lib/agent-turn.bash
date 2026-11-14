@@ -86,6 +86,10 @@ session_confirm() {
   # read -p prompts on stderr; the answer comes from /dev/tty, so the
   # question goes there too, or `2> file` hides what a typed y approves.
   # A /dev/tty that cannot be written fails the read: no answer, deny.
+  # First drop what was typed before the prompt, as tcflush would: whoever
+  # typed it had not seen this call. read -N on a terminal reads it
+  # uncooked, so a line with no Enter yet goes too, and restores the mode.
+  IFS= read -r -s -t 0.01 -N 4096 answer </dev/tty 2>/dev/null || :
   IFS= read -r -p "allow $1 $2? [y/N/a(lways)] " answer </dev/tty 2>/dev/tty || answer=""
   case "$answer" in
   y | Y | yes) echo allow ;;

@@ -895,11 +895,13 @@ impl<'a> Agent<'a> {
 /// prompt on the terminal, then one line from it, its newline dropped.
 /// The prompt goes to `/dev/tty`, not stderr: the answer is read there,
 /// so the name and input it approves must be shown there, even when
-/// stderr is a file (security-audit run 4, lead 4). The read is on a
-/// thread, one byte at a time so it takes no more than the line, and the
-/// main thread looks at the interrupt flag while it waits (KTD3); None
-/// after a signal, or when the terminal cannot be opened, written or read,
-/// which the gate takes as no.
+/// stderr is a file (security-audit run 4, lead 4). What was typed before
+/// the prompt is discarded first: it was typed by someone who had not seen
+/// this call, so it is no answer to it (lead 5). The read is on a thread,
+/// one byte at a time so it takes no more than the line, and the main
+/// thread looks at the interrupt flag while it waits (KTD3); None after a
+/// signal, or when the terminal cannot be opened, written or read, which
+/// the gate takes as no.
 fn ask_tty(prompt: &str) -> Option<String> {
     use std::io::Read;
     let mut tty = std::fs::OpenOptions::new()
@@ -907,6 +909,15 @@ fn ask_tty(prompt: &str) -> Option<String> {
         .write(true)
         .open("/dev/tty")
         .ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsRawFd;
+        // SAFETY: tcflush(3) on the descriptor `tty` holds open; it only
+        // drops queued input. A failure leaves the queue as it was, and
+        // the prompt is still asked: the flush narrows what can answer,
+        // it is not what makes the gate ask
+        unsafe { libc::tcflush(tty.as_raw_fd(), libc::TCIFLUSH) };
+    }
     tty.write_all(prompt.as_bytes()).ok()?;
     tty.flush().ok()?;
     let (tx, rx) = std::sync::mpsc::channel();

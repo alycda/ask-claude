@@ -10,7 +10,7 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
-## 0.3.1 (meso) - 2026-11-10
+## 0.3.1 (micro) - 2026-11-10
 
 - `--web` sends `web_search_20260318` and `web_fetch_20260318`, the
   dynamic-filtering versions, in place of `web_search_20250305` and
@@ -36,12 +36,8 @@ adds one, and `just check-effver` checks it against `VERSION`.
 
   Both are `null` for a session turn. The line format stays `v: 1`: the
   existing keys and their order are unchanged.
-- Adopting needs:
-  - **`--web` with Claude Haiku 4.5 (or an older, retired model):** the
-    request fails with the API's 400. Use a 4.6+ model, such as
-    `-m claude-haiku-5-5`.
-  - **A reader that compares whole event lines byte for byte:** it sees
-    the two new keys.
+- Adopting needs nothing. A reader that compares whole event lines byte for
+  byte sees the two new keys.
 
 ## 0.3.0 (macro) - 2026-11-07
 

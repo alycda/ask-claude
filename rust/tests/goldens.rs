@@ -213,6 +213,64 @@ fn r3_request_web_mcp_and_everything() {
     );
 }
 
+/// The object keys of a JSON text in document order, read off the text
+/// itself so the answer does not depend on how serde_json keeps a map.
+fn keys_in_order(text: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '"' {
+            continue;
+        }
+        let mut s = String::new();
+        while let Some(c) = chars.next() {
+            match c {
+                '\\' => {
+                    s.push(c);
+                    s.extend(chars.next());
+                }
+                '"' => break,
+                _ => s.push(c),
+            }
+        }
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        if chars.peek() == Some(&':') {
+            keys.push(s);
+        }
+    }
+    keys
+}
+
+/// The goldens carry jq's insertion order and the wire is text, so the
+/// body is held to the text it serializes to, not to a Value as
+/// `r3_request_plain` does, which cannot see order. Without serde_json's
+/// `preserve_order` every object comes out with its keys sorted.
+#[test]
+fn r3_request_body_serializes_in_the_goldens_key_order() {
+    let plain = request::body(&args("", "", "", "", false, &[], "")).to_string();
+    assert_eq!(
+        keys_in_order(&plain),
+        keys_in_order(&read("request/plain.json")),
+        "{plain}"
+    );
+    let pptx = r#"[{"skill_id":"pptx","version":"latest","type":"anthropic"}]"#;
+    let everything = request::body(&args(
+        "",
+        "",
+        pptx,
+        "",
+        true,
+        &["https://mcp.deepwiki.com/mcp"],
+        "tok_FIXTURE",
+    ))
+    .to_string();
+    assert_eq!(
+        keys_in_order(&everything),
+        keys_in_order(&read("request/everything.json")),
+        "{everything}"
+    );
+}
+
 #[test]
 fn r3_skills_list_to_typed_entries() {
     assert_eq!(

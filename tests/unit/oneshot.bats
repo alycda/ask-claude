@@ -74,6 +74,14 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     grep -q '\[stopped: refusal cyber\]' <<<"$stderr"
 }
 
+@test "one-shot: a max_tokens stop is reported, and the cut reply is kept" {
+    run --separate-stderr replay max-tokens "count"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "1, 2, 3,"* ]]
+    grep -qxF '[stopped: max_tokens reached, raise --max-tokens]' <<<"$stderr"
+    jq -e 'length==2 and .[1].role=="assistant"' "$(history_file)"
+}
+
 @test "one-shot: pause_turn is continued, at most 8 rounds" {
     run --separate-stderr replay pause-turn "ping"
     [ "$status" -eq 0 ]

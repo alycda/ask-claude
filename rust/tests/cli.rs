@@ -256,6 +256,287 @@ fn r2_a_tool_input_that_is_not_json_is_the_bash_parse_error() {
     }
 }
 
+/// The one shot the way tests/unit/oneshot.bats drives the script: replay,
+/// request log and state directory from the environment.
+fn one_shot(state: &Path, replay: &Path) -> Command {
+    let mut cmd = bin();
+    cmd.env("ANTHROPIC_API_KEY", "sk-ant-test-not-a-key")
+        .env("XDG_STATE_HOME", state.join("state"))
+        .env("ASK_CLAUDE_REPLAY", replay)
+        .env("ASK_CLAUDE_REQUEST_LOG", state.join("requests.jsonl"))
+        .env_remove("ASK_CLAUDE_BETA_LOG");
+    cmd
+}
+
+fn chat_files(state: &Path) -> Vec<PathBuf> {
+    let dir = state.join("state/ask-claude");
+    let mut v: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .map(|d| {
+            d.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == "json"))
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+/// `text.sse` with the pong delta's string replaced by `with` (raw bytes).
+fn text_sse_with(dir: &Path, with: &[u8]) -> PathBuf {
+    let text_sse = std::fs::read(repo().join("tests/fixtures/sse/text.sse")).unwrap();
+    let pong = b"\"text\":\"pong\"";
+    let at = text_sse
+        .windows(pong.len())
+        .position(|w| w == pong)
+        .expect("text.sse carries the pong delta");
+    let mut crafted = text_sse[..at].to_vec();
+    crafted.extend_from_slice(with);
+    crafted.extend_from_slice(&text_sse[at + pong.len()..]);
+    let sse = dir.join("crafted.sse");
+    std::fs::write(&sse, &crafted).unwrap();
+    sse
+}
+
+/// An API error body exits 1 with the bash message, and the user's turn is
+/// not kept: a chat that starts with an unanswered prompt is not a chat.
+#[test]
+fn an_api_error_exits_1_and_keeps_no_user_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    one_shot(dir.path(), &repo().join("tests/fixtures/sse/error.sse"))
+        .arg("ping")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "API error: model: claude-does-not-exist",
+        ));
+    for f in chat_files(dir.path()) {
+        let turns: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
+        assert_eq!(turns.as_array().map(Vec::len), Some(0), "{}", f.display());
+    }
+}
+
+/// pause_turn is continued at most eight times, each round announced on
+/// stderr, then the stop is reported, exactly as bash does.
+#[test]
+fn pause_turn_is_continued_eight_times_then_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = one_shot(
+        dir.path(),
+        &repo().join("tests/fixtures/sse/pause-turn.sse"),
+    )
+    .arg("ping")
+    .output()
+    .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let rounds = stderr.matches("[pause_turn: continuing, round ").count();
+    assert_eq!(rounds, 8, "{stderr}");
+    assert!(
+        stderr.contains("[pause_turn: continuing, round 1]"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("[stopped: pause_turn]"), "{stderr}");
+}
+
+/// A replay directory serves 1.sse, 2.sse, ... one per send, continuations
+/// included; when the turns run out the next send is the bash "no response"
+/// path, exit 1. The request log holds one line per send, in order.
+#[test]
+fn a_replay_directory_serves_one_file_per_send_then_no_response() {
+    let dir = tempfile::tempdir().unwrap();
+    let turns = dir.path().join("turns");
+    std::fs::create_dir(&turns).unwrap();
+    std::fs::copy(
+        repo().join("tests/fixtures/sse/pause-turn.sse"),
+        turns.join("1.sse"),
+    )
+    .unwrap();
+    std::fs::copy(
+        repo().join("tests/fixtures/sse/text.sse"),
+        turns.join("2.sse"),
+    )
+    .unwrap();
+    one_shot(dir.path(), &turns)
+        .arg("ping")
+        .assert()
+        .success()
+        .stdout(predicate::str::ends_with("pong\n"))
+        .stderr(predicate::str::contains(
+            "[pause_turn: continuing, round 1]",
+        ));
+    let log = std::fs::read_to_string(dir.path().join("requests.jsonl")).unwrap();
+    assert_eq!(log.lines().count(), 2, "{log}");
+    for line in log.lines() {
+        let body: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert_eq!(body["messages"][0]["content"], "ping");
+    }
+
+    let short = dir.path().join("short");
+    std::fs::create_dir(&short).unwrap();
+    std::fs::copy(
+        repo().join("tests/fixtures/sse/pause-turn.sse"),
+        short.join("1.sse"),
+    )
+    .unwrap();
+    one_shot(dir.path(), &short)
+        .arg("ping")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("no response"));
+}
+
+/// A request log another account can read is refused before anything is
+/// sent, with the shape of the state-directory message: a log is request
+/// text at rest, as private as a chat.
+#[test]
+fn a_group_readable_request_log_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("requests.jsonl");
+    std::fs::write(&log, "").unwrap();
+    std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o640)).unwrap();
+    one_shot(dir.path(), &repo().join("tests/fixtures/sse/text.sse"))
+        .arg("ping")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("other accounts"));
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap(),
+        "",
+        "nothing was appended"
+    );
+    assert!(chat_files(dir.path()).is_empty(), "no chat was written");
+}
+
+/// The chat a one shot leaves: one file under the state directory, named
+/// by its start time and the process id as `new_chat` in lib/chat.bash
+/// names it, holding the user turn and the reply, private to the user
+/// (mode 0600 in a 0700 directory) as the script's `umask 077` makes it.
+#[test]
+fn a_one_shot_saves_a_private_chat_of_two_turns() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    one_shot(dir.path(), &repo().join("tests/fixtures/sse/text.sse"))
+        .arg("ping")
+        .assert()
+        .success()
+        .stdout("pong\n");
+    let chats = chat_files(dir.path());
+    assert_eq!(chats.len(), 1, "{chats:?}");
+    let name = chats[0].file_name().unwrap().to_string_lossy().into_owned();
+    let (stamp, rest) = name.split_once('-').expect("<time>-<pid>.json");
+    assert!(
+        stamp.len() == 15
+            && stamp.as_bytes()[8] == b'T'
+            && stamp.bytes().filter(u8::is_ascii_digit).count() == 14,
+        "{name}"
+    );
+    let pid = rest.strip_suffix(".json").expect(".json");
+    assert!(pid.parse::<u32>().is_ok(), "{name}");
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&chats[0]), 0o600, "{name}");
+    assert_eq!(mode(&dir.path().join("state/ask-claude")), 0o700);
+    let turns: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&chats[0]).unwrap()).unwrap();
+    assert_eq!(
+        turns[0],
+        serde_json::json!({"role": "user", "content": "ping"})
+    );
+    assert_eq!(turns[1]["role"], "assistant");
+    assert_eq!(turns[1]["content"][0]["text"], "pong");
+    assert_eq!(turns.as_array().map(Vec::len), Some(2));
+    let leftovers: Vec<_> = std::fs::read_dir(dir.path().join("state/ask-claude"))
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.file_name()))
+        .filter(|n| n.to_string_lossy().contains("tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+/// The request log line is written before the send, so it is there even
+/// when the send fails: a replay file that does not exist is the bash "no
+/// response" path, exit 1, the user turn rolled back and the empty chat
+/// removed.
+#[test]
+fn the_request_log_line_is_written_before_the_send() {
+    let dir = tempfile::tempdir().unwrap();
+    one_shot(dir.path(), &dir.path().join("missing.sse"))
+        .arg("ping")
+        .assert()
+        .code(1)
+        .stdout("")
+        .stderr(predicate::str::contains("no response"));
+    let log = std::fs::read_to_string(dir.path().join("requests.jsonl")).unwrap();
+    assert_eq!(log.lines().count(), 1, "{log}");
+    let body: serde_json::Value = serde_json::from_str(log.trim_end()).unwrap();
+    assert_eq!(body["messages"][0]["content"], "ping");
+    assert!(chat_files(dir.path()).is_empty(), "no chat is left");
+}
+
+/// A `data:` line that is not JSON ends the printer where jq's printer
+/// dies (on that line, after what came before it) and makes the fold fail
+/// as jq -s fails: an API error, exit 1, no usage line. Dropping the line
+/// and carrying on, as a lenient parser would, prints a reply bash does
+/// not. Oracle: the bash script on this stream prints "pong" (no newline,
+/// message_stop never reached the printer) and ends stderr with the line
+/// below, after jq's own complaint.
+#[test]
+fn a_data_line_that_is_not_json_is_the_bash_parse_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let sse = text_sse_with(
+        dir.path(),
+        b"\"text\":\"pong\"}}\n\ndata: {not json\n\nx: {",
+    );
+    one_shot(dir.path(), &sse)
+        .arg("ping")
+        .assert()
+        .code(1)
+        .stdout("pong")
+        .stderr(
+            predicate::str::ends_with("ask-claude: API error: the reply could not be parsed\n")
+                .and(predicate::str::contains("in=").not()),
+        );
+    assert!(chat_files(dir.path()).is_empty(), "no chat is left");
+}
+
+/// A lone low surrogate escape in a `data:` line is U+FFFD to jq, which
+/// prints and keeps the reply; serde_json alone refuses the line. Oracle:
+/// the bash script on this stream prints "p\u{FFFD}ng\n" and exits 0.
+#[test]
+fn a_lone_low_surrogate_in_a_data_line_is_the_replacement_character() {
+    let dir = tempfile::tempdir().unwrap();
+    let sse = text_sse_with(dir.path(), b"\"text\":\"p\\udc00ng\"");
+    one_shot(dir.path(), &sse)
+        .arg("ping")
+        .assert()
+        .success()
+        .stdout("p\u{FFFD}ng\n");
+}
+
+/// A body that is not SSE is an HTTP error body: its `.error.message`, or
+/// "unreadable response" when it is not JSON or carries none (bash
+/// `api_error`). Oracle: the bash script on each body below.
+#[test]
+fn a_body_that_is_not_sse_is_an_api_error() {
+    for body in ["Bad Gateway\n", "{\"type\":\"ok\"}\n"] {
+        let dir = tempfile::tempdir().unwrap();
+        let sse = dir.path().join("body.sse");
+        std::fs::write(&sse, body).unwrap();
+        one_shot(dir.path(), &sse)
+            .arg("ping")
+            .assert()
+            .code(1)
+            .stdout("")
+            .stderr("ask-claude: API error: unreadable response\n");
+        assert!(chat_files(dir.path()).is_empty(), "{body}: no chat is left");
+    }
+}
+
 mod which {
     /// `usage` on PATH, or None.
     pub fn which_usage() -> Option<std::path::PathBuf> {

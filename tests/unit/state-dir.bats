@@ -39,6 +39,7 @@ refused() {
     [ -z "$(ls -A "$TMP/elsewhere")" ]
 }
 
+# bats test_tags=bash-only
 @test "state-dir: a directory that cannot be made private is refused" {
     shim chmod 'echo "chmod: Operation not permitted" >&2; exit 1'
     refused 'cannot make .* private'
@@ -50,6 +51,7 @@ refused() {
     refused 'cannot create'
 }
 
+# bats test_tags=bash-only
 @test "state-dir: a directory another account owns is refused" {
     # the script compares the directory's owner with id -u; a shim reports
     # another uid, so the check runs without a second account

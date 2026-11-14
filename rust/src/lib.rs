@@ -53,6 +53,9 @@ pub mod chat;
 /// `-p openai`, the chat-completions shape.
 pub mod openai;
 
+/// `ask-claude agent`: Managed Agents sessions.
+pub mod agent;
+
 /// Run the parsed CLI; the exit code is the bash script's (0 reply, 1 API
 /// error, 2 bad input, 130 after Ctrl-C). The order is the script's: the
 /// checks of `lib/config.bash` and the state directory for every form,
@@ -99,7 +102,7 @@ pub fn run(cli: cli::Cli) -> i32 {
             transport::catch_signals();
             return chat::run_loop(&mut args, &mut *t, &state, chat, &log);
         }
-        Some(cli::Command::Agent(_)) => todo!("R7: agent"),
+        Some(cli::Command::Agent(agent)) => return agent::run(agent, &cli, &cfg, &state, &log),
     }
     let Some(api_key) = need_key(&cfg.provider) else {
         return 2;

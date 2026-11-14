@@ -13,6 +13,9 @@ pub trait Transport {
 /// A reply body: the SSE of a stream, or an error body, as raw bytes.
 pub type Reply = Box<dyn Read + Send>;
 
+/// The Managed Agents transport.
+pub mod sessions;
+
 use std::fs::{File, Metadata, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -160,11 +163,7 @@ impl Logged {
         requests: Option<PathBuf>,
         betas: Option<PathBuf>,
     ) -> Result<Self, String> {
-        if let Some(log) = &requests
-            && let Ok(meta) = std::fs::metadata(log)
-        {
-            private(log, &meta)?;
-        }
+        refuse_shared(requests.as_deref())?;
         Ok(Self {
             inner,
             requests,
@@ -187,20 +186,37 @@ impl Transport for Logged {
             );
         }
         if let Some(log) = &self.requests {
-            let cannot = |_| {
-                io::Error::other(format!(
-                    "the request log {} cannot be written; nothing sent",
-                    log.display()
-                ))
-            };
-            let mut f = open_log(log).map_err(cannot)?;
-            // the check at start-up says nothing about a file put in its
-            // place since: the open file is the one that must be private
-            private(log, &f.metadata().map_err(cannot)?).map_err(io::Error::other)?;
-            writeln!(f, "{body}").map_err(cannot)?;
+            log_request(log, body)?;
         }
         self.inner.send(body, betas)
     }
+}
+
+/// `Err` is the refusal of a request log that exists and is not private,
+/// in the shape of the state directory's.
+fn refuse_shared(requests: Option<&Path>) -> Result<(), String> {
+    if let Some(log) = requests
+        && let Ok(meta) = std::fs::metadata(log)
+    {
+        private(log, &meta)?;
+    }
+    Ok(())
+}
+
+/// Append `body` to the request log as one line, before it is sent; an
+/// `Err` means nothing may be sent.
+fn log_request(log: &Path, body: &str) -> io::Result<()> {
+    let cannot = |_| {
+        io::Error::other(format!(
+            "the request log {} cannot be written; nothing sent",
+            log.display()
+        ))
+    };
+    let mut f = open_log(log).map_err(cannot)?;
+    // the check at start-up says nothing about a file put in its place
+    // since: the open file is the one that must be private
+    private(log, &f.metadata().map_err(cannot)?).map_err(io::Error::other)?;
+    writeln!(f, "{body}").map_err(cannot)
 }
 
 /// A log opened for appending, created 0600 when missing.
@@ -325,15 +341,33 @@ impl Lines {
     /// The next line, the end, a failed read, or an interrupt.
     pub fn next(&self) -> Next {
         loop {
-            if interrupted() {
-                return Next::Interrupted;
+            if let Some(next) = self.tick() {
+                return next;
             }
-            match self.rx.recv_timeout(TICK) {
-                Ok(Ok(line)) => return Next::Line(line),
-                Ok(Err(e)) => return Next::Failed(e),
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => return Next::End,
+        }
+    }
+
+    /// [`Lines::next`], or None once `deadline` has passed with nothing to
+    /// hand over: a session stream waited on for its connected comment.
+    pub fn next_until(&self, deadline: std::time::Instant) -> Option<Next> {
+        while std::time::Instant::now() < deadline {
+            if let Some(next) = self.tick() {
+                return Some(next);
             }
+        }
+        None
+    }
+
+    /// One wait of at most a tick, after a look at the flag.
+    fn tick(&self) -> Option<Next> {
+        if interrupted() {
+            return Some(Next::Interrupted);
+        }
+        match self.rx.recv_timeout(TICK) {
+            Ok(Ok(line)) => Some(Next::Line(line)),
+            Ok(Err(e)) => Some(Next::Failed(e)),
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
+            Err(mpsc::RecvTimeoutError::Disconnected) => Some(Next::End),
         }
     }
 }

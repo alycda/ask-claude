@@ -173,7 +173,16 @@ pub struct AgentArgs {
     pub environment: Option<String>,
 
     /// spend cap for the session at list price; 0 for none
-    #[arg(long, global = true, value_name = "cents", default_value = "100")]
+    // `--budget -5` is a bad budget, which the usage parser hands to the
+    // script, not an unknown flag; a negative number only, since any value
+    // with a dash (allow_hyphen_values) changes the spec's double_dash
+    #[arg(
+        long,
+        global = true,
+        value_name = "cents",
+        default_value = "100",
+        allow_negative_numbers = true
+    )]
     pub budget: String,
 
     /// vault of credentials to attach; repeatable

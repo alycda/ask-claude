@@ -3,7 +3,7 @@
 //! checks, a new Chat, private writes, the container file, `list` and the
 //! chat `resume` picks.
 
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -162,26 +162,36 @@ pub fn save(chat: &Path, turns: &Value) -> io::Result<()> {
     replace(chat, text.as_bytes())
 }
 
-/// Put `bytes` at `path` without writing through the name: a new private
-/// file beside it (mode 0600, created, never opened if it exists), then
-/// one rename over the name, which replaces what is there and follows no
-/// symlink (CODING_STANDARDS.md, files and state).
-pub fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
+/// A new file private to the user (mode 0600) named `<prefix><pid>.<n>`,
+/// created by this call and never opened when the name exists, as
+/// `mktemp` creates one: nothing planted beforehand, a symlink above all,
+/// can redirect what is written to it.
+pub fn fresh(prefix: &Path) -> io::Result<(PathBuf, File)> {
     let mut opts = OpenOptions::new();
     opts.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
     let mut n = 0u32;
-    let (tmp, mut file) = loop {
-        let mut name = path.as_os_str().to_owned();
-        name.push(format!(".tmp.{}.{n}", std::process::id()));
+    loop {
+        let mut name = prefix.as_os_str().to_owned();
+        name.push(format!("{}.{n}", std::process::id()));
         let tmp = PathBuf::from(name);
         match opts.open(&tmp) {
-            Ok(file) => break (tmp, file),
+            Ok(file) => return Ok((tmp, file)),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists && n < 100 => n += 1,
             Err(e) => return Err(e),
         }
-    };
+    }
+}
+
+/// Put `bytes` at `path` without writing through the name: a new private
+/// file beside it (mode 0600, created, never opened if it exists), then
+/// one rename over the name, which replaces what is there and follows no
+/// symlink (CODING_STANDARDS.md, files and state).
+pub fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut prefix = path.as_os_str().to_owned();
+    prefix.push(".tmp.");
+    let (tmp, mut file) = fresh(Path::new(&prefix))?;
     let written = file.write_all(bytes);
     drop(file);
     match written.and_then(|()| std::fs::rename(&tmp, path)) {

@@ -5,7 +5,7 @@
 //! it with canned pages and recorded streams (`ASK_CLAUDE_REPLAY`), and
 //! [`Logged`] writes each request body to `ASK_CLAUDE_REQUEST_LOG` first.
 
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -29,15 +29,23 @@ pub trait Sessions {
     /// delivers only what is emitted after it opens: the caller waits for
     /// the connected comment before it posts the events of a turn.
     fn stream(&mut self, session: &str) -> io::Result<Reply>;
+
+    /// The bytes of the session file `id`, named `name` in the session's
+    /// list, written to `to` (`session_files`'s download). An `Err` is a
+    /// download that failed, an error status included (`curl --fail`);
+    /// what reached `to` before it is the caller's to throw away.
+    fn download(&mut self, id: &str, name: &str, to: &mut dyn Write) -> io::Result<()>;
 }
 
 /// The API: `ma_call`'s curl and `session_stream_open`'s, with the headers
 /// `ma_headers` sends. As in [`super::Http`], an error status is a body,
 /// not an `Err`; no redirect is followed; 30 s to connect. A call has 120
-/// s in all, as `curl --max-time 120`; a stream 1800 s, as the script's.
+/// s in all, as `curl --max-time 120`; a stream 1800 s, as the script's;
+/// a download 600 s, as `session_files`'s.
 pub struct Http {
     calls: ureq::Agent,
     streams: ureq::Agent,
+    downloads: ureq::Agent,
     root: String,
     api_key: String,
 }
@@ -58,6 +66,7 @@ impl Http {
         Self {
             calls: agent(120),
             streams: agent(1800),
+            downloads: agent(600),
             root: base_url.strip_suffix('/').unwrap_or(base_url).to_string(),
             api_key,
         }
@@ -109,6 +118,31 @@ impl Sessions for Http {
                 .map_err(io::Error::other)?;
             Ok(Box::new(response.into_body().into_reader()) as Reply)
         }))))
+    }
+
+    /// GET /v1/files/<id>/content with the session headers; an error
+    /// status fails as `curl --fail` fails. The id comes from the API and
+    /// names a URL path, so one that is not an id goes nowhere.
+    fn download(&mut self, id: &str, _name: &str, to: &mut dyn Write) -> io::Result<()> {
+        if id.is_empty()
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        {
+            return Err(io::Error::other("the file id is not one"));
+        }
+        let url = uri(&self.root, &format!("/files/{id}/content"));
+        let response = headers(self.downloads.get(&url), &self.api_key)
+            .call()
+            .map_err(io::Error::other)?;
+        let status = response.status().as_u16();
+        if status >= 400 {
+            return Err(io::Error::other(format!(
+                "The requested URL returned error: {status}"
+            )));
+        }
+        io::copy(&mut response.into_body().into_reader(), to)?;
+        Ok(())
     }
 }
 
@@ -189,6 +223,19 @@ impl Sessions for Replay {
             },
         ))))
     }
+
+    /// `<dir>/files/<name>`, as `cat` copies it: a file that is not there
+    /// is said on stderr and leaves the download empty, not failed.
+    fn download(&mut self, _id: &str, name: &str, to: &mut dyn Write) -> io::Result<()> {
+        let file = self.path.join("files").join(name);
+        match std::fs::File::open(&file) {
+            Ok(mut f) => io::copy(&mut f, to).map(|_| ()),
+            Err(e) => {
+                eprintln!("ask-claude: {}: {e}", file.display());
+                Ok(())
+            }
+        }
+    }
 }
 
 /// The request log around another sessions transport: each body `ma_call`
@@ -218,6 +265,10 @@ impl Sessions for Logged {
 
     fn stream(&mut self, session: &str) -> io::Result<Reply> {
         self.inner.stream(session)
+    }
+
+    fn download(&mut self, id: &str, name: &str, to: &mut dyn Write) -> io::Result<()> {
+        self.inner.download(id, name, to)
     }
 }
 

@@ -63,7 +63,10 @@ pub fn run(
         }
         Some(AgentCommand::Archive { session }) => return archive(cfg, &sessions, session),
         Some(AgentCommand::Trace { session }) => return trace(&sessions, session),
-        Some(_) => todo!("U6 step 3: agent files; agent tools"),
+        Some(AgentCommand::Files { session, name }) => {
+            return files(cfg, &sessions, session, name, args.force);
+        }
+        Some(_) => todo!("U6 step 3: agent tools"),
     }
     let mut agent = match Agent::new(args, cfg, sessions, log) {
         Ok(agent) => agent,
@@ -218,6 +221,182 @@ fn trace(sessions: &Path, session: &str) -> i32 {
         "https://platform.claude.com/workspaces/{workspace}/sessions/{id}\n"
     ));
     0
+}
+
+/// `agent files`, `session_files`: the key, the session, its file list
+/// (uploads and what the agent wrote to /mnt/session/outputs); with no
+/// names the list, else each named file downloaded into the current
+/// directory, in order, the first refusal ending the run with 2.
+fn files(
+    cfg: &config::Config,
+    sessions: &Path,
+    session: &str,
+    names: &[String],
+    force: bool,
+) -> i32 {
+    let Some(api_key) = crate::need_key(&cfg.provider) else {
+        return 2;
+    };
+    let id = match named(sessions, session) {
+        Ok(id) => id,
+        Err(code) => return code,
+    };
+    let mut t = match open(cfg, api_key) {
+        Ok(t) => t,
+        Err(refused) => return crate::refuse(&refused),
+    };
+    let page = request(&mut *t, "GET", &format!("/files?scope_id={id}"), None);
+    if let Some(err) = api_error(&page) {
+        eprintln!("ask-claude: API error: {err}");
+        return 1;
+    }
+    let page = serde_json::Deserializer::from_str(&page)
+        .into_iter::<Value>()
+        .next()
+        .and_then(Result::ok)
+        .unwrap_or(Value::Null);
+    if names.is_empty() {
+        let Some(rows) = file_rows(&page) else {
+            eprintln!("ask-claude: the session's file list is not in the shape the script reads");
+            return 1;
+        };
+        crate::chat::out(&rows);
+        return 0;
+    }
+    for name in names {
+        if let Err(code) = download(&mut *t, &id, &page, name, force) {
+            return code;
+        }
+    }
+    0
+}
+
+/// One named file of the list page into the current directory: the name
+/// checked (a name from the list, not a path), a file in the way refused
+/// unless `--force` and regular, the bytes into a new temp file beside
+/// it, then one rename over the name (CODING_STANDARDS.md, files and
+/// state). `Err` is the exit code after the message.
+fn download(
+    t: &mut dyn Sessions,
+    session: &str,
+    page: &Value,
+    name: &str,
+    force: bool,
+) -> Result<(), i32> {
+    if name.is_empty() || name.contains('/') || name.starts_with(['.', '-']) {
+        return Err(crate::refuse(&format!(
+            "files takes names from `ask-claude agent files {session}`, not paths"
+        )));
+    }
+    // jq's `last(.data[]? | select(.filename == $n)) | .id // empty`
+    let id = each(&page["data"])
+        .into_iter()
+        .rev()
+        .find(|f| f["filename"] == name)
+        .map(|f| crate::or(&f["id"], &Value::Null))
+        .filter(|id| !id.is_null())
+        .map(crate::text)
+        .filter(|id| !id.is_empty());
+    let Some(file_id) = id else {
+        return Err(crate::refuse(&format!(
+            "the session has no file named {name}"
+        )));
+    };
+    // --force replaces a file, never a link or a directory
+    if let Ok(meta) = std::fs::symlink_metadata(name) {
+        if !meta.is_file() {
+            return Err(crate::refuse(&format!(
+                "{name} exists here and is not a regular file; not overwriting it"
+            )));
+        }
+        if !force {
+            return Err(crate::refuse(&format!(
+                "{name} exists here; --force overwrites it"
+            )));
+        }
+    }
+    let (tmp, mut file) =
+        crate::history::fresh(Path::new(&format!("./.{name}."))).map_err(|_| {
+            let here = std::env::current_dir().unwrap_or_default();
+            crate::refuse(&format!(
+                "cannot create a temporary file in {}",
+                here.display()
+            ))
+        })?;
+    let got = t
+        .download(&file_id, name, &mut file)
+        .and_then(|()| file.flush());
+    drop(file);
+    if let Err(e) = got {
+        let _ = std::fs::remove_file(&tmp);
+        crate::failed(&e);
+        eprintln!("ask-claude: download of {name} failed");
+        return Err(1);
+    }
+    if let Err(e) = std::fs::rename(&tmp, name) {
+        let _ = std::fs::remove_file(&tmp);
+        eprintln!("ask-claude: cannot write {name}: {e}");
+        return Err(1);
+    }
+    let size = std::fs::metadata(name).map_or(0, |m| m.len());
+    eprintln!("ask-claude: wrote {name} ({size} bytes)");
+    Ok(())
+}
+
+/// The file list `session_files` prints: name, size and id, each cell
+/// escaped as `@tsv` escapes it then through safe, the columns aligned as
+/// `column -t` aligns them (each but the last padded to its widest cell,
+/// counted in characters, two spaces between). None where its jq fails: a
+/// page or a file that is not an object, a cell that is an array or an
+/// object.
+fn file_rows(page: &Value) -> Option<String> {
+    let data = match page {
+        Value::Object(o) => o.get("data").unwrap_or(&Value::Null),
+        Value::Null => &Value::Null,
+        _ => return None,
+    };
+    let mut rows = Vec::new();
+    for file in each(data) {
+        if !matches!(file, Value::Object(_) | Value::Null) {
+            return None;
+        }
+        let row = ["filename", "size_bytes", "id"]
+            .iter()
+            .map(|k| tsv(&file[*k]).map(|cell| safe(&cell)))
+            .collect::<Option<Vec<String>>>()?;
+        rows.push(row);
+    }
+    let width = |i: usize| {
+        rows.iter()
+            .map(|r: &Vec<String>| r[i].chars().count())
+            .max()
+            .unwrap_or(0)
+    };
+    let widths = [width(0), width(1)];
+    Some(
+        rows.iter()
+            .map(|r| {
+                let pad = |i: usize| " ".repeat(widths[i] - r[i].chars().count() + 1);
+                format!("{}{} {}{} {}\n", r[0], pad(0), r[1], pad(1), r[2])
+            })
+            .collect(),
+    )
+}
+
+/// One cell of jq's `@tsv`: a string with backslash, tab, newline and
+/// carriage return escaped; a number or a boolean as its JSON; null as
+/// nothing; None for an array or an object.
+fn tsv(v: &Value) -> Option<String> {
+    Some(match v {
+        Value::String(s) => s
+            .replace('\\', "\\\\")
+            .replace('\t', "\\t")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r"),
+        Value::Null => String::new(),
+        Value::Number(_) | Value::Bool(_) => v.to_string(),
+        _ => return None,
+    })
 }
 
 /// What every request of an agent run needs, from the checks

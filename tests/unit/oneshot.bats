@@ -48,7 +48,8 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     run --separate-stderr replay error "ping"
     [ "$status" -eq 1 ]
     grep -q 'API error: model: claude-does-not-exist' <<<"$stderr"
-    for f in $(history_file 2>/dev/null); do jq -e 'length==0' "$f"; done
+    # the turn is dropped and an empty Chat leaves no file, as in the script
+    [ "$(history_file 2>/dev/null | wc -l)" -eq 0 ]
 }
 
 @test "one-shot: a tool input that is not JSON is an API error, whatever the stop reason" {
@@ -64,7 +65,7 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
         run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/cut.sse" "$BIN" "ping"
         [ "$status" -eq 1 ]
         [ "$(tail -n 1 <<<"$stderr")" = "ask-claude: API error: the reply could not be parsed" ]
-        for f in $(history_file 2>/dev/null); do jq -e 'length==0' "$f"; done
+        [ "$(history_file 2>/dev/null | wc -l)" -eq 0 ]
     done
 }
 

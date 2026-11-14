@@ -83,7 +83,10 @@ session_confirm() {
     echo deny
     return
   fi
-  IFS= read -r -p "allow $1 $2? [y/N/a(lways)] " answer </dev/tty || answer=""
+  # read -p prompts on stderr; the answer comes from /dev/tty, so the
+  # question goes there too, or `2> file` hides what a typed y approves.
+  # A /dev/tty that cannot be written fails the read: no answer, deny.
+  IFS= read -r -p "allow $1 $2? [y/N/a(lways)] " answer </dev/tty 2>/dev/tty || answer=""
   case "$answer" in
   y | Y | yes) echo allow ;;
   a | A | always)

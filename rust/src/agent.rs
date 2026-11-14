@@ -891,17 +891,24 @@ impl<'a> Agent<'a> {
     }
 }
 
-/// `read -r -p <prompt> </dev/tty` in `session_confirm`: the prompt on
-/// stderr, then one line from the terminal, its newline dropped. The read
-/// is on a thread, one byte at a time so it takes no more than the line,
-/// and the main thread looks at the interrupt flag while it waits (KTD3);
-/// None after a signal, or when the terminal cannot be read, which the
-/// gate takes as no.
+/// `read -r -p <prompt> </dev/tty 2>/dev/tty` in `session_confirm`: the
+/// prompt on the terminal, then one line from it, its newline dropped.
+/// The prompt goes to `/dev/tty`, not stderr: the answer is read there,
+/// so the name and input it approves must be shown there, even when
+/// stderr is a file (security-audit run 4, lead 4). The read is on a
+/// thread, one byte at a time so it takes no more than the line, and the
+/// main thread looks at the interrupt flag while it waits (KTD3); None
+/// after a signal, or when the terminal cannot be opened, written or read,
+/// which the gate takes as no.
 fn ask_tty(prompt: &str) -> Option<String> {
     use std::io::Read;
-    let mut tty = std::fs::File::open("/dev/tty").ok()?;
-    eprint!("{prompt}");
-    let _ = std::io::stderr().flush();
+    let mut tty = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+        .ok()?;
+    tty.write_all(prompt.as_bytes()).ok()?;
+    tty.flush().ok()?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut line = Vec::new();

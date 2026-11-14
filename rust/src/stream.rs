@@ -45,13 +45,23 @@ pub fn line(event: &Value) -> String {
     safe(&out)
 }
 
-/// The `safe` of every printer: keep tab and newline, drop every other
-/// C0 and C1 control character, so a reply cannot drive the terminal.
+/// The `safe` of every printer (`def safe` in `lib/stream.jq`, the `SAFE`
+/// prefix in `lib/common.bash`): keep tab and newline, drop every other C0
+/// and C1 control character, so a reply cannot drive the terminal, and the
+/// nine bidirectional formatting characters U+202A to U+202E and U+2066 to
+/// U+2069, so it cannot reorder what the user reads. The marks U+200E,
+/// U+200F and U+061C stay, as ordinary right-to-left text.
 pub fn safe(text: &str) -> String {
     text.chars()
         .filter(|&c| {
             let c = c as u32;
-            c == 9 || c == 10 || (c >= 32 && c != 127 && !(128..=159).contains(&c))
+            c == 9
+                || c == 10
+                || (c >= 32
+                    && c != 127
+                    && !(128..=159).contains(&c)
+                    && !(0x202a..=0x202e).contains(&c)
+                    && !(0x2066..=0x2069).contains(&c))
         })
         .collect()
 }

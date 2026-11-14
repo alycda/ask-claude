@@ -35,13 +35,17 @@ fn r0_usage_spec_is_the_bash_spec() {
     std::fs::write(&kdl, &spec).unwrap();
     let diff = Command::new("usage")
         .arg("diff")
-        .arg(repo().join("ask-claude.sh"))
+        .arg(repo().join("ask-claude"))
         .arg(&kdl)
         .output()
         .unwrap();
     let report =
         String::from_utf8_lossy(&diff.stdout).to_string() + &String::from_utf8_lossy(&diff.stderr);
-    assert!(report.contains("Found 0 breaking"), "{report}");
+    // newer usage says "No interface changes." when the specs agree
+    assert!(
+        report.contains("Found 0 breaking") || report.contains("No interface changes"),
+        "{report}"
+    );
 }
 
 #[test]

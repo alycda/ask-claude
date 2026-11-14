@@ -19,6 +19,8 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 clap_usage = "5.0.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+# R5: POST /v1/messages
+ureq = "3.5.2"
 
 [dev-dependencies]
 # tests/cli.rs: the binary under test

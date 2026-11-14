@@ -21,8 +21,10 @@ setup() {
     export XDG_STATE_HOME="$TMP/state"
     export ANTHROPIC_API_KEY="sk-ant-test-not-a-key"
     # the API root comes from --base-url or the test, never from the shell
-    # that runs the suite: an exported SDK variable would move every request
-    unset ANTHROPIC_BASE_URL
+    # that runs the suite: an exported SDK variable would move every request;
+    # the same for -p openai's root, key and model (`just test-openai` reads
+    # them from .env, which a shell may have exported)
+    unset ANTHROPIC_BASE_URL OPENAI_BASE_URL OPENAI_API_KEY OPENAI_MODEL
 }
 
 teardown() {

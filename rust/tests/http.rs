@@ -5,9 +5,15 @@
 //! `just test`). The mock serves the recorded fixtures, never a stream made
 //! up for the test, so the oracle rule holds: every byte it sends is one the
 //! API sent, or the hand-derived error.sse the bats suite already uses.
+//! The exception is `-p openai` (R7), which no oracle speaks: its streams
+//! under `tests/fixtures/openai/` are written by hand from the shape
+//! `tests/providers/openai-compatible.hurl` asserts, until a live run
+//! records one.
 //!
 //! `ASK_CLAUDE_BIN=<path> cargo test --test http` runs them against another
-//! binary, as the bats suite does; on the bash script they are green.
+//! binary, as the bats suite does; on the bash script they are green but
+//! the `http_openai_*` ones, since bash refuses `-p openai`: run it there
+//! with `-- --skip http_openai`.
 //!
 //! The mock is std only: a listener thread that answers one request per
 //! connection, in order, and keeps each request it read. Adapted from the
@@ -31,8 +37,15 @@ fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
+/// A Messages stream under `tests/fixtures/sse/`, or, for a name with a
+/// directory (`openai/text.sse`), the file under `tests/fixtures/`.
 fn fixture(name: &str) -> Vec<u8> {
-    std::fs::read(repo().join("tests/fixtures/sse").join(name)).expect("fixture")
+    let dir = if name.contains('/') {
+        "tests/fixtures"
+    } else {
+        "tests/fixtures/sse"
+    };
+    std::fs::read(repo().join(dir).join(name)).expect("fixture")
 }
 
 /// One request as the mock read it; header names lower-cased.
@@ -592,4 +605,225 @@ fn http_an_api_error_mid_chat_is_not_fatal() {
     assert_eq!(chats.len(), 1, "{chats:?}");
     assert_eq!(chats[0].as_array().map(Vec::len), Some(2), "{}", chats[0]);
     assert_eq!(chats[0][0]["content"], "second");
+}
+
+// ---- -p openai: the chat-completions shape (R7) ----------------------------
+
+const OPENAI_KEY: &str = "sk-openai-test-not-a-key";
+
+/// The one shot with `-p openai` against `base_url`: the OpenAI key in its
+/// variable, state in a temp dir.
+fn openai(base_url: &str, args: &[&str]) -> (Output, tempfile::TempDir) {
+    let state = tempfile::tempdir().unwrap();
+    let out = command(base_url, &[&["-p", "openai"], args].concat(), state.path())
+        .env("OPENAI_API_KEY", OPENAI_KEY)
+        .output()
+        .unwrap();
+    (out, state)
+}
+
+/// The request the hurl contract sends: POST to /chat/completions under the
+/// base URL, the key as a Bearer token from OPENAI_API_KEY and in no other
+/// header or the URL (not the Anthropic key, no Anthropic headers), and the
+/// streaming body with usage asked for. The streamed chunks print as the
+/// Messages stream does.
+#[test]
+fn http_openai_one_shot_sends_the_chat_completions_request() {
+    let mock = Mock::start(vec![Reply::sse("openai/text.sse")]);
+    let (out, _state) = openai(&format!("{}/v1", mock.url), &["-m", "gpt-4.1-mini", "ping"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "pong\n");
+
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 1, "{reqs:?}");
+    let r = &reqs[0];
+    assert_eq!(r.method, "POST");
+    assert_eq!(r.path, "/v1/chat/completions");
+    assert_eq!(r.header("authorization"), format!("Bearer {OPENAI_KEY}"));
+    assert_eq!(r.header("x-api-key"), "");
+    assert_eq!(r.header("anthropic-version"), "");
+    assert_eq!(r.header("anthropic-beta"), "");
+    assert!(
+        r.header("content-type").starts_with("application/json"),
+        "{}",
+        r.header("content-type")
+    );
+    assert!(
+        !r.path.contains(OPENAI_KEY),
+        "the key never goes in the URL"
+    );
+    assert_eq!(
+        r.body,
+        json!({
+            "model": "gpt-4.1-mini",
+            "stream": true,
+            "max_completion_tokens": 16000,
+            "stream_options": {"include_usage": true},
+            "messages": [{"role": "user", "content": "ping"}],
+        })
+    );
+}
+
+/// The reply folds into the message the Messages path keeps: the chat on
+/// disk is `{role, content}` with the assistant's content a text block, and
+/// the usage line has the Messages line's shape, the cache counters at the
+/// `// 0` default.
+#[test]
+fn http_openai_usage_line_and_saved_chat_take_the_messages_shape() {
+    let mock = Mock::start(vec![Reply::sse("openai/text.sse")]);
+    let (out, state) = openai(&mock.url, &["-m", "gpt-4.1-mini", "ping"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let line = stderr(&out)
+        .lines()
+        .find(|l| l.starts_with('['))
+        .map(String::from)
+        .unwrap_or_default();
+    assert!(
+        line.starts_with("[gpt-4.1-mini in=14 cache_read=0 cache_write=0 out=2 ")
+            && line.ends_with("s]"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(
+        chats(state.path()),
+        [json!([
+            {"role": "user", "content": "ping"},
+            {"role": "assistant", "content": [{"type": "text", "text": "pong"}]},
+        ])]
+    );
+}
+
+/// A stream with no usage chunk (a server that ignores `include_usage`)
+/// prints the counts as null, as the script's line prints a missing field;
+/// `finish_reason: length` is the max_tokens notice.
+#[test]
+fn http_openai_without_usage_prints_null_counts_and_the_length_stop() {
+    let mock = Mock::start(vec![Reply::sse("openai/length.sse")]);
+    let (out, _state) = openai(&mock.url, &["-m", "gpt-4.1-mini", "ping"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "po\n");
+    let err = stderr(&out);
+    assert!(
+        err.contains("[gpt-4.1-mini in=null cache_read=0 cache_write=0 out=null "),
+        "{err}"
+    );
+    assert!(
+        err.contains("[stopped: max_tokens reached, raise --max-tokens]"),
+        "{err}"
+    );
+}
+
+/// An error status is the API's message, exit 1, and the user turn rolled
+/// back, as on the Messages path.
+#[test]
+fn http_openai_an_error_status_is_an_api_error_with_its_message() {
+    let mock = Mock::start(vec![Reply::error(404, "openai/error.json")]);
+    let (out, state) = openai(&mock.url, &["-m", "gpt-nope", "ping"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains(
+            "ask-claude: API error: The model `gpt-nope` does not exist or you do not have access to it."
+        ),
+        "{}",
+        stderr(&out)
+    );
+    for chat in chats(state.path()) {
+        assert_eq!(chat.as_array().map(Vec::len), Some(0), "{chat}");
+    }
+}
+
+/// The key is OPENAI_API_KEY's: without it the one shot stops before any
+/// request, even with the Anthropic key set.
+#[test]
+fn http_openai_needs_openai_api_key() {
+    let mock = Mock::start(vec![Reply::sse("openai/text.sse")]);
+    let state = tempfile::tempdir().unwrap();
+    let out = command(
+        &mock.url,
+        &["-p", "openai", "-m", "gpt-4.1-mini", "ping"],
+        state.path(),
+    )
+    .output()
+    .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert_eq!(stderr(&out), "ask-claude: no key: export OPENAI_API_KEY\n");
+    assert!(mock.requests().is_empty());
+}
+
+/// OPENAI_BASE_URL is the API root for `-p openai`, and ANTHROPIC_BASE_URL
+/// is not (KTD17): with both set the request goes where the OpenAI one
+/// points, and nothing names the Anthropic one. The flag wins over
+/// OPENAI_BASE_URL. Each unused root names a port nothing listens on.
+#[test]
+fn http_openai_base_url_is_openai_base_url_and_the_flag_wins() {
+    let mock = Mock::start(vec![Reply::sse("openai/text.sse")]);
+    let state = tempfile::tempdir().unwrap();
+    let out = binary(state.path())
+        .env("OPENAI_API_KEY", OPENAI_KEY)
+        .env("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
+        .env("OPENAI_BASE_URL", format!("{}/v1", mock.url))
+        .args(["-p", "openai", "-m", "gpt-4.1-mini", "ping"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "pong\n");
+    assert!(
+        !stderr(&out).contains("ANTHROPIC_BASE_URL"),
+        "{}",
+        stderr(&out)
+    );
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 1, "{reqs:?}");
+    assert_eq!(reqs[0].path, "/v1/chat/completions");
+
+    let mock = Mock::start(vec![Reply::sse("openai/text.sse")]);
+    let state = tempfile::tempdir().unwrap();
+    let out = command(
+        &mock.url,
+        &["-p", "openai", "-m", "gpt-4.1-mini", "ping"],
+        state.path(),
+    )
+    .env("OPENAI_API_KEY", OPENAI_KEY)
+    .env("OPENAI_BASE_URL", "http://127.0.0.1:9")
+    .output()
+    .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(mock.requests().len(), 1);
+}
+
+/// The chunks print as they arrive: with the stream held after the "po"
+/// chunk, "po" is on stdout before the rest is sent.
+#[test]
+fn http_openai_the_reply_prints_as_it_arrives() {
+    let name = "openai/text.sse";
+    let (reply, release) = Reply::held(name, after(name, "\"po\""));
+    let mock = Mock::start(vec![reply]);
+    let state = tempfile::tempdir().unwrap();
+    let mut cmd = command(
+        &mock.url,
+        &["-p", "openai", "-m", "gpt-4.1-mini", "ping"],
+        state.path(),
+    );
+    cmd.env("OPENAI_API_KEY", OPENAI_KEY)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut seen = Vec::new();
+        let mut buf = [0; 256];
+        while let Ok(n @ 1..) = stdout.read(&mut buf) {
+            seen.extend_from_slice(&buf[..n]);
+            if tx.send(seen.clone()).is_err() {
+                break;
+            }
+        }
+    });
+    let early = printed(&rx, "po", Duration::from_secs(5));
+    drop(release);
+    let out = child.wait_with_output().unwrap();
+    assert!(early, "po was not printed while the stream was held");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(printed(&rx, "pong\n", Duration::from_secs(5)));
 }

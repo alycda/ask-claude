@@ -77,6 +77,80 @@ load helpers
     refute grep -q 'ANTHROPIC_BASE_URL' <<<"$stderr"
 }
 
+# bats test_tags=rust-only
+@test "base url: with -p openai the Anthropic variable is ignored and OPENAI_BASE_URL applies" {
+    run --separate-stderr env ANTHROPIC_BASE_URL=http://example.com OPENAI_BASE_URL=http://localhost:9 OPENAI_API_KEY=sk-openai-test-not-a-key ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" -p openai -m gpt-4.1-mini "hi"
+    [ "$status" -ne 2 ]
+    [ "$(grep -c 'must be https' <<<"$stderr")" -eq 0 ]
+    [ "$(grep -c 'ANTHROPIC_BASE_URL' <<<"$stderr")" -eq 0 ]
+    # the request went to OPENAI_BASE_URL's host, as the event log records it
+    jq -e '.host=="localhost:9"' "$XDG_STATE_HOME/ask-claude/events.jsonl"
+}
+
+# -p openai, the chat-completions shape (R7): the Rust port's alone, so
+# every scenario is rust-only. The streams under fixtures/openai/ are
+# hand-written from the shape tests/providers/openai-compatible.hurl
+# asserts; rust/tests/http.rs holds the headers and the path.
+
+openai() { # args...: the one shot through the replay seam, the request logged
+    run --separate-stderr env OPENAI_API_KEY=sk-openai-test-not-a-key ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" -p openai "$@"
+}
+
+# bats test_tags=rust-only
+@test "openai: OPENAI_BASE_URL passes the same gate as --base-url, exit 2 before any request" {
+    openai -m gpt-4.1-mini "hi"
+    [ "$status" -eq 0 ]
+    run --separate-stderr env OPENAI_BASE_URL=http://example.com OPENAI_API_KEY=k ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/refused.jsonl" "$BIN" -p openai "hi"
+    [ "$status" -eq 2 ]
+    [ "$stderr" = "ask-claude: OPENAI_BASE_URL must be https:// (or http:// on localhost), got: http://example.com" ]
+    [ ! -e "$TMP/refused.jsonl" ]
+    run --separate-stderr env OPENAI_BASE_URL=http://localhost:@example.com OPENAI_API_KEY=k ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" "$BIN" -p openai "hi"
+    [ "$status" -eq 2 ]
+    grep -q 'OPENAI_BASE_URL must not carry user info' <<<"$stderr"
+    # the flag is gated under its own name
+    run --separate-stderr env OPENAI_API_KEY=k ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" "$BIN" -p openai --base-url http://example.com "hi"
+    [ "$status" -eq 2 ]
+    grep -q '^ask-claude: --base-url must be https' <<<"$stderr"
+}
+
+# bats test_tags=rust-only
+@test "openai: the one shot prints the reply and logs the chat-completions body" {
+    openai -m gpt-4.1-mini -S "be brief" --max-tokens 64 "hi"
+    [ "$status" -eq 0 ]
+    [ "$output" = "pong" ]
+    jq -e '. == {model: "gpt-4.1-mini", stream: true, max_completion_tokens: 64, stream_options: {include_usage: true},
+        messages: [{role: "system", content: "be brief"}, {role: "user", content: "hi"}]}' "$TMP/requests.jsonl"
+}
+
+# bats test_tags=rust-only
+@test "openai: the model is OPENAI_MODEL's when -m is not given, and -m wins" {
+    OPENAI_MODEL=gemini-4-argon openai "hi"
+    [ "$status" -eq 0 ]
+    OPENAI_MODEL=gemini-4-argon openai -m gpt-4.1-mini "hi"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r .model "$TMP/requests.jsonl")" = "gemini-4-argon
+gpt-4.1-mini" ]
+}
+
+# bats test_tags=rust-only
+@test "openai: a chat sends the earlier reply back as text, and saves it as the Messages path does" {
+    run --separate-stderr env OPENAI_API_KEY=k ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" -p openai -m gpt-4.1-mini <<<$'first\nsecond\n/quit'
+    [ "$status" -eq 0 ]
+    jq -s -e '.[1].messages == [{role: "user", content: "first"}, {role: "assistant", content: "pong"}, {role: "user", content: "second"}]' "$TMP/requests.jsonl"
+    jq -e '.[1] == {role: "assistant", content: [{type: "text", text: "pong"}]} and length == 4' "$XDG_STATE_HOME"/ask-claude/*.json
+}
+
+# bats test_tags=rust-only
+@test "openai: the Messages API's server tools are refused, exit 2 before any request" {
+    for flags in "--web" "--mcp https://mcp.example.com" "-s pptx" "--advisor claude-opus-5-5"; do
+        # shellcheck disable=SC2086
+        openai -m gpt-4.1-mini $flags "hi"
+        [ "$status" -eq 2 ]
+        grep -q "^ask-claude: ${flags%% *} works with -p anthropic only$" <<<"$stderr"
+        [ ! -e "$TMP/requests.jsonl" ]
+    done
+}
+
 # bats test_tags=bash-only
 @test "base url: the recording script reads ANTHROPIC_BASE_URL, and the test-only name is gone" {
     # the retired name, spelled so this file does not match it

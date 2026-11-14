@@ -1187,3 +1187,143 @@ fn http_agent_ctrl_c_while_the_stream_is_held_posts_user_interrupt_and_exits_130
     );
     assert_eq!(last.body, json!({"events": [{"type": "user.interrupt"}]}));
 }
+
+// ---- the Files API: `agent files` downloads and `agent -f` uploads, which
+// the replay seam stands in for without a request
+
+/// What the mock answers GET /v1/files/<id>/content with: the bytes the
+/// replay seam serves for that file.
+fn file_content(name: &str) -> Reply {
+    Reply {
+        status: 200,
+        headers: vec![("content-type", "application/octet-stream".into())],
+        body: session_fixture(&format!("files/files/{name}")),
+        hold: None,
+    }
+}
+
+/// The Files API of the `files` fixture session: its list page, and
+/// result.txt's content when `content` is true, else a 404.
+fn files_mock(content: bool) -> Mock {
+    Mock::route(Box::new(move |r: &Request| {
+        match (r.method.as_str(), r.path.as_str()) {
+            ("GET", "/v1/files?scope_id=sesn_FIXTURE01") => {
+                Reply::json(200, &session_fixture("files/files.json"))
+            }
+            ("GET", "/v1/files/file_FIXTURE02/content") if content => file_content("result.txt"),
+            _ => Reply::json(
+                404,
+                br#"{"error":{"type":"not_found_error","message":"no route"}}"#,
+            ),
+        }
+    }))
+}
+
+/// `agent files <args>` against `base_url`, run in `cwd`.
+fn files_in(base_url: &str, cwd: &Path, args: &[&str]) -> Output {
+    let state = tempfile::tempdir().unwrap();
+    command(
+        base_url,
+        &[&["agent", "files"], args].concat(),
+        state.path(),
+    )
+    .current_dir(cwd)
+    .output()
+    .unwrap()
+}
+
+/// The names in `dir`, sorted.
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// A download: the list page, then the file's content, both with the
+/// session headers; the bytes land under the name, private, and no
+/// temporary file is left beside it.
+#[test]
+fn http_agent_files_downloads_the_named_file_through_a_temp_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let mock = files_mock(true);
+    let dir = tempfile::tempdir().unwrap();
+    let out = files_in(&mock.url, dir.path(), &["sesn_FIXTURE01", "result.txt"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("wrote result.txt (4 bytes)"),
+        "{}",
+        stderr(&out)
+    );
+    let path = dir.path().join("result.txt");
+    assert_eq!(std::fs::read(&path).unwrap(), b"OUT\n");
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+    assert_eq!(names(dir.path()), ["result.txt"]);
+
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 2, "{reqs:?}");
+    assert_eq!(
+        (reqs[1].method.as_str(), reqs[1].path.as_str()),
+        ("GET", "/v1/files/file_FIXTURE02/content")
+    );
+    reqs.iter().for_each(assert_ma_headers);
+}
+
+/// A download the API refuses (curl --fail): exit 1 with the script's
+/// line, and nothing left in the directory, no partial file, no temp file.
+#[test]
+fn http_agent_files_a_refused_download_exits_1_and_leaves_nothing() {
+    let mock = files_mock(false);
+    let dir = tempfile::tempdir().unwrap();
+    let out = files_in(&mock.url, dir.path(), &["sesn_FIXTURE01", "result.txt"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("download of result.txt failed"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(names(dir.path()).is_empty(), "{:?}", names(dir.path()));
+}
+
+/// --force replaces a regular file with a new one (a rename, never a write
+/// through the old name, so a hard link to it keeps the old bytes), and
+/// refuses a symlink before the content is asked for.
+#[test]
+fn http_agent_files_force_replaces_a_regular_file_and_never_a_symlink() {
+    let mock = files_mock(true);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("result.txt");
+    std::fs::write(&path, "mine\n").unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let linked = elsewhere.path().join("hard");
+    std::fs::hard_link(&path, &linked).unwrap();
+    let out = files_in(
+        &mock.url,
+        dir.path(),
+        &["--force", "sesn_FIXTURE01", "result.txt"],
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(std::fs::read(&path).unwrap(), b"OUT\n");
+    assert_eq!(std::fs::read(&linked).unwrap(), b"mine\n");
+
+    std::fs::remove_file(&path).unwrap();
+    let victim = elsewhere.path().join("victim.txt");
+    std::fs::write(&victim, "precious\n").unwrap();
+    std::os::unix::fs::symlink(&victim, &path).unwrap();
+    let before = mock.requests().len();
+    let out = files_in(
+        &mock.url,
+        dir.path(),
+        &["--force", "sesn_FIXTURE01", "result.txt"],
+    );
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert_eq!(std::fs::read(&victim).unwrap(), b"precious\n");
+    let reqs = mock.requests();
+    assert!(
+        reqs[before..].iter().all(|r| !r.path.ends_with("/content")),
+        "{reqs:?}"
+    );
+}

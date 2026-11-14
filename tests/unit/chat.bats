@@ -39,9 +39,17 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ -z "$(ls "$(STATE_DIR)"/*.json 2>/dev/null)" ]
 }
 
-# bats test_tags=pty
-@test "chat: the bash running the loop supports bracketed paste (>= 5.1)" {
+# The two checks below pin the bash that usage's shebang resolves from PATH,
+# not the binary under test, so both are bash-only. Only the second needs a
+# terminal name readline reports bracketed paste for.
+
+# bats test_tags=bash-only
+@test "chat: the bash running the loop is new enough for bracketed paste (>= 5.1)" {
     # usage's shebang resolves `bash` from PATH; the same resolution happens here
     bash -c '(( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) ))'
+}
+
+# bats test_tags=pty,bash-only
+@test "chat: the bash running the loop has bracketed paste on (>= 5.1)" {
     bash -ic 'bind -v' 2>/dev/null | grep -q 'enable-bracketed-paste on'
 }

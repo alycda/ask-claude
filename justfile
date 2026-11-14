@@ -29,8 +29,9 @@ unit-tests:
 pty-test:
     TERM=xterm-256color bats --filter-tags pty tests/unit
 
+# one bats file, filtered as unit-tests filters the suite, so the two agree
 unit-test unit:
-    bats tests/unit/{{ quote(unit) }}.bats
+    bats --filter-tags '!pty,!rust-only' tests/unit/{{ quote(unit) }}.bats
 
 step name:
     bats --filter-tags {{ quote("step:" + name) }} tests/unit/*-steps.bats

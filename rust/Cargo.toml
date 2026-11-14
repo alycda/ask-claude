@@ -1,0 +1,36 @@
+[package]
+name = "ask-claude"
+version = "0.5.0"
+edition = "2024"
+description = "Talk to Claude from a shell: the Rust port of the bash ask-claude (docs/plan.md, phase 4)"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "ask-claude"
+path = "src/main.rs"
+
+[dependencies]
+# the CLI, from the same spec the bash script carries in its #USAGE block;
+# `env` binds ASK_CLAUDE_AGENT and friends the way usage does
+clap = { version = "4.6.7", features = ["derive", "env"] }
+# `--usage-spec` prints the clap definition as a usage spec, so `usage diff`
+# can compare the two binaries
+clap_usage = "5.0.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+# R5: POST /v1/messages
+ureq = "3.5.2"
+
+[dev-dependencies]
+# tests/cli.rs: the binary under test
+assert_cmd = "2.2.2"
+predicates = "3.1.4"
+tempfile = "3.27.0"
+
+# benches/goldens.rs: how fast the pure parts run over the recorded fixtures
+criterion = "0.8.2"
+
+[[bench]]
+name = "goldens"
+harness = false

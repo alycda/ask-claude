@@ -1,5 +1,7 @@
 # ask-claude
 
+[![AI:W WRITE](https://img.shields.io/badge/AI-WRITE-grey?style=flat&logoSize=auto&labelColor=13171f)](https://0rwx.com)
+
 Talk to Claude from a shell with nothing but `curl` and `jq`. One script,
 one request shape, streaming always on.
 

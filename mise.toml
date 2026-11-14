@@ -3,9 +3,13 @@ usage = "7.3.0"
 jq = "1.8.2"
 hurl = "8.0.1"
 just = "1.58.0"
+# the Rust port; cargo and rustc come with it
+rust = "1.99.1"
 bats = "1.14.0"
 # lint: the version CI runs, so findings do not depend on the runner image
 shellcheck = "0.11.0"
+# just bench-compare: the bash and Rust binaries timed end to end
+hyperfine = "2.0.0"
 
 [settings]
 # install only what mise.lock pins: every tool, every platform, checked by sha256 (`mise lock` refreshes it)

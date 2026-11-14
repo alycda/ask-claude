@@ -3,6 +3,19 @@ import 'tools/effver/effver.just'
 help:
     ./ask-claude --help
 
+agents-help:
+    ./ask-claude agent --help
+
+[group('rust')]
+[working-directory: 'rust/target/debug']
+_help: build
+    ./ask-claude --help
+
+[group('rust')]
+[working-directory: 'rust/target/debug']
+_agent-help: build
+    ./ask-claude agent --help
+
 ask question="" *FLAGS:
     ./ask-claude {{FLAGS}} {{ quote(question) }}
 
@@ -106,3 +119,75 @@ test-openai:
     set -a; . "{{ justfile_directory() }}/.env"; set +a
     hurl --test --variable base_url="$OPENAI_BASE_URL" --variable model="${OPENAI_MODEL:-gemini-4-argon}" \
         --secrets-file <(printf 'api_key=%s\n' "$OPENAI_API_KEY") openai-compatible.hurl
+
+# ---- the Rust port (docs/plan.md phase 4; rust/) ------------------------
+# cargo comes from mise's rust; the recipes run it through `mise exec` until
+# the shims know the version (`mise use -g rust@1.99.1`).
+
+[working-directory: 'rust']
+check:
+    cargo check
+
+# build the Rust binary (debug)
+[group('rust')]
+[working-directory: 'rust']
+build:
+    cargo build
+
+# the Rust unit tests: every lib/*.jq twin against the same goldens
+[group('rust')]
+[working-directory: 'rust']
+rust-test:
+    cargo test
+
+# fmt --check and clippy, the Rust side of `just lint`
+[group('rust')]
+[working-directory: 'rust']
+lint:
+    cargo fmt --check
+    cargo clippy -- -D warnings
+
+# criterion benchmarks over the recorded fixtures (rust/target/criterion/report)
+[group('rust')]
+[working-directory: 'rust']
+bench:
+    cargo bench
+
+# bash vs Rust end to end: the replayed one shot over each recorded stream,
+# release build, timed with hyperfine (rust/target/bench-compare/)
+[group('rust')]
+bench-compare:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build --release --quiet --manifest-path rust/Cargo.toml
+    out=rust/target/bench-compare
+    rm -rf "$out/state" && mkdir -p "$out/state"
+    export ANTHROPIC_API_KEY=sk-ant-test-not-a-key XDG_STATE_HOME="$PWD/$out/state"
+    fixtures=text,thinking,code-execution,web-search,mcp
+    # the same reply out of both, or the timing compares different work
+    for f in ${fixtures//,/ }; do
+        sse=tests/fixtures/sse/$f.sse
+        diff <(ASK_CLAUDE_REPLAY=$sse ./ask-claude ping 2>/dev/null) \
+             <(ASK_CLAUDE_REPLAY=$sse rust/target/release/ask-claude ping 2>/dev/null) \
+            || { echo "bench-compare: bash and Rust print different replies for $f" >&2; exit 1; }
+    done
+    hyperfine --shell=none --warmup 3 \
+        -L fixture "$fixtures" -L bin ./ask-claude,rust/target/release/ask-claude \
+        --export-markdown "$out/summary.md" --export-json "$out/summary.json" \
+        "env ASK_CLAUDE_REPLAY=tests/fixtures/sse/{fixture}.sse {bin} ping"
+    echo "tables: $out/summary.md, raw: $out/summary.json"
+
+# the two binaries agree on their interface: usage diff of the bash spec and the Rust one
+[group('rust')]
+parity: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    usage diff ask-claude <(rust/target/debug/ask-claude --usage-spec)
+
+# Skips pty like unit-tests, and bash-only: the tests that read the script as a
+# file or pin what only the script does.
+
+# the bats suite against the Rust binary (R5 onwards; bash stays the oracle until R8)
+[group('rust')]
+test-rust: build
+    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats --filter-tags '!pty,!bash-only' tests/unit

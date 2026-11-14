@@ -58,7 +58,7 @@ jobs:
 
       - name: Build
         if: steps.crate.outputs.present == 'true'
-        run: just rust-build
+        run: just build
 
       - name: Parity of the two usage specs
         if: steps.crate.outputs.present == 'true'
@@ -71,5 +71,4 @@ jobs:
 
       - name: Tests (soft until the parity gate)
         if: steps.crate.outputs.present == 'true'
-        continue-on-error: true
         run: just rust-test

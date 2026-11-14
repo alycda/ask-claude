@@ -51,6 +51,12 @@ impl Cli {
         let given = |id| matches.value_source(id) == Some(ValueSource::CommandLine);
         cli.request.model_given = given("model");
         cli.request.base_url_given = given("base_url");
+        // The script tests `[ -z "${usage_prompt:-}" ]`, so an empty prompt
+        // is no prompt: the chat, not a turn the API refuses as empty.
+        cli.prompt = cli.prompt.filter(|p| !p.is_empty());
+        if let Some(Command::Agent(agent)) = cli.command.as_mut() {
+            agent.prompt = agent.prompt.take().filter(|p| !p.is_empty());
+        }
         cli
     }
 }

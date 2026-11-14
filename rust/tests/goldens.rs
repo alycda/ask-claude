@@ -271,6 +271,19 @@ fn r3_request_body_serializes_in_the_goldens_key_order() {
     );
 }
 
+/// A request fixture parsed and printed again is the same bytes: the goldens
+/// carry the key order jq wrote them in, and without serde_json's
+/// `preserve_order` every object comes back with its keys sorted, so no
+/// request golden could match by text. (jq and serde_json agree on the
+/// two-space pretty form; the file ends in a newline serde does not print.)
+#[test]
+fn r3_a_request_fixture_round_trips_with_its_key_order() {
+    let raw = read("request/plain.json");
+    let value: Value = serde_json::from_str(&raw).unwrap();
+    let printed = serde_json::to_string_pretty(&value).unwrap() + "\n";
+    assert_eq!(printed, raw);
+}
+
 #[test]
 fn r3_skills_list_to_typed_entries() {
     assert_eq!(

@@ -145,7 +145,7 @@ fn unescape(raw: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Four hex digits, or None.
-fn hex4(digits: &[u8]) -> Option<u32> {
+pub(crate) fn hex4(digits: &[u8]) -> Option<u32> {
     if digits.len() != 4 || !digits.iter().all(u8::is_ascii_hexdigit) {
         return None;
     }

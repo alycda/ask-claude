@@ -82,6 +82,8 @@ pub fn body(args: &Args) -> Value {
             "model": args.advisor, "max_uses": 3 - used
         }));
     }
+    // KTD12: the local tools after every entry above, so no golden moves
+    tools.extend(args.tools.iter().cloned());
     if !tools.is_empty() {
         b.insert("tools".into(), Value::Array(tools));
     }

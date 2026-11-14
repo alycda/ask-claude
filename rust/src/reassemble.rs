@@ -64,7 +64,7 @@ pub fn message(events: &[Value]) -> Result<Value, serde_json::Error> {
                     let input = if p.is_empty() {
                         json!({})
                     } else {
-                        serde_json::from_str(p).unwrap_or(Value::Null)
+                        fromjson(p)?
                     };
                     b.insert("input".into(), input);
                 }
@@ -100,4 +100,50 @@ pub fn message(events: &[Value]) -> Result<Value, serde_json::Error> {
         "error": error,
         "content": blocks.into_values().collect::<Vec<_>>(),
     }))
+}
+
+/// jq's `fromjson` on a tool input's partial: serde_json's parse, except
+/// that a lone low surrogate escape is U+FFFD, as jq 1.8 reads it, where
+/// serde_json refuses the text. A high surrogate with no low one after it
+/// is refused by both. (jq also reads a bare `nan` as null; serde_json
+/// refuses it, and that one difference is left alone.)
+fn fromjson(text: &str) -> Result<Value, serde_json::Error> {
+    serde_json::from_str(text).or_else(|e| match lone_lows_replaced(text) {
+        Some(fixed) => serde_json::from_str(&fixed),
+        None => Err(e),
+    })
+}
+
+/// `text` with each `\uDC00`..`\uDFFF` escape that does not end a
+/// surrogate pair spelled `�`, or None when it has none. Escapes are
+/// read pairwise from each backslash, so `\\udc00` is an escaped backslash
+/// and the letters after it, and stays.
+fn lone_lows_replaced(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let unit = |at: usize| {
+        bytes
+            .get(at..at + 6)
+            .filter(|e| e.starts_with(b"\\u"))
+            .and_then(|e| crate::sse::hex4(&e[2..]))
+    };
+    let mut out = String::new();
+    let mut copied = 0;
+    let mut i = 0;
+    while let Some(at) = bytes
+        .get(i..)
+        .and_then(|rest| rest.iter().position(|&b| b == b'\\'))
+        .map(|p| p + i)
+    {
+        i = match unit(at) {
+            Some(0xD800..=0xDBFF) if matches!(unit(at + 6), Some(0xDC00..=0xDFFF)) => at + 12,
+            Some(0xDC00..=0xDFFF) => {
+                out.push_str(&text[copied..at]);
+                out.push_str("\\uFFFD");
+                copied = at + 6;
+                at + 6
+            }
+            _ => at + 2,
+        };
+    }
+    (copied > 0).then(|| out + &text[copied..])
 }

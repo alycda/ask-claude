@@ -58,7 +58,12 @@ pub fn run(
             }
             return agent.chat(Some(id));
         }
-        Some(_) => todo!("U6 step 3: agent files, budget, archive, trace; agent tools"),
+        Some(AgentCommand::Budget { session, cents }) => {
+            return budget(cfg, &sessions, session, cents);
+        }
+        Some(AgentCommand::Archive { session }) => return archive(cfg, &sessions, session),
+        Some(AgentCommand::Trace { session }) => return trace(&sessions, session),
+        Some(_) => todo!("U6 step 3: agent files; agent tools"),
     }
     let mut agent = match Agent::new(args, cfg, sessions, log) {
         Ok(agent) => agent,
@@ -77,19 +82,11 @@ pub fn run(
 /// line each, `id  status  cost  title`, through safe; 0 whatever the API
 /// said, as the script's `exit 0` after it.
 fn list(cfg: &config::Config) -> i32 {
-    let Some(api_key) = crate::need_key(&cfg.provider) else {
-        return 2;
-    };
-    let mut t = match open(cfg, api_key) {
+    let mut t = match connect(cfg) {
         Ok(t) => t,
-        Err(refused) => return crate::refuse(&refused),
+        Err(code) => return code,
     };
-    let page = t
-        .call("GET", "/sessions?order=desc&limit=50", None)
-        .unwrap_or_else(|e| {
-            crate::failed(&e);
-            NO_RESPONSE.to_string()
-        });
+    let page = request(&mut *t, "GET", "/sessions?order=desc&limit=50", None);
     if let Some(err) = api_error(&page) {
         eprintln!("ask-claude: API error: {err}");
         return 0;
@@ -126,6 +123,101 @@ fn each(v: &Value) -> Vec<&Value> {
         Value::Object(o) => o.values().collect(),
         _ => Vec::new(),
     }
+}
+
+/// The session an `agent <command> <session>` names (`session_find`), or
+/// the exit code after its refusal.
+fn named(sessions: &Path, session: &str) -> Result<String, i32> {
+    session::find(sessions, session).map_err(|refused| crate::refuse(&refused))
+}
+
+/// `agent budget`, `session_budget`: a new spend cap in whole cents, 0 to
+/// remove it (for good, the API says), checked before the key; the cap the
+/// API answers with, as `budget: $2.50` or `budget: none`. 1 after an API
+/// error or an answer whose cap cannot be read.
+fn budget(cfg: &config::Config, sessions: &Path, session: &str, cents: &str) -> i32 {
+    let id = match named(sessions, session) {
+        Ok(id) => id,
+        Err(code) => return code,
+    };
+    if cents.is_empty() || !cents.bytes().all(|b| b.is_ascii_digit()) {
+        return crate::refuse(&format!(
+            "budget takes whole cents, 0 to remove the cap, got: {cents}"
+        ));
+    }
+    let mut t = match connect(cfg) {
+        Ok(t) => t,
+        Err(code) => return code,
+    };
+    let body = if cents == "0" {
+        r#"{"budget":null}"#.to_string()
+    } else {
+        crate::tojson(&serde_json::json!({
+            "budget": {"type": "limit", "max_list_cost": {"amount": cents, "currency": "USD"}}
+        }))
+    };
+    let resp = request(&mut *t, "POST", &format!("/sessions/{id}"), Some(&body));
+    if let Some(err) = api_error(&resp) {
+        eprintln!("ask-claude: API error: {err}");
+        return 1;
+    }
+    // jq over an empty answer prints nothing and succeeds
+    let Some(Ok(answer)) = serde_json::Deserializer::from_str(&resp)
+        .into_iter::<Value>()
+        .next()
+    else {
+        return 0;
+    };
+    let cap = if answer["budget"].is_null() {
+        "none".to_string()
+    } else {
+        match dollars(&answer["budget"]["max_list_cost"]["amount"]) {
+            Some(cap) => cap,
+            None => return 1,
+        }
+    };
+    crate::chat::out(&(safe(&format!("budget: {cap}")) + "\n"));
+    0
+}
+
+/// `agent archive`, `session_archive`: archive the session (the API
+/// refuses a running one) and forget its stub here.
+fn archive(cfg: &config::Config, sessions: &Path, session: &str) -> i32 {
+    let id = match named(sessions, session) {
+        Ok(id) => id,
+        Err(code) => return code,
+    };
+    let mut t = match connect(cfg) {
+        Ok(t) => t,
+        Err(code) => return code,
+    };
+    let resp = request(&mut *t, "POST", &format!("/sessions/{id}/archive"), None);
+    if let Some(err) = api_error(&resp) {
+        eprintln!("ask-claude: API error: {err}");
+        return 1;
+    }
+    // `rm -f`: a session not started here has no stub to remove
+    let _ = std::fs::remove_file(sessions.join(&id));
+    crate::chat::out(&format!("archived {id}\n"));
+    0
+}
+
+/// `agent trace`: the Console URL of the session, in the workspace
+/// `ASK_CLAUDE_WORKSPACE` names (`default` when unset or empty); no key,
+/// no request.
+fn trace(sessions: &Path, session: &str) -> i32 {
+    let id = match named(sessions, session) {
+        Ok(id) => id,
+        Err(code) => return code,
+    };
+    let workspace = std::env::var("ASK_CLAUDE_WORKSPACE")
+        .ok()
+        .filter(|w| !w.is_empty())
+        .unwrap_or_else(|| "default".into());
+    crate::chat::out(&format!(
+        "https://platform.claude.com/workspaces/{workspace}/sessions/{id}\n"
+    ));
+    0
 }
 
 /// What every request of an agent run needs, from the checks
@@ -189,10 +281,7 @@ impl<'a> Agent<'a> {
     /// transport's complaint on stderr (as curl's) and the body the script
     /// stands in for it.
     fn call(&mut self, method: &str, path: &str, body: Option<&str>) -> String {
-        self.t.call(method, path, body).unwrap_or_else(|e| {
-            crate::failed(&e);
-            NO_RESPONSE.to_string()
-        })
+        request(&mut *self.t, method, path, body)
     }
 
     /// `session_history`: the session's messages so far, from the API,
@@ -531,6 +620,23 @@ fn user_message(line: &str) -> String {
     crate::tojson(&serde_json::json!({
         "events": [{"type": "user.message", "content": [{"type": "text", "text": line}]}]
     }))
+}
+
+/// `ma_call`: the response body, or after a request that got none, the
+/// transport's complaint on stderr (as curl's) and the body the script
+/// stands in for it.
+fn request(t: &mut dyn Sessions, method: &str, path: &str, body: Option<&str>) -> String {
+    t.call(method, path, body).unwrap_or_else(|e| {
+        crate::failed(&e);
+        NO_RESPONSE.to_string()
+    })
+}
+
+/// The key (`need_key`), then the transport, for the commands that run no
+/// session turn; `Err` is the exit code after the message.
+fn connect(cfg: &config::Config) -> Result<Box<dyn Sessions + Send>, i32> {
+    let api_key = crate::need_key(&cfg.provider).ok_or(2)?;
+    open(cfg, api_key).map_err(|refused| crate::refuse(&refused))
 }
 
 /// The sessions transport: the API or `ASK_CLAUDE_REPLAY`, inside the

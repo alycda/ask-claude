@@ -80,7 +80,9 @@ pub struct RequestFlags {
     pub provider: String,
 
     /// API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider
-    #[arg(long, global = true, value_name = "url")]
+    // clap fills it from the variable whatever the provider; config::check
+    // keeps the variable to -p anthropic (KTD17)
+    #[arg(long, global = true, value_name = "url", env = "ANTHROPIC_BASE_URL")]
     pub base_url: Option<String>,
 
     /// cap on output tokens per reply

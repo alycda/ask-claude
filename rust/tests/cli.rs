@@ -191,20 +191,11 @@ fn r5_one_shot_through_replay_prints_pong() {
 /// as `printf '<the delta line>' | jq -rj -f lib/stream.jq`.
 #[test]
 fn r1_invalid_utf8_in_a_line_is_replaced_the_way_jq_replaces_it() {
-    let text_sse = std::fs::read(repo().join("tests/fixtures/sse/text.sse")).unwrap();
-    let pong = b"\"text\":\"pong\"";
-    let at = text_sse
-        .windows(pong.len())
-        .position(|w| w == pong)
-        .expect("text.sse carries the pong delta");
-    let mut crafted = text_sse[..at].to_vec();
-    crafted.extend_from_slice(
+    let dir = tempfile::tempdir().unwrap();
+    let sse = text_sse_with(
+        dir.path(),
         b"\"text\":\"a\xffb\xe0\x80\x80c\xed\xa0\x80d\xf4\x90\x80\x80e\xe2\x82Af\xf0g\"",
     );
-    crafted.extend_from_slice(&text_sse[at + pong.len()..]);
-    let dir = tempfile::tempdir().unwrap();
-    let sse = dir.path().join("crafted.sse");
-    std::fs::write(&sse, &crafted).unwrap();
 
     bin()
         .arg("ping")
@@ -224,18 +215,8 @@ fn r1_invalid_utf8_in_a_line_is_replaced_the_way_jq_replaces_it() {
 /// `x` U+FFFD.
 #[test]
 fn r1_invalid_utf8_is_replaced_after_the_escapes_are_undone() {
-    let text_sse = std::fs::read(repo().join("tests/fixtures/sse/text.sse")).unwrap();
-    let pong = b"\"text\":\"pong\"";
-    let at = text_sse
-        .windows(pong.len())
-        .position(|w| w == pong)
-        .expect("text.sse carries the pong delta");
-    let mut crafted = text_sse[..at].to_vec();
-    crafted.extend_from_slice(b"\"text\":\"x\xf0\\u00e9\"");
-    crafted.extend_from_slice(&text_sse[at + pong.len()..]);
     let dir = tempfile::tempdir().unwrap();
-    let sse = dir.path().join("crafted.sse");
-    std::fs::write(&sse, &crafted).unwrap();
+    let sse = text_sse_with(dir.path(), b"\"text\":\"x\xf0\\u00e9\"");
 
     bin()
         .arg("ping")

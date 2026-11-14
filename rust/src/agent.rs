@@ -128,7 +128,7 @@ fn list(cfg: &config::Config) -> i32 {
 /// since only the local server is asked. The server stops on the way out,
 /// Ctrl-C during its handshake included (the script's EXIT trap).
 fn tools(args: &AgentArgs) -> i32 {
-    let Some(command) = args.local_mcp.as_deref().filter(|c| !c.is_empty()) else {
+    let Some(command) = args.local_mcp.as_deref() else {
         return crate::refuse("agent tools needs --local-mcp <command> (or ASK_CLAUDE_LOCAL_MCP)");
     };
     transport::catch_signals();
@@ -461,7 +461,6 @@ impl<'a> Agent<'a> {
         sessions: PathBuf,
         log: &'a event::Log,
     ) -> Result<Self, i32> {
-        let given = |v: &Option<String>| v.clone().filter(|v| !v.is_empty());
         // the resources, before any request: the API's own checks come after
         if let Some(v) = session::words(&args.vault).find(|v| !v.starts_with("vlt_")) {
             return Err(crate::refuse(&format!(
@@ -483,7 +482,7 @@ impl<'a> Agent<'a> {
                 memories.len()
             )));
         }
-        let repo = given(&args.repo).unwrap_or_default();
+        let repo = args.repo.clone().unwrap_or_default();
         let mut github_token = String::new();
         if !repo.is_empty() {
             if !session::repo_ok(&repo) {
@@ -499,12 +498,12 @@ impl<'a> Agent<'a> {
                 )));
             }
         }
-        let Some(agent) = given(&args.agent) else {
+        let Some(agent) = args.agent.clone() else {
             return Err(crate::refuse(
                 "no agent id: --agent or ASK_CLAUDE_AGENT (the Console, Agents)",
             ));
         };
-        let Some(environment) = given(&args.environment) else {
+        let Some(environment) = args.environment.clone() else {
             return Err(crate::refuse(
                 "no environment id: --environment or ASK_CLAUDE_ENVIRONMENT (the Console, Environments)",
             ));
@@ -518,7 +517,7 @@ impl<'a> Agent<'a> {
         let confirm = std::env::var("ASK_CLAUDE_CONFIRM").ok();
         let gate = session::Gate::new(confirm.as_deref()).map_err(|m| crate::refuse(&m))?;
         // `[ -r "$usage_file" ]`: readable, a directory included
-        if let Some(file) = cli.file.as_deref().filter(|f| !f.is_empty())
+        if let Some(file) = cli.file.as_deref()
             && std::fs::File::open(file).is_err()
         {
             return Err(crate::refuse(&format!("cannot read {file}")));
@@ -529,7 +528,7 @@ impl<'a> Agent<'a> {
         // it (the server has its own process group and outlives this one)
         transport::catch_signals();
         // last, so a bad flag or a missing key fails before a server starts
-        let local = match args.local_mcp.as_deref().filter(|c| !c.is_empty()) {
+        let local = match args.local_mcp.as_deref() {
             Some(command) => Some(LocalMcp::start(command).map_err(|m| not_started(&m))?),
             None => None,
         };
@@ -1189,12 +1188,17 @@ fn dollars(cents: &Value) -> Option<String> {
 fn usage_line(id: &str, fold: &Value, seconds: u64) -> Option<String> {
     let u = &fold["usage"];
     let n = |k: &str| crate::text(&u[k]);
+    // the one sum the fold computes: jq prints a computed number its own way
+    let cache_write = match &u["cache_write"] {
+        Value::Number(x) if x.is_f64() => crate::jq_number(x.as_f64().unwrap_or(0.0)),
+        v => crate::text(v),
+    };
     Some(safe(&format!(
         "[{id} in={} out={} cache_read={} cache_write={} cost={} {seconds}s]",
         n("input_tokens"),
         n("output_tokens"),
         n("cache_read"),
-        n("cache_write"),
+        cache_write,
         dollars(&u["list_cost"])?,
     )))
 }
@@ -1203,6 +1207,17 @@ fn usage_line(id: &str, fold: &Value, seconds: u64) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn usage_line_prints_a_computed_cache_write_as_jq_does() {
+        let fold = json!({"usage": {"input_tokens": 1, "output_tokens": 2, "cache_read": 3,
+            "cache_write": 18_446_744_073_709_551_615.0_f64 * 1.0, "list_cost": "0"}});
+        let line = usage_line("sesn_X", &fold, 1).unwrap_or_default();
+        assert!(
+            line.contains(" cache_write=18446744073709552000 "),
+            "{line}"
+        );
+    }
 
     #[test]
     fn dollars_is_the_jq_definition() {

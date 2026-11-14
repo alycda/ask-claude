@@ -335,7 +335,7 @@ pub fn list(state: &Path) -> String {
 /// character is refused, so it never leaves the state directory.
 pub fn find(state: &Path, name: Option<&str>) -> Result<PathBuf, String> {
     let nothing = || "nothing to resume (see `ask-claude list`)".to_string();
-    let Some(name) = name.filter(|n| !n.is_empty()) else {
+    let Some(name) = name else {
         return chats(state)
             .into_iter()
             // `[ "$(jq length "$f")" -gt 0 ]`: a whole number above 0

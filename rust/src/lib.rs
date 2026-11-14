@@ -701,6 +701,48 @@ pub(crate) fn tojson(v: &serde_json::Value) -> String {
     v.to_string().replace('\u{7f}', "\\u007f")
 }
 
+/// How jq 1.8 prints a number it computed (a sum, not a literal it read,
+/// whose text it keeps): the shortest digits that read back as the same
+/// double, in exponent form when the point would sit four or more places
+/// left of them or more than fifteen past them (`1e-05`, `1e+16`, an exponent
+/// of two digits or more, signed), else written out (`1000000000000000`,
+/// `18446744073709552000`, `0.0001`); a whole value has no fraction, an
+/// infinity is the largest double and NaN is null, as jq prints them.
+pub(crate) fn jq_number(f: f64) -> String {
+    if f.is_nan() {
+        return "null".into();
+    }
+    let f = f.clamp(f64::MIN, f64::MAX);
+    if f == 0.0 {
+        return if f.is_sign_negative() { "-0" } else { "0" }.into();
+    }
+    let sign = if f < 0.0 { "-" } else { "" };
+    let sci = format!("{:e}", f.abs());
+    let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let digits = mantissa.replace('.', "");
+    let n = i32::try_from(digits.len()).unwrap_or(i32::MAX);
+    let point = exp + 1;
+    let body = if point <= -4 || point > n + 15 {
+        let (first, rest) = digits.split_at(1);
+        let frac = if rest.is_empty() {
+            String::new()
+        } else {
+            format!(".{rest}")
+        };
+        let esign = if exp < 0 { '-' } else { '+' };
+        format!("{first}{frac}e{esign}{:02}", exp.unsigned_abs())
+    } else if point <= 0 {
+        format!("0.{}{digits}", "0".repeat(point.unsigned_abs() as usize))
+    } else if point >= n {
+        format!("{digits}{}", "0".repeat((point - n) as usize))
+    } else {
+        let (whole, frac) = digits.split_at(point as usize);
+        format!("{whole}.{frac}")
+    };
+    format!("{sign}{body}")
+}
+
 /// `for_approval` in `lib/common.bash`: a value as a tool confirmation shows
 /// it, its [`tojson`] with the code points `safe` would drop (C1, the nine
 /// bidi formatting characters) and the invisible ones it keeps (U+061C,
@@ -751,5 +793,36 @@ mod tests {
             r#"n"}"#
         );
         assert_eq!(for_approval(&v), want);
+    }
+}
+
+#[cfg(test)]
+mod jq_number_tests {
+    use super::jq_number;
+
+    /// `jq -nr '"\(X + 0)"'` with jq 1.8.2, X the left column.
+    #[test]
+    fn computed_numbers_print_as_jq_prints_them() {
+        let cases: &[(f64, &str)] = &[
+            (1e15, "1000000000000000"),
+            (1e16, "1e+16"),
+            (1.5e17, "1.5e+17"),
+            (123_456_789_012_345_678.0, "123456789012345680"),
+            (18_446_744_073_709_551_615.0, "18446744073709552000"),
+            (1_234_567_890_123_456_789.0, "1234567890123456800"),
+            (2.5, "2.5"),
+            (0.1, "0.1"),
+            (1e-4, "0.0001"),
+            (1e-5, "1e-05"),
+            (0.000_123_4, "0.0001234"),
+            (5.0, "5"),
+            (-1e17, "-1e+17"),
+            (1.5e300, "1.5e+300"),
+            (f64::INFINITY, "1.7976931348623157e+308"),
+            (f64::NAN, "null"),
+        ];
+        for (x, want) in cases {
+            assert_eq!(jq_number(*x), *want, "{x}");
+        }
     }
 }

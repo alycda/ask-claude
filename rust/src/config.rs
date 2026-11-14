@@ -139,12 +139,11 @@ const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 /// `-p anthropic`'s root: `--base-url`, or `ANTHROPIC_BASE_URL` (KTD17),
 /// through the gate, announced on stderr when the variable moves it.
 fn anthropic_base_url(r: &RequestFlags) -> Result<String, String> {
-    // `${usage_base_url:-...}`: an empty value, from the flag or the
-    // variable, is no value
+    // `${usage_base_url:-...}`: Cli::parse_args has already made an empty
+    // value, from the flag or the variable, no value
     let base_url = r
         .base_url
         .clone()
-        .filter(|u| !u.is_empty())
         .unwrap_or_else(|| DEFAULT_BASE_URL.into());
     // a value equal to ANTHROPIC_BASE_URL's counts as the variable's, as the
     // script counts it (usage does not say which supplied it): they differ
@@ -177,10 +176,7 @@ fn anthropic_base_url(r: &RequestFlags) -> Result<String, String> {
 /// is dropped here (KTD17), told apart from the flag by where clap found
 /// it, so it is neither sent the OpenAI key nor gated nor announced.
 fn openai_base_url(r: &RequestFlags) -> Result<String, String> {
-    let flag = r
-        .base_url
-        .clone()
-        .filter(|u| r.base_url_given && !u.is_empty());
+    let flag = r.base_url.clone().filter(|_| r.base_url_given);
     let (base_url, source) = match flag {
         Some(u) => (u, "--base-url"),
         None => match std::env::var("OPENAI_BASE_URL") {
@@ -210,11 +206,8 @@ fn anthropic_only(r: &RequestFlags) -> Result<(), String> {
         ("--web", r.web),
         ("--mcp", !r.mcp.is_empty()),
         ("--mcp-tool", !r.mcp_tool.is_empty()),
-        ("-s", r.skills.as_deref().is_some_and(|s| !s.is_empty())),
-        (
-            "--advisor",
-            r.advisor.as_deref().is_some_and(|a| !a.is_empty()),
-        ),
+        ("-s", r.skills.is_some()),
+        ("--advisor", r.advisor.is_some()),
     ];
     match given.iter().find(|(_, on)| *on) {
         Some((flag, _)) => Err(format!("{flag} works with -p anthropic only")),

@@ -16,19 +16,31 @@ _help: build
 _agent-help: build
     ./ask-claude agent --help
 
-ask question="" *FLAGS:
+[group('rust')]
+[working-directory: 'rust/target/debug']
+ask question="" *FLAGS: build
     ./ask-claude {{FLAGS}} {{ quote(question) }}
 
-# shell completions from the #USAGE spec (bash, fish, nu, powershell, zsh). The
-# script embeds the spec, so re-run it after the spec changes. --install writes
-# it where the shell looks (zsh ~/.local/share/zsh/site-functions/_ask-claude,
-# bash ~/.local/share/bash-completion/completions/ask-claude,
-# fish ~/.config/fish/completions/ask-claude.fish) and prints the one-time
-# rc line zsh needs; without it the script goes to stdout.
+ask-bash question="" *FLAGS:
+    ./ask-claude {{FLAGS}} {{ quote(question) }}
 
-# tab completion for <shell> from the #USAGE spec; --install puts it where the shell looks
-completions shell *flags:
-    usage generate completion {{ quote(shell) }} ask-claude -f ask-claude {{ flags }}
+# shell completions from the Rust binary's usage spec (bash, fish, nu,
+# powershell, zsh), which `just parity` holds to the script's #USAGE block.
+# The completion script embeds the spec, so re-run it after the spec changes.
+# --install writes it where the shell looks (zsh
+# ~/.local/share/zsh/site-functions/_ask-claude, bash
+# ~/.local/share/bash-completion/completions/ask-claude, fish
+# ~/.config/fish/completions/ask-claude.fish) and prints the one-time rc line
+# zsh needs; without it the script goes to stdout.
+
+# tab completion for <shell> from the binary's spec; --install puts it where the shell looks
+completions shell *flags: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    spec=$(mktemp)
+    trap 'rm -f "$spec"' EXIT
+    rust/target/debug/ask-claude --usage-spec >"$spec"
+    usage generate completion {{ quote(shell) }} ask-claude -f "$spec" {{ flags }}
 
 # Skips the tests tagged pty, which need a terminal name readline reports
 # bracketed paste for (`just pty-test` runs them), and rust-only, behaviour the

@@ -70,7 +70,7 @@ The spend cap a Session is created with, at list price. Every Session gets one u
 The pause before a tool runs: a Session's Agent wants to run a tool its policy marks ask, or the model asks for a Local tool. The user allows, denies, or allows for the rest of the run; with no terminal the answer is deny. An "always" answer lasts for the process that gave it, for that tool name, and never beyond. One gate serves both the Messages loop and Sessions.
 
 ### Custom tool
-A tool the Agent declares that would run on the caller's machine. ask-claude runs none yet, so a request for one is answered with an error result rather than left hanging.
+A tool the Agent declares that would run on the caller's machine. With `--local-mcp`, a stdio MCP server on this machine answers it, behind the confirmation gate; without one, a request for it is answered with an error result rather than left hanging.
 
 ### Resource
 Something attached to a Session at creation and made once in the Console: a Vault of credentials, a Memory store (optionally read-only), a mounted Repository, or an uploaded file. ask-claude passes ids and never creates them.

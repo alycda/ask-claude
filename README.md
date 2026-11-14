@@ -300,6 +300,7 @@ update itself; rebuild without the cache to get a newer one.
 
 ```sh
 mise install                                  # jq and usage, pinned
+cargo install --locked --path rust            # the ask-claude binary, on PATH
 (umask 077; echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env)   # mode 600; only just test reads it
 just --list                                   # the map
 ```

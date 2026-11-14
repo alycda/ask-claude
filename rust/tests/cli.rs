@@ -184,6 +184,37 @@ fn r1_invalid_utf8_in_a_line_is_replaced_the_way_jq_replaces_it() {
         .stdout("a\u{FFFD}b\u{FFFD}c\u{FFFD}d\u{FFFD}e\u{FFFD}Af\u{FFFD}\n");
 }
 
+/// jq replaces after it has undone the escapes, so "the rest of the string"
+/// is counted in decoded bytes: `x\xf0é` is x, F0, C3 A9, three bytes
+/// where F0 promises four, and é goes with the F0. Replacing on the raw
+/// line instead would see six bytes, a `\` where a continuation should be,
+/// and keep the é. Oracle as above: the bash script on this stream prints
+/// `x` U+FFFD.
+#[test]
+fn r1_invalid_utf8_is_replaced_after_the_escapes_are_undone() {
+    let text_sse = std::fs::read(repo().join("tests/fixtures/sse/text.sse")).unwrap();
+    let pong = b"\"text\":\"pong\"";
+    let at = text_sse
+        .windows(pong.len())
+        .position(|w| w == pong)
+        .expect("text.sse carries the pong delta");
+    let mut crafted = text_sse[..at].to_vec();
+    crafted.extend_from_slice(b"\"text\":\"x\xf0\\u00e9\"");
+    crafted.extend_from_slice(&text_sse[at + pong.len()..]);
+    let dir = tempfile::tempdir().unwrap();
+    let sse = dir.path().join("crafted.sse");
+    std::fs::write(&sse, &crafted).unwrap();
+
+    bin()
+        .arg("ping")
+        .env("ANTHROPIC_API_KEY", "sk-ant-test-not-a-key")
+        .env("XDG_STATE_HOME", dir.path())
+        .env("ASK_CLAUDE_REPLAY", &sse)
+        .assert()
+        .success()
+        .stdout("x\u{FFFD}\n");
+}
+
 mod which {
     /// `usage` on PATH, or None.
     pub fn which_usage() -> Option<std::path::PathBuf> {

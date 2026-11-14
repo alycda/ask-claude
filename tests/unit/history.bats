@@ -78,3 +78,37 @@ ONE='[{"role":"user","content":"second"}]'
     [ -s "$TMP/betas" ]
     refute grep -q 'advisor' "$TMP/betas"
 }
+
+@test "list: needs no key" {
+    mkchat 20260101T000000 202601010000 "$ONE"
+    run --separate-stderr env -u ANTHROPIC_API_KEY "$BIN" list
+    [ "$status" -eq 0 ]
+    [ "${lines[0]%%  *}" = "20260101T000000" ]
+}
+
+@test "resume: a name with a path part or a glob character exits 2 before any lookup" {
+    mkchat 20260101T000000 202601010000 "$TWO"
+    for name in ../20260101 'x/y' '2026*' '2026?' '[2]026'; do
+        run --separate-stderr "$BIN" resume "$name"
+        [ "$status" -eq 2 ]
+        grep -q 'resume takes a chat name from `ask-claude list`' <<<"$stderr"
+    done
+}
+
+@test "resume: a prefix of two chats exits 2 and says how many" {
+    mkchat 20260101T000000 202601010000 "$TWO"
+    mkchat 20260101T000001 202601010001 "$ONE"
+    run --separate-stderr "$BIN" resume 20260101
+    [ "$status" -eq 2 ]
+    grep -q '"20260101" matches 2 chats' <<<"$stderr"
+}
+
+@test "resume: the chat is found before the key is asked for" {
+    run --separate-stderr env -u ANTHROPIC_API_KEY "$BIN" resume nope
+    [ "$status" -eq 2 ]
+    grep -q 'nothing to resume' <<<"$stderr"
+    mkchat 20260101T000000 202601010000 "$TWO"
+    run --separate-stderr env -u ANTHROPIC_API_KEY "$BIN" resume 20260101
+    [ "$status" -eq 2 ]
+    grep -q 'no key' <<<"$stderr"
+}

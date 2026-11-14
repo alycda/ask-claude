@@ -440,6 +440,38 @@ fn http_pause_turn_rounds_are_separate_requests() {
     }
 }
 
+/// A skills container that cannot be saved is reported, as the script's
+/// failed redirect to `$HIST.container.tmp` is, and the turn goes on: the
+/// state directory is made read-only while the reply is held, so the save
+/// after it fails. Nothing on stderr would name the container otherwise.
+#[cfg(unix)]
+#[test]
+fn http_a_skills_container_that_cannot_be_saved_is_reported() {
+    use std::os::unix::fs::PermissionsExt;
+    // SAFETY: geteuid(2) takes nothing and cannot fail
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("skipped: root writes a read-only directory");
+        return;
+    }
+    let (reply, release) = Reply::held("code-execution.sse", 0);
+    let mock = Mock::start(vec![reply]);
+    let (child, _stdout, state) = spawn(&mock.url, &["-s", "pptx", "run"], false);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while mock.requests().is_empty() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(10));
+    }
+    let dir = state.path().join("state/ask-claude");
+    let mode = |m| std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o500);
+    drop(release);
+    let out = child.wait_with_output();
+    mode(0o700);
+    let out = out.unwrap();
+    let err = stderr(&out);
+    assert!(err.contains(".json.container"), "{err}");
+    assert!(err.contains("Permission denied"), "{err}");
+}
+
 /// The reply is printed as it arrives, not once the body has ended: with
 /// the stream held after the pong delta, "pong" is on stdout while the
 /// rest (message_stop, the usage) has not been sent. curl -N and jq

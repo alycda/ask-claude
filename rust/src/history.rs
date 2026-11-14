@@ -16,7 +16,15 @@ use serde_json::Value;
 pub fn state_dir() -> Result<PathBuf, String> {
     let base = match std::env::var_os("XDG_STATE_HOME").filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
-        None => PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state"),
+        // `$HOME/.local/state` under `set -u`: no HOME stops the script, and
+        // an empty one names the root, never a directory under the cwd
+        None => match std::env::var_os("HOME") {
+            Some(mut home) => {
+                home.push("/.local/state");
+                PathBuf::from(home)
+            }
+            None => return Err("HOME: unbound variable; set HOME or XDG_STATE_HOME".into()),
+        },
     };
     let state = base.join("ask-claude");
     std::fs::create_dir_all(&state).map_err(|_| format!("cannot create {}", state.display()))?;

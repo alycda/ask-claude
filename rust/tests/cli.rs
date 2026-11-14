@@ -537,6 +537,53 @@ fn a_body_that_is_not_sse_is_an_api_error() {
     }
 }
 
+/// Ctrl-C that comes as an error body ends is still an interrupt (KTD11):
+/// exit 130 with the user turn left dangling, as the killed script leaves
+/// it, not exit 1 with the turn rolled back. The replay is a FIFO: its one
+/// line is read, then the signal goes and the writer closes at once, so
+/// the end of the body is what the wait for the next line sees. Against
+/// the script, which dies of the signal, this fails by design, as the
+/// Ctrl-C test in tests/http.rs does.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_as_an_error_body_ends_exits_130_with_the_turn_dangling() {
+    use std::io::Write;
+    use std::os::unix::ffi::OsStrExt;
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("reply.sse");
+    let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    // SAFETY: mkfifo(3) on a NUL-terminated path this frame owns
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let mut child = one_shot(dir.path(), &fifo)
+        .arg("ping")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    // blocks until the binary opens the replay for its send
+    let mut writer = std::fs::OpenOptions::new().write(true).open(&fifo).unwrap();
+    let mut body = std::fs::read(repo().join("tests/fixtures/sse/error.sse")).unwrap();
+    body.push(b'\n');
+    writer.write_all(&body).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let pid = libc::pid_t::try_from(child.id()).unwrap();
+    // SAFETY: kill(2) on the child's pid; no memory involved
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGINT) }, 0);
+    drop(writer);
+    let status = child.wait().unwrap();
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut stderr).unwrap();
+    assert_eq!(status.code(), Some(130), "{stderr}");
+    let chats = chat_files(dir.path());
+    assert_eq!(chats.len(), 1, "{chats:?}");
+    let turns: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&chats[0]).unwrap()).unwrap();
+    assert_eq!(
+        turns,
+        serde_json::json!([{"role": "user", "content": "ping"}])
+    );
+}
+
 mod which {
     /// `usage` on PATH, or None.
     pub fn which_usage() -> Option<std::path::PathBuf> {

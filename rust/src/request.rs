@@ -118,20 +118,29 @@ fn host(url: &str) -> String {
         .collect()
 }
 
-fn hostname(url: &str) -> String {
+/// The URL's hostname as written, lower-cased: what an `--mcp-tool` entry
+/// names, and what the config check matches entries against.
+pub(crate) fn hostname(url: &str) -> String {
     crate::url_host(url, &['/', ':'])
         .unwrap_or("")
         .to_ascii_lowercase()
 }
 
+/// `ASK_CLAUDE_MCP_TOKEN_<HOST>`, the variable this server's own token is
+/// read from: the host upper-cased, every other character an underscore.
+/// The config check names it when it refuses the shared token, so the
+/// variable it names is the one read here.
+pub(crate) fn token_variable(url: &str) -> String {
+    format!(
+        "ASK_CLAUDE_MCP_TOKEN_{}",
+        host(url).to_ascii_uppercase().replace('-', "_")
+    )
+}
+
 /// `ASK_CLAUDE_MCP_TOKEN_<HOST>` for this server, else the shared token
 /// when it is the only server.
 fn mcp_token(url: &str, servers: usize, shared: &str) -> String {
-    let var = format!(
-        "ASK_CLAUDE_MCP_TOKEN_{}",
-        host(url).to_ascii_uppercase().replace('-', "_")
-    );
-    match std::env::var(var) {
+    match std::env::var(token_variable(url)) {
         Ok(own) if !own.is_empty() => own,
         _ if servers == 1 => shared.to_string(),
         _ => String::new(),

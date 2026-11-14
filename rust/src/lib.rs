@@ -252,6 +252,12 @@ fn exchange(
         }
         Err(e) => failed(&e),
     }
+    // a signal that came with the body's end or a failed read, or before a
+    // send that failed: the script would be gone with its user turn
+    // dangling, not rolled back after an error of its own
+    if transport::interrupted() {
+        return Err(Interrupted);
+    }
     Ok(got)
 }
 
@@ -382,7 +388,10 @@ pub fn call(
         // filtering); it must not replace the skills container of a chat
         // that used -s earlier, so it lives in turn_cid alone
         if skills && !turn_cid.is_empty() {
-            let _ = history::replace(&container, turn_cid.as_bytes());
+            // reported as the script's failed redirect is, and the turn goes on
+            if let Err(e) = history::replace(&container, turn_cid.as_bytes()) {
+                eprintln!("ask-claude: cannot save {}: {e}", container.display());
+            }
         }
         eprintln!("{}", usage_line(&msg, t0.elapsed().as_secs()));
         if msg["stop_reason"] == "pause_turn" && rounds < 8 {
@@ -426,7 +435,12 @@ fn reply(got: &Received) -> Result<serde_json::Value, String> {
     };
     match or(&msg["error"]["message"], &serde_json::Value::Null) {
         serde_json::Value::Null => Ok(msg),
-        m => Err(format!("API error: {}", stream::safe(&text(m)))),
+        // `$(... '.error.message // empty | safe')`: a message safe leaves
+        // empty, once `$(..)` cuts its trailing newlines, is none either
+        m => match stream::safe(&text(m)).trim_end_matches('\n') {
+            "" => Ok(msg),
+            m => Err(format!("API error: {m}")),
+        },
     }
 }
 

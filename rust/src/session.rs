@@ -410,7 +410,7 @@ pub trait LocalTools {
 
 /// `custom_error` in `lib/local-mcp.bash`: an error result for a custom
 /// tool call, with `text` for the model.
-fn custom_error(id: &str, text: &str) -> Value {
+pub(crate) fn custom_error(id: &str, text: &str) -> Value {
     serde_json::json!({
         "type": "user.custom_tool_result", "custom_tool_use_id": id,
         "content": [{"type": "text", "text": text}], "is_error": true

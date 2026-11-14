@@ -56,6 +56,9 @@ pub mod openai;
 /// `ask-claude agent`: Managed Agents sessions.
 pub mod agent;
 
+/// `--local-mcp`: a stdio MCP server that answers an agent's custom tools.
+pub mod local_mcp;
+
 /// Run the parsed CLI; the exit code is the bash script's (0 reply, 1 API
 /// error, 2 bad input, 130 after Ctrl-C). The order is the script's: the
 /// checks of `lib/config.bash` and the state directory for every form,

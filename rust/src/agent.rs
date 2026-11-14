@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::cli::{AgentArgs, AgentCommand, Cli};
+use crate::local_mcp::LocalMcp;
 use crate::stream::safe;
 use crate::transport::sessions::{self, Sessions};
 use crate::transport::{self, Next};
@@ -66,7 +67,7 @@ pub fn run(
         Some(AgentCommand::Files { session, name }) => {
             return files(cfg, &sessions, session, name, args.force);
         }
-        Some(_) => todo!("U6 step 3: agent tools"),
+        Some(AgentCommand::Tools) => return tools(args),
     }
     let mut agent = match Agent::new(args, cli, cfg, sessions, log) {
         Ok(agent) => agent,
@@ -128,6 +129,22 @@ fn each(v: &Value) -> Vec<&Value> {
         Value::Object(o) => o.values().collect(),
         _ => Vec::new(),
     }
+}
+
+/// `agent tools`: the `--local-mcp` server's tools as custom tool
+/// definitions, printed as jq prints them; no key, agent or environment,
+/// since only the local server is asked. The server stops on the way out.
+fn tools(args: &AgentArgs) -> i32 {
+    let Some(command) = args.local_mcp.as_deref().filter(|c| !c.is_empty()) else {
+        return crate::refuse("agent tools needs --local-mcp <command> (or ASK_CLAUDE_LOCAL_MCP)");
+    };
+    let server = match LocalMcp::start(command) {
+        Ok(server) => server,
+        Err(refused) => return crate::refuse(&refused),
+    };
+    let text = serde_json::to_string_pretty(&server.definitions()).unwrap_or_default();
+    crate::chat::out(&(text.replace('\u{7f}', "\\u007f") + "\n"));
+    0
 }
 
 /// The session an `agent <command> <session>` names (`session_find`), or

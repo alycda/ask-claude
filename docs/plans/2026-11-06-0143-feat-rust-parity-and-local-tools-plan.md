@@ -218,8 +218,10 @@ through, which matters once a command is displayed for approval.
   - Per-read idle timeouts on the stream. No recorded long-thinking fixture
     exists to size them against.
   - A full YAML parser for skill frontmatter. The subset KTD14 names covers
-    every SKILL.md in reach; a frontmatter the subset rejects is skipped with a
-    note.
+    every SKILL.md in reach once it skips the indented block under a key the
+    index does not read: third-party skills such as Supabase's agent skills
+    carry a nested `metadata:` mapping, which a scalars-only reading rejects.
+    A frontmatter the subset still rejects is skipped with a note.
   - A hard-link check in the editor. A link inside the root to a file outside
     passes both path checks and needs a second principal to plant; accepted as
     Low.
@@ -259,7 +261,14 @@ through, which matters once a command is displayed for approval.
 - Deferred to U13: whether a personal skill shadows a project skill of the same
   name or the reverse. The two research reads of Claude Code's docs disagree;
   one fetch before U13's test commit settles it. Default until then: personal
-  beats project, plugin skills namespaced `plugin:skill` on a clash.
+  beats project, plugin skills namespaced `plugin:skill` on a clash. The
+  session that wrote U13's test commit could not reach the documentation, so
+  `skills-local.bats` pins this default and says so; the fetch still decides it.
+- Deferred to U13's feat commit: whether the editor may `view` inside a loaded
+  skill's own directory when that lies outside the root, as a personal skill's
+  `references/` does. R12 confines `view` to the root, so today such a reference
+  is reachable only through bash, one confirmation per file. Default until
+  decided: R12 unchanged.
 - Gate on the 1.0.0 version commit only: `bump-effver` and `check-effver` cannot
   express `0.x` to `1.0.0`; the `1.0` effort is taught in dotfiles first and
   copied here unchanged (KTD6, D1). No unit waits on it; the version commit is
@@ -419,7 +428,13 @@ through, which matters once a command is displayed for approval.
   passed through `safe` and cut at 1536 characters with a stderr note. A `name`
   must match Claude Code's character rule and its directory name or the entry is
   skipped with a note. Frontmatter is parsed by a subset parser (scalars and
-  block scalars, no anchors, 64 KiB cap). Discovery reads `.claude/skills/`,
+  block scalars, no anchors, 64 KiB cap); keys other than `name`,
+  `description` and `when_to_use` are not interpreted, and the indented block
+  under one is skipped, so a nested `metadata:` mapping is accepted and none of
+  it reaches the index. The model calls `skill` with `{"name": "<skill>"}`. The
+  result names the skill's canonical directory before the body, so a body's
+  relative references (`references/<rule>.md`) resolve without the model
+  guessing where the skill lives. Discovery reads `.claude/skills/`,
   `~/.claude/skills/` and enabled plugins' `skills/`, re-read each user turn. An
   entry whose canonical path leaves its root, or a root another account owns or
   can write, is skipped with one stderr line, and a directory holding
@@ -1133,7 +1148,11 @@ Dependencies outside the units:
 - **Requirements:** R9 (the `skill` declaration), R16, R17.
 - **Dependencies:** U11.
 - **Files:** `rust/src/lib.rs`, `tests/unit/skills-local.bats`,
-  `tests/fixtures/skills/`, `tests/fixtures/request/local-tools-index.json`.
+  `tests/fixtures/skills/`, `tests/fixtures/sse/skill-call.sse`,
+  `tests/fixtures/request/local-tools-index.json`. The fixture tree keeps no
+  `.claude` directory name, so no tool that discovers skills under a
+  subdirectory ever loads it; the tests copy it into a temporary repository and
+  home.
 - **Approach:** The `skill` declaration joins the tools-on request here;
   discovery, index composition, the `skill` tool, the safety rules and
   activation lifetime per KTD14, against a fixture skills tree; one
@@ -1147,8 +1166,17 @@ Dependencies outside the units:
   - A `skill` call for an indexed name returns the body; for an unknown name
     returns an error result.
   - A plugin skill's body comes back with `${CLAUDE_PLUGIN_ROOT}` replaced by
-    the plugin's absolute path, and a later bash call sees it exported.
-  - `/new` clears the active plugin root.
+    the plugin's absolute path, and a later bash call sees it exported. Written
+    with U14's test commit: activating a plugin needs `plugin enable`.
+  - `/new` clears the active plugin root. Written with U14's test commit, for
+    the same reason.
+  - A frontmatter with a nested `metadata:` mapping, a quoted description and a
+    `license`, the shape of Supabase's agent skills, is indexed by name and
+    description, and nothing under `metadata:` reaches `system` or the `skill`
+    result.
+  - The `skill` result names the skill's canonical directory, keeps the body's
+    relative reference as written, and does not inline the referenced file.
+  - Without `--tools`, a skills tree on disk changes nothing in the request.
   - A description over the cap is cut and noted on stderr; a description
     carrying U+202E is indexed without it.
   - A SKILL.md symlinked to a file outside the repository is not indexed and

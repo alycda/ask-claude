@@ -218,8 +218,10 @@ through, which matters once a command is displayed for approval.
   - Per-read idle timeouts on the stream. No recorded long-thinking fixture
     exists to size them against.
   - A full YAML parser for skill frontmatter. The subset KTD14 names covers
-    every SKILL.md in reach; a frontmatter the subset rejects is skipped with a
-    note.
+    every SKILL.md in reach once it skips the indented block under a key the
+    index does not read: third-party skills such as Supabase's agent skills
+    carry a nested `metadata:` mapping, which a scalars-only reading rejects.
+    A frontmatter the subset still rejects is skipped with a note.
   - A hard-link check in the editor. A link inside the root to a file outside
     passes both path checks and needs a second principal to plant; accepted as
     Low.
@@ -259,7 +261,14 @@ through, which matters once a command is displayed for approval.
 - Deferred to U13: whether a personal skill shadows a project skill of the same
   name or the reverse. The two research reads of Claude Code's docs disagree;
   one fetch before U13's test commit settles it. Default until then: personal
-  beats project, plugin skills namespaced `plugin:skill` on a clash.
+  beats project, plugin skills namespaced `plugin:skill` on a clash. The
+  session that wrote U13's test commit could not reach the documentation, so
+  `skills-local.bats` pins this default and says so; the fetch still decides it.
+- Deferred to U13's feat commit: whether the editor may `view` inside a loaded
+  skill's own directory when that lies outside the root, as a personal skill's
+  `references/` does. R12 confines `view` to the root, so today such a reference
+  is reachable only through bash, one confirmation per file. Default until
+  decided: R12 unchanged.
 - Gate on the 1.0.0 version commit only: `bump-effver` and `check-effver` cannot
   express `0.x` to `1.0.0`; the `1.0` effort is taught in dotfiles first and
   copied here unchanged (KTD6, D1). No unit waits on it; the version commit is
@@ -419,7 +428,13 @@ through, which matters once a command is displayed for approval.
   passed through `safe` and cut at 1536 characters with a stderr note. A `name`
   must match Claude Code's character rule and its directory name or the entry is
   skipped with a note. Frontmatter is parsed by a subset parser (scalars and
-  block scalars, no anchors, 64 KiB cap). Discovery reads `.claude/skills/`,
+  block scalars, no anchors, 64 KiB cap); keys other than `name`,
+  `description` and `when_to_use` are not interpreted, and the indented block
+  under one is skipped, so a nested `metadata:` mapping is accepted and none of
+  it reaches the index. The model calls `skill` with `{"name": "<skill>"}`. The
+  result names the skill's canonical directory before the body, so a body's
+  relative references (`references/<rule>.md`) resolve without the model
+  guessing where the skill lives. Discovery reads `.claude/skills/`,
   `~/.claude/skills/` and enabled plugins' `skills/`, re-read each user turn. An
   entry whose canonical path leaves its root, or a root another account owns or
   can write, is skipped with one stderr line, and a directory holding
@@ -722,7 +737,7 @@ Dependencies outside the units:
 | U7 | Parity gate and 1.0.0 (step R8) | `justfile`, `docs/plan.md`, `README.md`, `CHANGELOG.md` | U1, U6, U8, U9 |
 | U8 | `ANTHROPIC_BASE_URL` in both versions | `ask-claude`, `rust/src/cli.rs`, `tests/record-session.sh` | U4 |
 | U9 | Bidi controls in `safe`, bash then Rust | `ask-claude`, `lib/*.jq`, `CONCEPTS.md`, `CODING_STANDARDS.md`, `rust/src/lib.rs` | U3 |
-| U10 | Tool runner and gate | `rust/src/lib.rs` (tools), `rust/tests/tools.rs`, `tests/unit/tools-gate.bats`, `README.md` | U6, U8, U9 |
+| U10 | Tool runner and gate | `rust/src/tools.rs`, `rust/tests/tools.rs`, `README.md` | U6, U8, U9 |
 | U11 | Messages tool loop, fixtures, tool loop gate | `rust/src/lib.rs`, `ask-claude`, `tests/fixtures/sse/tools/`, `tests/unit/tools.bats`, `README.md`, `CODING_STANDARDS.md` | U10 |
 | U13 | Skills index, `skill` tool, discovery | `rust/src/lib.rs`, `tests/unit/skills-local.bats`, `tests/fixtures/skills/` | U11 |
 | U14 | Plugins, commands, the coding-tutor gate, 1.1.0 | `rust/src/lib.rs`, `mise.toml`, `tests/unit/plugins.bats`, `CHANGELOG.md` | U13 |
@@ -1029,14 +1044,19 @@ Dependencies outside the units:
 - **Requirements:** R10, R11, R12.
 - **Dependencies:** U6, U8, U9; the 1.0.0 version commit (U7) may land after
   this unit starts.
-- **Files:** `rust/src/lib.rs`, `rust/tests/tools.rs`,
-  `tests/unit/tools-gate.bats`, `README.md`.
+- **Files:** `rust/src/tools.rs` (its scaffold lands with the test commit),
+  `rust/tests/tools.rs`, `README.md`.
 - **Approach:** The gate order and grants of KTD9 and the bash and editor
   runners of KTD10; the README gains the boundary statement, the confirmation
   order and the child's environment allowlist. The `skill` tool is declared and
-  wired in U13. Unit tests cover the runner in-process, and the bats file,
-  tagged `rust-only`, covers the gate through the binary with
-  `ASK_CLAUDE_CONFIRM` and piped stdin.
+  wired in U13. Unit tests cover the runner in-process. Everything the runner
+  reads from outside (the root, `$HOME`, the state directory, the parent
+  environment, the secrets, the bounds, the interrupt) comes in through one
+  config value, so a test sets each without touching the process's own
+  environment, which edition 2024 makes unsafe to write and parallel tests
+  would race on. The gate driven through the binary needs `--tools`, which
+  U11 adds, so those scenarios are U11's `tools.bats`; a bats file here could
+  not turn green on U10's feat commit.
 - **Execution note:** Build the confinement rules test-first; a symlink inside
   the root pointing outside is the first red test.
 - **Patterns to follow:** `session_confirm` wording; `agent-confirm.bats` for
@@ -1047,8 +1067,8 @@ Dependencies outside the units:
   - A command that prints the key from a file the test plants returns
     `[redacted]` in its place.
   - A two-line script whose first line is `cat` and second is `echo after`
-    returns `after`, and with two piped chat lines the second line is still sent
-    as the next user turn.
+    returns `after`. With two piped chat lines the second line is still sent as
+    the next user turn: through the binary, in U11.
   - `view` of `../x`, of an absolute path outside the root, and of a path whose
     last component is a symlink to a file outside the root is refused with the
     error flag and no file content in the result.
@@ -1070,8 +1090,10 @@ Dependencies outside the units:
   - `always` given for `bash` prints the warning once and does not cover the
     editor; a protected path, `Cargo.toml` and an enabled plugin's directory
     included, still prompts.
-- **Verification:** `cargo test tools` green; `tools-gate.bats` green through
-  `just test-rust`.
+  - A command runs in the repository root; `restart` is answered "Bash session
+    restarted" and runs nothing; with no `bash` on the child's `PATH` the
+    result is the error "bash not found"; a root at `$HOME` or `/` is refused.
+- **Verification:** `cargo test --test tools` green.
 
 ### U11. Messages tool loop, fixtures, tool loop gate
 
@@ -1097,7 +1119,12 @@ Dependencies outside the units:
      redacted (D4); the request golden for the tools-on body.
   5. The tool loop gate from its verifier commit, run and recorded.
 - **Execution note:** Record the fixture before writing the request golden, so
-  the beta-header assumption is checked by the wire.
+  the beta-header assumption is checked by the wire. The test commit carries
+  hand-written streams in `tests/fixtures/sse/tools/` (one call, two calls, a
+  call cut off by `max_tokens`), derived from `text.sse` like the refusal and
+  `pause_turn` ones, so the tests can be written before a key is spent; the
+  recording and the golden remain this unit's, before its feat commit. The
+  gate scenarios that need the binary, moved from U10, are in `tools.bats`.
 - **Patterns to follow:** The `pause_turn` loop in bash `call()`; `oneshot.bats`
   for the request log assertions.
 - **Test scenarios:**
@@ -1133,7 +1160,11 @@ Dependencies outside the units:
 - **Requirements:** R9 (the `skill` declaration), R16, R17.
 - **Dependencies:** U11.
 - **Files:** `rust/src/lib.rs`, `tests/unit/skills-local.bats`,
-  `tests/fixtures/skills/`, `tests/fixtures/request/local-tools-index.json`.
+  `tests/fixtures/skills/`, `tests/fixtures/sse/skill-call.sse`,
+  `tests/fixtures/request/local-tools-index.json`. The fixture tree keeps no
+  `.claude` directory name, so no tool that discovers skills under a
+  subdirectory ever loads it; the tests copy it into a temporary repository and
+  home.
 - **Approach:** The `skill` declaration joins the tools-on request here;
   discovery, index composition, the `skill` tool, the safety rules and
   activation lifetime per KTD14, against a fixture skills tree; one
@@ -1147,8 +1178,17 @@ Dependencies outside the units:
   - A `skill` call for an indexed name returns the body; for an unknown name
     returns an error result.
   - A plugin skill's body comes back with `${CLAUDE_PLUGIN_ROOT}` replaced by
-    the plugin's absolute path, and a later bash call sees it exported.
-  - `/new` clears the active plugin root.
+    the plugin's absolute path, and a later bash call sees it exported. Written
+    with U14's test commit: activating a plugin needs `plugin enable`.
+  - `/new` clears the active plugin root. Written with U14's test commit, for
+    the same reason.
+  - A frontmatter with a nested `metadata:` mapping, a quoted description and a
+    `license`, the shape of Supabase's agent skills, is indexed by name and
+    description, and nothing under `metadata:` reaches `system` or the `skill`
+    result.
+  - The `skill` result names the skill's canonical directory, keeps the body's
+    relative reference as written, and does not inline the referenced file.
+  - Without `--tools`, a skills tree on disk changes nothing in the request.
   - A description over the cap is cut and noted on stderr; a description
     carrying U+202E is indexed without it.
   - A SKILL.md symlinked to a file outside the repository is not indexed and

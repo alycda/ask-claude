@@ -18,6 +18,19 @@ refused() { # args...
     grep -q '^ask-claude: --provider openai is not implemented in the bash version, see docs/plan.md$' <<<"$stderr"
 }
 
+# --tools, its environment twin and --confirm are the Rust port's (KTD7,
+# KTD12): bash declares them in its #USAGE block so the two specs stay at
+# parity, and refuses them the way it refuses -p openai.
+# bats test_tags=bash-only
+@test "refuse: --tools, ASK_CLAUDE_TOOLS and --confirm, with the pointer to the plan" {
+    refused --tools "hi"
+    grep -q '^ask-claude: --tools is not implemented in the bash version, see docs/plan.md$' <<<"$stderr"
+    ASK_CLAUDE_TOOLS=1 refused "hi"
+    grep -q '^ask-claude: --tools is not implemented in the bash version, see docs/plan.md$' <<<"$stderr"
+    refused --confirm allow "hi"
+    grep -q '^ask-claude: --confirm is not implemented in the bash version, see docs/plan.md$' <<<"$stderr"
+}
+
 @test "refuse: -p anthropic is the default and still works" {
     unset ANTHROPIC_API_KEY
     run --separate-stderr env -u ANTHROPIC_API_KEY ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" -p anthropic "hi"

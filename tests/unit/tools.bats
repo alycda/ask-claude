@@ -68,7 +68,14 @@ requests() { if [ -e "$TMP/requests.jsonl" ]; then wc -l <"$TMP/requests.jsonl" 
 results() { request "$1" | jq -c '[.messages[-1].content[]? | select(.type == "tool_result")]'; }
 # text_of: a tool_result's content as one string, string or text blocks
 text_of() { jq -r '.content | if type == "string" then . else map(.text // "") | join("") end'; }
-chat_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null | head -1; }
+# chat_file: the first chat in the state directory, or nothing
+chat_file() {
+    local f
+    for f in "$XDG_STATE_HOME"/ask-claude/*.json; do
+        if [ -e "$f" ]; then printf '%s\n' "$f"; fi
+        return 0
+    done
+}
 
 # answered <file>: every tool_use in the messages array is answered by a
 # tool_result in the message after it (R13)

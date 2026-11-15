@@ -10,6 +10,24 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.3.2 (micro) - 2026-11-15
+
+- `--github` is shorthand for the long form,
+  `--mcp https://api.githubcopilot.com/mcp/x/repos/readonly`: GitHub's MCP
+  server, repos toolset, read-only. It sends that request byte for byte,
+  and `--mcp-tool api.githubcopilot.com:<tool>` narrows it. GitHub refuses
+  requests without a token on every path, so `--github` requires
+  `ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM` and exits 2 before any
+  request without it. `ASK_CLAUDE_MCP_TOKEN` does not stand in for it.
+  `.env.example` lists the variable.
+- Two `--mcp` URLs on one host now exit 2 before any request. This includes
+  another path, a port, the host in another case, and `--github` beside an
+  `--mcp` on `api.githubcopilot.com`. The request names each server after
+  its host and reads its token from the host's variable, so both would go
+  out under one name and share one token.
+- Adopting needs nothing, unless a command passes two `--mcp` URLs on one
+  host. That now exits 2; keep one of them.
+
 ## 0.3.1 (micro) - 2026-11-10
 
 - `--web` sends `web_search_20260318` and `web_fetch_20260318`, the

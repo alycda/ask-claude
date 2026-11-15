@@ -167,6 +167,81 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# --github is shorthand for the long form: the request it sends is the one
+# `--mcp https://api.githubcopilot.com/mcp/x/repos/readonly` sends with the
+# same token, byte for byte. It requires that server's own variable.
+GH_URL=https://api.githubcopilot.com/mcp/x/repos/readonly
+
+@test "one-shot: --github sends exactly the request of its long form" {
+    export ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH
+    replay mcp --github "ping" >/dev/null 2>&1
+    mv "$TMP/requests.jsonl" "$TMP/short.jsonl"
+    replay mcp --mcp "$GH_URL" "ping" >/dev/null 2>&1
+    assert_golden "$TMP/requests.jsonl" "$TMP/short.jsonl"
+    jq -e --arg u "$GH_URL" '.mcp_servers == [{type: "url", url: $u, name: "api-githubcopilot-com", authorization_token: "tok_GH"}]
+        and .tools == [{type: "mcp_toolset", mcp_server_name: "api-githubcopilot-com"}]' "$TMP/short.jsonl"
+}
+
+@test "one-shot: --github sends the MCP beta header, like --mcp" {
+    export ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH
+    ASK_CLAUDE_BETA_LOG="$TMP/betas" replay mcp --github "ping" >/dev/null 2>&1
+    grep -q 'mcp-client-2025-11-20' "$TMP/betas"
+}
+
+@test "one-shot: --github without its variable exits 2 before any request, naming it" {
+    unset ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM
+    run --separate-stderr replay mcp --github "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+    # the shared variable does not stand in for it
+    run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+        "$BIN" --github "ping"
+    [ "$status" -eq 2 ]
+    [ ! -e "$TMP/requests.jsonl" ]
+    # nor does an empty one
+    run --separate-stderr env ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM= ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+        "$BIN" --github "ping"
+    [ "$status" -eq 2 ]
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: --github beside another --mcp: each server gets only its own token" {
+    export ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH
+    replay mcp --mcp https://mcp.deepwiki.com/mcp --github "ping" >/dev/null 2>&1
+    jq -e --arg u "$GH_URL" '.mcp_servers | map(.url) == ["https://mcp.deepwiki.com/mcp", $u]' "$TMP/requests.jsonl"
+    jq -e '(.mcp_servers[0] | has("authorization_token") | not) and .mcp_servers[1].authorization_token == "tok_GH"' "$TMP/requests.jsonl"
+}
+
+@test "one-shot: --mcp-tool narrows --github like any --mcp server" {
+    export ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH
+    replay mcp --github --mcp-tool api.githubcopilot.com:get_file_contents "ping" >/dev/null 2>&1
+    jq -e '.tools[0] == {type: "mcp_toolset", mcp_server_name: "api-githubcopilot-com",
+        default_config: {enabled: false}, configs: {get_file_contents: {enabled: true}}}' "$TMP/requests.jsonl"
+}
+
+# One server per host: request.jq names a server after its host and reads
+# its token from the host's variable, so a second URL on a host would go out
+# under the same name and share the token.
+@test "one-shot: --github beside an --mcp on api.githubcopilot.com exits 2 before any request" {
+    export ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH
+    run --separate-stderr replay mcp --mcp https://api.githubcopilot.com/mcp/ --github "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'on the host of another --mcp server (or of --github)' <<<"$stderr"
+    grep -qF "$GH_URL" <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: two --mcp on one host exit 2, whatever the path, port or case" {
+    local second
+    for second in https://mcp.example.com/other https://mcp.example.com:8443/mcp https://MCP.Example.COM/mcp https://mcp-example.com/mcp; do
+        run --separate-stderr replay mcp --mcp https://mcp.example.com/mcp --mcp "$second" "ping"
+        [ "$status" -eq 2 ]
+        grep -qF -- "--mcp $second is on the host of another --mcp server" <<<"$stderr"
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
 # A pause_turn continuation without skills sends back the container the
 # previous round ran in (dynamic web filtering runs code there); the first
 # request of a turn sends none.

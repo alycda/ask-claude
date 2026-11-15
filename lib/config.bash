@@ -4,10 +4,12 @@
 # state directory's. Top-level code: sourced by ask-claude, it runs in place,
 # as it did in the single file.
 #
-# reads:   usage_provider usage_base_url usage_mcp usage_mcp_tool usage_max_tokens
-#          ASK_CLAUDE_MCP_TOKEN ANTHROPIC_API_KEY; STATE (ask-claude)
+# reads:   usage_provider usage_base_url usage_mcp usage_mcp_tool usage_github
+#          usage_max_tokens ASK_CLAUDE_MCP_TOKEN ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM
+#          ANTHROPIC_API_KEY; STATE (ask-claude)
 # sets:    BASE_URL API HOST (read by common, messages, agent-api, agent-turn),
-#          mcp_count mcp_vars mcp_hosts h t state_owner
+#          usage_mcp (--github appends to it; read by messages),
+#          GITHUB_MCP_URL mcp_count mcp_vars mcp_hosts h t state_owner
 # defines: need_key ascii_lower
 # calls:   die (ask-claude)
 
@@ -41,8 +43,29 @@ API="${BASE_URL%/}/v1/messages"
 HOST="${BASE_URL#*://}"
 HOST="${HOST%%/*}"
 
+# --github: shorthand for the long form, --mcp GITHUB_MCP_URL: GitHub's MCP
+# server with its repos toolset, read-only. It adds that URL to the --mcp
+# list here, before every --mcp check, so from then on it is one --mcp server
+# like any other (its token variable, --mcp-tool, the duplicate-host check).
+# GitHub answers 401 to a request without a token on every path, /readonly
+# included, so the shorthand requires the server's own variable: exit 2 here,
+# not a failed request. ASK_CLAUDE_MCP_TOKEN does not count: the shorthand
+# names one variable, and it is the one it reads.
+readonly GITHUB_MCP_URL=https://api.githubcopilot.com/mcp/x/repos/readonly
+if [ "${usage_github:-}" = true ]; then
+  [ -n "${ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM:-}" ] ||
+    die "--github needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM, a GitHub token (a fine-grained token with public repositories read-only is enough)"
+  usage_mcp="${usage_mcp:+$usage_mcp }$GITHUB_MCP_URL"
+fi
+
 # --mcp: servers the model may call through the MCP connector; https only,
 # like the docs require, and checked here so a typo is exit 2, not a 400.
+# One server per host: lib/request.jq names a server after its host and
+# reads its token from the host's variable, so two URLs on one host (two
+# paths, a port, the host in another case, or --github beside an --mcp on
+# api.githubcopilot.com) would go out under one name, which the API takes
+# once, and share one token. The variable is the key: it folds everything
+# the name folds, and case too.
 mcp_count=0 mcp_vars=""
 for v in ${usage_mcp:-}; do
   case "$v" in https://*) ;; *) die "--mcp takes https URLs, got: $v" ;; esac
@@ -52,6 +75,10 @@ for v in ${usage_mcp:-}; do
   h=${v#https://}
   h=${h%%[/:]*}
   h=${h//[!A-Za-z0-9_]/_}
+  case "$mcp_vars " in
+  *" ASK_CLAUDE_MCP_TOKEN_${h^^} "*)
+    die "--mcp $v is on the host of another --mcp server (or of --github): the API takes one server per name, and request.jq names a server after its host; give one URL per host" ;;
+  esac
   mcp_vars+=" ASK_CLAUDE_MCP_TOKEN_${h^^}"
 done
 # --mcp-tool host:tool: that server offers only the tools named (lib/request.jq

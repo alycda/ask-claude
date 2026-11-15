@@ -45,6 +45,31 @@ ask-claude --mcp https://mcp.deepwiki.com/mcp \
   --mcp-tool mcp.deepwiki.com:ask_question "how does tokio schedule tasks?"
 ```
 
+One server per host: two `--mcp` URLs on one host (another path, a port,
+the host in another case) exit 2. The request names each server after its
+host and reads its token from the host's variable, so the two would go out
+under one name, which the API takes once, and share one token.
+
+`--github` is shorthand for the long form, nothing more:
+
+```sh
+ask-claude --github "…"
+# is
+ask-claude --mcp https://api.githubcopilot.com/mcp/x/repos/readonly "…"
+```
+
+That is GitHub's MCP server with its repos toolset (files, commits,
+branches, code search), read-only. GitHub refuses a request without a token
+on every path, read-only and public repositories included, so `--github`
+requires `ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM` and exits 2 without
+it; `ASK_CLAUDE_MCP_TOKEN` does not stand in. A fine-grained token with
+"Public repositories (read-only)" access and no permissions is enough for
+public code. The token goes to Anthropic in the request, and Anthropic calls
+GitHub with it, so give it no more than that. From there it is one `--mcp`
+server like any other: `--mcp-tool api.githubcopilot.com:get_file_contents`
+narrows it, and the stream shows `(mcp api-githubcopilot-com) `. For other
+toolsets or write access, use the long form with another path.
+
 `--advisor <model>` lets the model consult another model mid-reply (the
 advisor tool, a server tool in beta): at most 3 calls a turn, each billed at
 the advisor model's rates and shown in the footer as `advisor=<model> in=…
@@ -68,6 +93,7 @@ one, and `/quit` exits and prints the command to resume it.
 | `ASK_CLAUDE_BETA_LOG` | testing: append each request's `anthropic-beta` header value to this file |
 | `ASK_CLAUDE_MCP_TOKEN` | authorization token for a lone `--mcp` server; refused with several |
 | `ASK_CLAUDE_MCP_TOKEN_<HOST>` | authorization token for the `--mcp` server at that host only |
+| `ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM` | the GitHub token `--github` requires (the `<HOST>` variable of its server) |
 | `ASK_CLAUDE_EVENTS` | `off` turns off the event log (see "Events on disk") |
 
 Nothing else is read.

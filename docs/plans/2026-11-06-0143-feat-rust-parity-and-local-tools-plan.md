@@ -737,7 +737,7 @@ Dependencies outside the units:
 | U7 | Parity gate and 1.0.0 (step R8) | `justfile`, `docs/plan.md`, `README.md`, `CHANGELOG.md` | U1, U6, U8, U9 |
 | U8 | `ANTHROPIC_BASE_URL` in both versions | `ask-claude`, `rust/src/cli.rs`, `tests/record-session.sh` | U4 |
 | U9 | Bidi controls in `safe`, bash then Rust | `ask-claude`, `lib/*.jq`, `CONCEPTS.md`, `CODING_STANDARDS.md`, `rust/src/lib.rs` | U3 |
-| U10 | Tool runner and gate | `rust/src/lib.rs` (tools), `rust/tests/tools.rs`, `tests/unit/tools-gate.bats`, `README.md` | U6, U8, U9 |
+| U10 | Tool runner and gate | `rust/src/tools.rs`, `rust/tests/tools.rs`, `README.md` | U6, U8, U9 |
 | U11 | Messages tool loop, fixtures, tool loop gate | `rust/src/lib.rs`, `ask-claude`, `tests/fixtures/sse/tools/`, `tests/unit/tools.bats`, `README.md`, `CODING_STANDARDS.md` | U10 |
 | U13 | Skills index, `skill` tool, discovery | `rust/src/lib.rs`, `tests/unit/skills-local.bats`, `tests/fixtures/skills/` | U11 |
 | U14 | Plugins, commands, the coding-tutor gate, 1.1.0 | `rust/src/lib.rs`, `mise.toml`, `tests/unit/plugins.bats`, `CHANGELOG.md` | U13 |
@@ -1044,14 +1044,19 @@ Dependencies outside the units:
 - **Requirements:** R10, R11, R12.
 - **Dependencies:** U6, U8, U9; the 1.0.0 version commit (U7) may land after
   this unit starts.
-- **Files:** `rust/src/lib.rs`, `rust/tests/tools.rs`,
-  `tests/unit/tools-gate.bats`, `README.md`.
+- **Files:** `rust/src/tools.rs` (its scaffold lands with the test commit),
+  `rust/tests/tools.rs`, `README.md`.
 - **Approach:** The gate order and grants of KTD9 and the bash and editor
   runners of KTD10; the README gains the boundary statement, the confirmation
   order and the child's environment allowlist. The `skill` tool is declared and
-  wired in U13. Unit tests cover the runner in-process, and the bats file,
-  tagged `rust-only`, covers the gate through the binary with
-  `ASK_CLAUDE_CONFIRM` and piped stdin.
+  wired in U13. Unit tests cover the runner in-process. Everything the runner
+  reads from outside (the root, `$HOME`, the state directory, the parent
+  environment, the secrets, the bounds, the interrupt) comes in through one
+  config value, so a test sets each without touching the process's own
+  environment, which edition 2024 makes unsafe to write and parallel tests
+  would race on. The gate driven through the binary needs `--tools`, which
+  U11 adds, so those scenarios are U11's `tools.bats`; a bats file here could
+  not turn green on U10's feat commit.
 - **Execution note:** Build the confinement rules test-first; a symlink inside
   the root pointing outside is the first red test.
 - **Patterns to follow:** `session_confirm` wording; `agent-confirm.bats` for
@@ -1062,8 +1067,8 @@ Dependencies outside the units:
   - A command that prints the key from a file the test plants returns
     `[redacted]` in its place.
   - A two-line script whose first line is `cat` and second is `echo after`
-    returns `after`, and with two piped chat lines the second line is still sent
-    as the next user turn.
+    returns `after`. With two piped chat lines the second line is still sent as
+    the next user turn: through the binary, in U11.
   - `view` of `../x`, of an absolute path outside the root, and of a path whose
     last component is a symlink to a file outside the root is refused with the
     error flag and no file content in the result.
@@ -1085,8 +1090,10 @@ Dependencies outside the units:
   - `always` given for `bash` prints the warning once and does not cover the
     editor; a protected path, `Cargo.toml` and an enabled plugin's directory
     included, still prompts.
-- **Verification:** `cargo test tools` green; `tools-gate.bats` green through
-  `just test-rust`.
+  - A command runs in the repository root; `restart` is answered "Bash session
+    restarted" and runs nothing; with no `bash` on the child's `PATH` the
+    result is the error "bash not found"; a root at `$HOME` or `/` is refused.
+- **Verification:** `cargo test --test tools` green.
 
 ### U11. Messages tool loop, fixtures, tool loop gate
 
@@ -1112,7 +1119,12 @@ Dependencies outside the units:
      redacted (D4); the request golden for the tools-on body.
   5. The tool loop gate from its verifier commit, run and recorded.
 - **Execution note:** Record the fixture before writing the request golden, so
-  the beta-header assumption is checked by the wire.
+  the beta-header assumption is checked by the wire. The test commit carries
+  hand-written streams in `tests/fixtures/sse/tools/` (one call, two calls, a
+  call cut off by `max_tokens`), derived from `text.sse` like the refusal and
+  `pause_turn` ones, so the tests can be written before a key is spent; the
+  recording and the golden remain this unit's, before its feat commit. The
+  gate scenarios that need the binary, moved from U10, are in `tools.bats`.
 - **Patterns to follow:** The `pause_turn` loop in bash `call()`; `oneshot.bats`
   for the request log assertions.
 - **Test scenarios:**

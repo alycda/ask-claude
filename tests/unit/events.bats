@@ -60,6 +60,11 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     jq -e '.host=="localhost:8080"' "$(LOG)"
 }
 
+@test "events: the host is ANTHROPIC_BASE_URL's when the flag is not given" {
+    ANTHROPIC_BASE_URL=http://localhost:9/some/path replay text "ping" >/dev/null 2>&1
+    jq -e '.host=="localhost:9"' "$(LOG)"
+}
+
 @test "events: each pause_turn round is its own line, numbered from 0" {
     run --separate-stderr replay pause-turn "ping"
     # the single-file replay answers pause_turn every round: rounds 0..8
@@ -129,6 +134,17 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     diff <(sed 's/ [0-9]*s\]$/]/' "$TMP/err.0") <(sed 's/ [0-9]*s\]$/]/' "$TMP/err.1")
 }
 
+@test "events: a log at the ulimit -f size is skipped, and the process lives" {
+    replay text "ping" >/dev/null 2>&1
+    # 2 KiB: room for the replay and the chat, none for one more log line,
+    # so the append raises SIGXFSZ (the script appends from a subshell)
+    head -c 2048 /dev/zero >"$(LOG)"
+    run --separate-stderr bash -c 'ulimit -f 2 && ASK_CLAUDE_REPLAY="$1" exec "$2" ping' _ "$FIX/sse/text.sse" "$BIN"
+    [ "$status" -eq 0 ]
+    [ "$output" = "pong" ]
+    [ "$(wc -c <"$(LOG)")" -eq 2048 ]
+}
+
 @test "events: the log is private whatever the umask" {
     (umask 022 && replay text "ping" >/dev/null 2>&1)
     [ "$(stat -c %a "$(LOG)" 2>/dev/null || stat -f %Lp "$(LOG)")" = 600 ]
@@ -149,6 +165,13 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     [ "$status" -eq 0 ]
     [ "$(wc -l <<<"$output")" -eq 1 ]
     refute grep -q events <<<"$output"
+}
+
+
+@test "events: each turn of a chat is a line under that chat's name" {
+    printf 'hi\nagain\n/quit\n' | ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" >/dev/null 2>&1
+    [ "$(wc -l <"$(LOG)")" -eq 2 ]
+    jq -s -e --arg c "$(history_name)" 'all(.chat == $c and .kind == "messages" and .round == 0)' "$(LOG)"
 }
 
 # ---- Managed Agents sessions ---------------------------------------------
@@ -272,6 +295,15 @@ events_fixture_log() {
     run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/untyped.sse" "$BIN" "ping"
     [ "$status" -eq 1 ]
     jq -e '.error=="unknown"' "$(LOG)"
+}
+
+@test "events: an error type that ends in newlines is logged without them" {
+    # the script reads error_kind through $(...), which drops trailing
+    # newlines before event.jq tests the type's shape
+    printf '{"error":{"type":"overloaded_error\\n\\n","message":"x"}}\n' >"$TMP/newline.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/newline.sse" "$BIN" "ping"
+    [ "$status" -eq 1 ]
+    jq -e '.error=="overloaded_error"' "$(LOG)"
 }
 
 @test "events: a session events POST answered with something not JSON is unreadable" {

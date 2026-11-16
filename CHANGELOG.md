@@ -10,6 +10,34 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.3.2 (meso) - 2026-11-14
+
+- A Rust build of ask-claude, at parity with the script: the same
+  `#USAGE` interface (`just parity`: no breaking change) and the same
+  bats suite green on both. `cargo install --locked --path rust` puts it
+  on `PATH`; `just ask` and the completions use it. The script stays
+  and is still the reference. The Rust build alone adds `-p openai`, the
+  chat-completions shape for any OpenAI-compatible API (`OPENAI_API_KEY`,
+  `OPENAI_BASE_URL`, `OPENAI_MODEL`). One difference from the script is
+  intentional: in a session, `a(lways)` allows the rest of the run's
+  calls of that one tool, where the script's allows every tool.
+- `ANTHROPIC_BASE_URL` is the API root when `--base-url` is not given,
+  under the same https-or-localhost rule. When it points anywhere other
+  than `https://api.anthropic.com`, one line on stderr names the host.
+- A session's tool approval prompt is asked on the terminal it reads the
+  answer from, so `2> file` no longer sends the question to the file
+  while a `y` typed on the terminal still approves the call. Keys typed
+  before the prompt appears are discarded, so they can no longer answer
+  a question nobody had seen yet.
+- The bidi formatting characters (U+202A to U+202E, U+2066 to U+2069)
+  no longer reach the terminal from a reply, an error or an approval
+  prompt; the prompt shows them and other invisible characters escaped.
+- Adopting: check whether `ANTHROPIC_BASE_URL` is set in your
+  environment, for instance for another tool. If it is, ask-claude now
+  sends its requests there too, and exits 2 if it is not https (or http
+  on localhost). Unset it for ask-claude, or pass `--base-url`, to keep
+  the default. Without it set, nothing changes.
+
 ## 0.3.1 (micro) - 2026-11-10
 
 - `--web` sends `web_search_20260318` and `web_fetch_20260318`, the

@@ -44,17 +44,79 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+@test "one-shot: an empty -f is no file, the prompt alone" {
+    run --separate-stderr replay text -f '' "summarize"
+    [ "$status" -eq 0 ]
+    [ "$output" = "pong" ]
+    jq -e '.messages[0].content=="summarize"' "$TMP/requests.jsonl"
+}
+
 @test "one-shot: API error exits 1 and drops the user turn" {
     run --separate-stderr replay error "ping"
     [ "$status" -eq 1 ]
     grep -q 'API error: model: claude-does-not-exist' <<<"$stderr"
-    for f in $(history_file 2>/dev/null); do jq -e 'length==0' "$f"; done
+    # the turn is dropped and an empty Chat leaves no file, as in the script
+    [ "$(history_file 2>/dev/null | wc -l)" -eq 0 ]
+}
+
+# The script reads an error event's message as `$(jq -r '.error.message //
+# empty | safe')` and tests it with -n: one that is empty once safe has
+# dropped its control and bidi characters and `$(..)` its trailing newlines
+# is no error, and the reply is kept. One with text left is, newlines cut.
+@test "one-shot: an error event whose message safe leaves empty is no error" {
+    local m
+    for m in '""' '"\u0001\u0007"' '"\n\n"' '"‮"'; do
+        rm -rf "$XDG_STATE_HOME"
+        {
+            sed '/^event: message_stop/,$d' "$FIX/sse/text.sse"
+            printf 'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":%s}}\n\n' "$m"
+            sed -n '/^event: message_stop/,$p' "$FIX/sse/text.sse"
+        } >"$TMP/empty-error.sse"
+        run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/empty-error.sse" "$BIN" "ping"
+        [ "$status" -eq 0 ]
+        refute grep -q 'API error' <<<"$stderr"
+        jq -e 'length==2 and .[1].content[0].text=="pong"' "$(history_file)"
+    done
+    {
+        sed '/^event: message_stop/,$d' "$FIX/sse/text.sse"
+        printf 'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded\\n"}}\n\n'
+    } >"$TMP/error.sse"
+    # to a file: `run` would cut the trailing blank line this looks for
+    local rc=0
+    ASK_CLAUDE_REPLAY="$TMP/error.sse" "$BIN" "ping" >/dev/null 2>"$TMP/stderr" || rc=$?
+    [ "$rc" -eq 1 ]
+    printf 'ask-claude: API error: Overloaded\n' | cmp - "$TMP/stderr"
+}
+
+@test "one-shot: a tool input that is not JSON is an API error, whatever the stop reason" {
+    for stop in max_tokens end_turn; do
+        {
+            printf 'data: %s\n\n' '{"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":0}}}'
+            printf 'data: %s\n\n' '{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_FIXTURE01","name":"bash","input":{}}}'
+            printf 'data: %s\n\n' '{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\": \"ls"}}'
+            printf 'data: %s\n\n' '{"type":"content_block_stop","index":0}'
+            printf 'data: {"type":"message_delta","delta":{"stop_reason":"%s"},"usage":{"output_tokens":3}}\n\n' "$stop"
+            printf 'data: %s\n\n' '{"type":"message_stop"}'
+        } >"$TMP/cut.sse"
+        run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/cut.sse" "$BIN" "ping"
+        [ "$status" -eq 1 ]
+        [ "$(tail -n 1 <<<"$stderr")" = "ask-claude: API error: the reply could not be parsed" ]
+        [ "$(history_file 2>/dev/null | wc -l)" -eq 0 ]
+    done
 }
 
 @test "one-shot: refusal is reported with its category" {
     run --separate-stderr replay refusal "ping"
     [ "$status" -eq 0 ]
     grep -q '\[stopped: refusal cyber\]' <<<"$stderr"
+}
+
+@test "one-shot: a max_tokens stop is reported, and the cut reply is kept" {
+    run --separate-stderr replay max-tokens "count"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "1, 2, 3,"* ]]
+    grep -qxF '[stopped: max_tokens reached, raise --max-tokens]' <<<"$stderr"
+    jq -e 'length==2 and .[1].role=="assistant"' "$(history_file)"
 }
 
 @test "one-shot: pause_turn is continued, at most 8 rounds" {
@@ -160,6 +222,25 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
 @test "one-shot: an --mcp-tool that is not <host>:<tool> exits 2 before any request" {
     local bad
     for bad in ask_question mcp.deepwiki.com: :ask_question 'mcp.deepwiki.com:ask question' mcp.deepwiki.com:a:b; do
+        run --separate-stderr replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool "$bad" "ping"
+        [ "$status" -eq 2 ]
+        grep -q '<host>:<tool>' <<<"$stderr"
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+# config.bash splits --mcp and --mcp-tool on the default IFS, space, tab and
+# newline, and nothing else: a vertical tab or a carriage return is part of
+# the word. So the check counts one server where the request sends one, and
+# a tool name carrying one is no <host>:<tool>.
+@test "one-shot: --mcp and --mcp-tool split only where the script splits them" {
+    run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+        "$BIN" --mcp $'https://mcp.deepwiki.com/mcp\vhttps://mcp.example.com/sse' "ping"
+    [ "$status" -eq 0 ]
+    jq -e '.mcp_servers | length == 1 and .[0].authorization_token == "tok_SHARED"' "$TMP/requests.jsonl"
+    rm -f "$TMP/requests.jsonl"
+    local bad
+    for bad in $'mcp.deepwiki.com:ask_question\v' $'mcp.deepwiki.com:ask_question\r'; do
         run --separate-stderr replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool "$bad" "ping"
         [ "$status" -eq 2 ]
         grep -q '<host>:<tool>' <<<"$stderr"

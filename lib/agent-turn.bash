@@ -7,7 +7,7 @@
 # reads:   usage_agent usage_environment usage_budget usage_file usage_vault
 #          usage_repo usage_memory usage_local_mcp ASK_CLAUDE_REPLAY
 #          ASK_CLAUDE_CONFIRM ASK_CLAUDE_VERSION GITHUB_TOKEN; LIB STATE
-#          (ask-claude), BASE_URL (config), SAFE DOLLARS (common),
+#          (ask-claude), BASE_URL (config), SAFE FOR_APPROVAL DOLLARS (common),
 #          LOCAL_MCP_PID LOCAL_MCP_TOOLS (local-mcp)
 # sets:    turn stream_pid ALWAYS session_tty session_interrupted, the INT
 #          trap for a turn and the EXIT trap for the process
@@ -83,7 +83,14 @@ session_confirm() {
     echo deny
     return
   fi
-  IFS= read -r -p "allow $1 $2? [y/N/a(lways)] " answer </dev/tty || answer=""
+  # read -p prompts on stderr; the answer comes from /dev/tty, so the
+  # question goes there too, or `2> file` hides what a typed y approves.
+  # A /dev/tty that cannot be written fails the read: no answer, deny.
+  # First drop what was typed before the prompt, as tcflush would: whoever
+  # typed it had not seen this call. read -N on a terminal reads it
+  # uncooked, so a line with no Enter yet goes too, and restores the mode.
+  IFS= read -r -s -t 0.01 -N 4096 answer </dev/tty 2>/dev/null || :
+  IFS= read -r -p "allow $1 $2? [y/N/a(lways)] " answer </dev/tty 2>/dev/tty || answer=""
   case "$answer" in
   y | Y | yes) echo allow ;;
   a | A | always)
@@ -108,9 +115,11 @@ session_answer() {
     id=$(jq -r '.id // empty' <<<"$ask")
     [ -n "$id" ] || continue
     # name and input go to the terminal (the prompt and the status lines):
-    # safe, like every other API value printed; the id goes back unchanged
+    # safe, like every other API value printed; the id goes back unchanged.
+    # The input goes through for_approval first: a bidi or zero-width
+    # character in it is an escape on screen, never dropped or invisible.
     name=$(jq -r "$SAFE"'.name | tostring | safe' <<<"$ask")
-    input=$(jq -r "$SAFE"'.input | tojson | safe' <<<"$ask")
+    input=$(jq -r "$SAFE$FOR_APPROVAL"'.input | for_approval | safe' <<<"$ask")
     result=$(session_confirm "$name" "$input")
     [ "$result" = allow ] && echo "ask-claude: allowed $name ($input)" >&2
     [ "$result" = deny ] && [ -n "${ASK_CLAUDE_CONFIRM:-}" ] && echo "ask-claude: denied $name ($input): ASK_CLAUDE_CONFIRM=$ASK_CLAUDE_CONFIRM" >&2
@@ -132,7 +141,7 @@ session_answer() {
       continue
     fi
     shown=$(jq -r "$SAFE"'.name | tostring | safe' <<<"$use")
-    input=$(jq -r "$SAFE"'.input | tojson | safe' <<<"$use")
+    input=$(jq -r "$SAFE$FOR_APPROVAL"'.input | for_approval | safe' <<<"$use")
     result=$(session_confirm "local $shown" "$input")
     if [ "$result" = allow ]; then
       echo "ask-claude: allowed local $shown ($input)" >&2

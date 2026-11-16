@@ -16,11 +16,23 @@
         "jacobpfeifer.pfeifer-hurl",
         "jetmartin.bats",
         "jq-syntax-highlighting.jq-syntax-highlighting",
+        "rust-lang.rust-analyzer",
         "skellock.just",
+        "tamasfe.even-better-toml",
         "timonwong.shellcheck"
       ],
       "settings": {
-        "mise.configureExtensionsAutomatically": false
+        "files.exclude": {
+          "**/.git": true,
+          "**/.jj": true,
+          "**/.DS_Store": true,
+          "**/target": true,
+          "**/Thumbs.db": true
+        },
+        "mise.configureExtensionsAutomatically": false,
+        "search.exclude": {
+          "**/target": true
+        }
       }
     }
   },

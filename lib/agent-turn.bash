@@ -282,6 +282,9 @@ session_loop() {
 session_prereqs() {
   # resources: checked before any request, the API's own checks come after
   local v n=0
+  # the space-joined values split with globbing off, so a * ? [ in one cannot
+  # expand to file names (on again after the --memory loop)
+  set -f
   for v in ${usage_vault:-}; do
     [[ $v == vlt_* ]] || die "--vault takes vault ids (vlt_...), got: $v"
   done
@@ -289,6 +292,7 @@ session_prereqs() {
     [[ ${v%%:*} == memstore_* ]] || die "--memory takes memory store ids (memstore_...), with :ro for read-only, got: $v"
     n=$((n + 1))
   done
+  set +f
   [ "$n" -le 8 ] || die "--memory: a session takes at most 8 memory stores, got $n"
   if [ -n "${usage_repo:-}" ]; then
     [[ $usage_repo =~ ^(https://github\.com/)?[^/@]+/[^/@]+(@.+)?$ ]] || die "--repo takes owner/name[@branch] or a https://github.com URL, got: $usage_repo"

@@ -66,6 +66,10 @@ fi
 # api.githubcopilot.com) would go out under one name, which the API takes
 # once, and share one token. The variable is the key: it folds everything
 # the name folds, and case too.
+# usage joins a repeatable flag's values with spaces: they are split here,
+# with globbing off (set -f), so a value with * ? [ cannot expand to the
+# names of files in the current directory. On again after the --mcp-tool loop.
+set -f
 mcp_count=0 mcp_vars=""
 for v in ${usage_mcp:-}; do
   case "$v" in https://*) ;; *) die "--mcp takes https URLs, got: $v" ;; esac
@@ -107,6 +111,7 @@ for t in ${usage_mcp_tool:-}; do
   *) die "--mcp-tool $t names no --mcp server (hosts:${mcp_hosts% }); it would allow every tool, not only $h's ${t#*:}" ;;
   esac
 done
+set +f
 # A token is one server's credential: sent to several, each server's operator
 # would receive the others'. Refuse rather than drop it in silence.
 if [ "$mcp_count" -gt 1 ] && [ -n "${ASK_CLAUDE_MCP_TOKEN:-}" ]; then

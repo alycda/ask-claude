@@ -25,6 +25,11 @@ adds one, and `just check-effver` checks it against `VERSION`.
   `--mcp` on `api.githubcopilot.com`. The request names each server after
   its host and reads its token from the host's variable, so both would go
   out under one name and share one token.
+- The values of `--mcp`, `--mcp-tool`, `--vault` and `--memory` are no
+  longer glob-expanded against the current directory. These flags repeat,
+  and usage hands their values over joined with spaces. They were split with
+  globbing on, so a value containing `*`, `?` or `[` could turn into the
+  names of matching files.
 - Adopting needs nothing, unless a command passes two `--mcp` URLs on one
   host. That now exits 2; keep one of them.
 

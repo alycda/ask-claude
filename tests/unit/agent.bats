@@ -130,6 +130,19 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# usage hands a repeatable flag's values over space-joined, a value with
+# * ? [ in single quotes. Split with globbing on, 'vlt_*' (quotes included)
+# matched a file of that shape in the current directory, and the error named
+# the file.
+@test "resources: a --vault value is not glob-expanded against the current directory" {
+    mkdir "$TMP/cwd" && : > "$TMP/cwd/'vlt_GLOBBED'"
+    run --separate-stderr bash -c 'cd "$1" && shift && "$@"' _ "$TMP/cwd" \
+        env ASK_CLAUDE_REPLAY="$FIX/sessions/text.sse" "$BIN" agent --agent agent_x --environment env_x --vault 'vlt_*' "ping"
+    [ "$status" -eq 2 ]
+    grep -qF "got: 'vlt_*'" <<<"$stderr"
+    refute grep -q GLOBBED <<<"$stderr"
+}
+
 # bats test_tags=bash-only
 @test "resources: the token never goes on a command line" {
     refute grep -qE -- '--arg(json)? +token' "$BIN"

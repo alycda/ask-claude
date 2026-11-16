@@ -302,16 +302,22 @@ gh_replay() { ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH replay "$@"; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
-# config.bash splits --mcp and --mcp-tool on the default IFS, space, tab and
-# newline, and nothing else: a vertical tab or a carriage return is part of
-# the word. So the check counts one server where the request sends one, and
-# a tool name carrying one is no <host>:<tool>.
-@test "one-shot: --mcp and --mcp-tool split only where the script splits them" {
-    run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
-        "$BIN" --mcp $'https://mcp.deepwiki.com/mcp\vhttps://mcp.example.com/sse' "ping"
-    [ "$status" -eq 0 ]
-    jq -e '.mcp_servers | length == 1 and .[0].authorization_token == "tok_SHARED"' "$TMP/requests.jsonl"
-    rm -f "$TMP/requests.jsonl"
+# Each --mcp and --mcp-tool value is one entry, never split. config.bash used
+# to split them on the default IFS, so a vertical tab or a carriage return
+# stayed inside a word while a space split it; the check and the request had
+# to agree on that. Since 0.3.3 an --mcp URL with any whitespace or control
+# character exits 2 before any request, and a tool name carrying one is no
+# <host>:<tool>, so there is nothing left for them to disagree on.
+@test "one-shot: an --mcp or --mcp-tool value with whitespace or a control character is never split, it exits 2" {
+    local url
+    for url in $'https://mcp.deepwiki.com/mcp\vhttps://mcp.example.com/sse' $'https://mcp.deepwiki.com/mcp\rx' \
+        'https://mcp.deepwiki.com/mcp https://mcp.example.com/sse'; do
+        run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+            "$BIN" --mcp "$url" "ping"
+        [ "$status" -eq 2 ]
+        grep -q 'whitespace or a control character' <<<"$stderr"
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
     local bad
     for bad in $'mcp.deepwiki.com:ask_question\v' $'mcp.deepwiki.com:ask_question\r'; do
         run --separate-stderr replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool "$bad" "ping"
@@ -324,7 +330,7 @@ gh_replay() { ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH replay "$@"; }
 # usage quotes a repeatable flag's value when it has a character outside
 # shell-words' safe set (a query string's ? and &, a quote, $, *), and leaves
 # {a,b} bare. config.bash undoes exactly that quoting, without eval: before
-# 0.3.2 the quotes stayed on, and a quoted URL failed the https check.
+# 0.3.3 the quotes stayed on, and a quoted URL failed the https check.
 @test "one-shot: an --mcp URL with a query string reaches the request as typed" {
     url='https://mcp.supabase.com/mcp?project_ref=abc&read_only=true'
     ASK_CLAUDE_MCP_TOKEN_MCP_SUPABASE_COM=sbp_FIXTURE replay mcp --mcp "$url" --mcp-tool mcp.supabase.com:execute_sql "ping" >/dev/null 2>&1

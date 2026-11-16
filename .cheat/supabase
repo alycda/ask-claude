@@ -1,0 +1,7 @@
+---
+syntax: shell
+---
+
+supabase skill needs internet (The skill file's first recommendation is to check Supabase's online changelog)
+
+ASK_CLAUDE_MCP_TOKEN= ask-claude-rust --mcp https://mcp.supabase.com/mcp -s supabase/supabase-postgres-best-practices --web ..

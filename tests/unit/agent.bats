@@ -131,15 +131,17 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
 }
 
 # usage hands a repeatable flag's values over space-joined, a value with
-# * ? [ in single quotes. Split with globbing on, 'vlt_*' (quotes included)
-# matched a file of that shape in the current directory, and the error named
-# the file.
+# * ? [ in single quotes. Split with globbing on, 'nope*' (quotes included)
+# matched a file of that shape in the current directory, and the refusal
+# named the file instead of the value. The value is no vault id, so both
+# binaries refuse it; Rust gets it bare and never globbed.
 @test "resources: a --vault value is not glob-expanded against the current directory" {
-    mkdir "$TMP/cwd" && : > "$TMP/cwd/'vlt_GLOBBED'"
-    run --separate-stderr bash -c 'cd "$1" && shift && "$@"' _ "$TMP/cwd" \
-        env ASK_CLAUDE_REPLAY="$FIX/sessions/text.sse" "$BIN" agent --agent agent_x --environment env_x --vault 'vlt_*' "ping"
+    mkdir "$TMP/cwd" && : > "$TMP/cwd/'nopeGLOBBED'" && cd "$TMP/cwd"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sessions/text.sse" "$BIN" agent --agent agent_x --environment env_x --vault 'nope*' "ping"
     [ "$status" -eq 2 ]
-    grep -qF "got: 'vlt_*'" <<<"$stderr"
+    # the value as given (the script shows it in usage's quotes, Rust bare),
+    # never the name of the file it would match
+    grep -qF 'nope*' <<<"$stderr"
     refute grep -q GLOBBED <<<"$stderr"
 }
 

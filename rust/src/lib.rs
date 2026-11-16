@@ -189,7 +189,8 @@ fn request_args(
         skills,
         container_id: String::new(),
         web: r.web,
-        mcp: r.mcp.clone(),
+        // the checked list: --github's or --github_ro's URL included
+        mcp: cfg.mcp.clone(),
         mcp_token: std::env::var("ASK_CLAUDE_MCP_TOKEN").unwrap_or_default(),
         messages,
         tools: Vec::new(),
@@ -684,7 +685,8 @@ pub(crate) fn text(v: &serde_json::Value) -> String {
 }
 
 /// The host of `<scheme>://<host>...` (scheme lowercase letters), the host
-/// running up to the first of `stop`; jq's `capture("^[a-z]+://(?<h>[^/]+)")`.
+/// running up to the first of `stop`; jq's `capture("^[a-z]+://(?<h>[^/]+)")`,
+/// with `stop` the bracket's characters.
 fn url_host<'a>(url: &'a str, stop: &[char]) -> Option<&'a str> {
     let (scheme, rest) = url.split_once("://")?;
     if scheme.is_empty() || !scheme.bytes().all(|b| b.is_ascii_lowercase()) {

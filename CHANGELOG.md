@@ -10,6 +10,57 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.3.3 (meso) - 2026-11-16
+
+- `--github` and `--github_ro` are shorthands for the long form, for
+  GitHub's MCP server:
+  - `--github` is `--mcp https://api.githubcopilot.com/mcp/`: the default
+    toolsets, read and write.
+  - `--github_ro` is
+    `--mcp https://api.githubcopilot.com/mcp/x/repos/readonly`: the repos
+    toolset, read-only.
+
+  Each sends its long form's request byte for byte, and
+  `--mcp-tool api.githubcopilot.com:<tool>` narrows it. They are one
+  server, so both together exit 2. GitHub refuses requests without a token
+  on every path, so both require `ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM`
+  and exit 2 before any request without it. `ASK_CLAUDE_MCP_TOKEN` does not
+  stand in for it. `.env.example` lists the variable.
+- Two `--mcp` URLs on one host now exit 2 before any request. This includes
+  another path, a port, the host in another case, and `--github` or
+  `--github_ro` beside an `--mcp` on `api.githubcopilot.com`. The request names each server after
+  its host and reads its token from the host's variable, so both would go
+  out under one name and share one token.
+- An `--mcp` URL with a query string works, for example
+  `'https://mcp.supabase.com/mcp?project_ref=<ref>&read_only=true'`. It
+  used to exit 2 with `--mcp takes https URLs`. usage hands a repeatable
+  flag's values over joined with spaces. It shell-quotes any value with a
+  character outside its safe set (`?`, `&`, a quote, `$`, `*`), and the
+  quotes stayed on. `lib/config.bash` now undoes exactly that quoting for
+  `--mcp` and `--mcp-tool`, without `eval`, so nothing in a value expands.
+- An `--mcp` URL containing whitespace or a control character exits 2.
+  Each `--mcp` value is one URL; one value is no longer split into several
+  servers at its whitespace.
+- An `--mcp` host ends at the first `/`, `:`, `?` or `#`.
+  `https://host?x=1` is named after `host`, and its token is
+  `ASK_CLAUDE_MCP_TOKEN_HOST`.
+- The values of `--vault` and `--memory` are no longer glob-expanded
+  against the current directory. They were split with globbing on, so a
+  value containing `*`, `?` or `[` could turn into the names of matching
+  files.
+- The Rust build behaves the same in all of the above, so `just parity`
+  finds no breaking difference and the bats suite passes on both binaries.
+  It never had the quoting problem (clap hands it each value as given), but
+  it split a value at whitespace the way the script did, and now refuses
+  such a value instead.
+- Adopting: check commands and scripts that pass `--mcp`.
+  - Several URLs in one `--mcp` value used to become several servers and
+    now exit 2. Give each URL its own `--mcp`.
+  - Two `--mcp` URLs on one host now exit 2 before any request. They
+    already failed in 0.3.2, at the API (`mcp_servers: MCP server names
+    must be unique`, exit 1; checked live), so only the exit code and the
+    message change. Keep one of them.
+
 ## 0.3.2 (meso) - 2026-11-14
 
 - A Rust build of ask-claude, at parity with the script: the same

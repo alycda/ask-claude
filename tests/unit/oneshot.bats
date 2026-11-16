@@ -229,16 +229,124 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
-# config.bash splits --mcp and --mcp-tool on the default IFS, space, tab and
-# newline, and nothing else: a vertical tab or a carriage return is part of
-# the word. So the check counts one server where the request sends one, and
-# a tool name carrying one is no <host>:<tool>.
-@test "one-shot: --mcp and --mcp-tool split only where the script splits them" {
-    run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
-        "$BIN" --mcp $'https://mcp.deepwiki.com/mcp\vhttps://mcp.example.com/sse' "ping"
-    [ "$status" -eq 0 ]
-    jq -e '.mcp_servers | length == 1 and .[0].authorization_token == "tok_SHARED"' "$TMP/requests.jsonl"
-    rm -f "$TMP/requests.jsonl"
+# --github and --github_ro are shorthands for the long form: the request each
+# sends is the one `--mcp <its url>` sends with the same token, byte for
+# byte. --github is GitHub's default toolsets, read and write; --github_ro the
+# repos toolset, read-only. Each requires that server's own variable.
+GH_FLAGS=(--github --github_ro)
+GH_URLS=(https://api.githubcopilot.com/mcp/ https://api.githubcopilot.com/mcp/x/repos/readonly)
+# gh_replay: replay with the GitHub variable set for that call only (an
+# export in a test reads to shellcheck as a change lost in bats's subshell)
+gh_replay() { ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH replay "$@"; }
+
+@test "one-shot: --github and --github_ro send exactly the request of their long forms" {
+    local i
+    for i in 0 1; do
+        rm -f "$TMP/requests.jsonl"
+        gh_replay mcp "${GH_FLAGS[i]}" "ping" >/dev/null 2>&1
+        mv "$TMP/requests.jsonl" "$TMP/short.jsonl"
+        gh_replay mcp --mcp "${GH_URLS[i]}" "ping" >/dev/null 2>&1
+        assert_golden "$TMP/requests.jsonl" "$TMP/short.jsonl"
+        jq -e --arg u "${GH_URLS[i]}" '.mcp_servers == [{type: "url", url: $u, name: "api-githubcopilot-com", authorization_token: "tok_GH"}]
+            and .tools == [{type: "mcp_toolset", mcp_server_name: "api-githubcopilot-com"}]' "$TMP/short.jsonl"
+    done
+}
+
+@test "one-shot: --github and --github_ro send the MCP beta header, like --mcp" {
+    local f
+    for f in "${GH_FLAGS[@]}"; do
+        rm -f "$TMP/betas"
+        ASK_CLAUDE_BETA_LOG="$TMP/betas" gh_replay mcp "$f" "ping" >/dev/null 2>&1
+        grep -q 'mcp-client-2025-11-20' "$TMP/betas"
+    done
+}
+
+@test "one-shot: --github or --github_ro without its variable exits 2 before any request, naming flag and variable" {
+    local f
+    for f in "${GH_FLAGS[@]}"; do
+        run --separate-stderr env -u ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+            "$BIN" "$f" "ping"
+        [ "$status" -eq 2 ]
+        grep -qF -- "$f needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM" <<<"$stderr"
+        # the shared variable does not stand in for it
+        run --separate-stderr env -u ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+            "$BIN" "$f" "ping"
+        [ "$status" -eq 2 ]
+        # nor does an empty one
+        run --separate-stderr env ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM= ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+            "$BIN" "$f" "ping"
+        [ "$status" -eq 2 ]
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: --github and --github_ro together exit 2 before any request" {
+    run --separate-stderr gh_replay mcp --github --github_ro "ping"
+    [ "$status" -eq 2 ]
+    grep -qF -- '--github and --github_ro are one server' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: --github or --github_ro beside another --mcp: each server gets only its own token" {
+    local i
+    for i in 0 1; do
+        rm -f "$TMP/requests.jsonl"
+        gh_replay mcp --mcp https://mcp.deepwiki.com/mcp "${GH_FLAGS[i]}" "ping" >/dev/null 2>&1
+        jq -e --arg u "${GH_URLS[i]}" '.mcp_servers | map(.url) == ["https://mcp.deepwiki.com/mcp", $u]' "$TMP/requests.jsonl"
+        jq -e '(.mcp_servers[0] | has("authorization_token") | not) and .mcp_servers[1].authorization_token == "tok_GH"' "$TMP/requests.jsonl"
+    done
+}
+
+@test "one-shot: --mcp-tool narrows --github and --github_ro like any --mcp server" {
+    local f
+    for f in "${GH_FLAGS[@]}"; do
+        rm -f "$TMP/requests.jsonl"
+        gh_replay mcp "$f" --mcp-tool api.githubcopilot.com:get_file_contents "ping" >/dev/null 2>&1
+        jq -e '.tools[0] == {type: "mcp_toolset", mcp_server_name: "api-githubcopilot-com",
+            default_config: {enabled: false}, configs: {get_file_contents: {enabled: true}}}' "$TMP/requests.jsonl"
+    done
+}
+
+# One server per host: request.jq names a server after its host and reads
+# its token from the host's variable, so a second URL on a host would go out
+# under the same name and share the token.
+@test "one-shot: --github or --github_ro beside an --mcp on api.githubcopilot.com exits 2 before any request" {
+    local i
+    for i in 0 1; do
+        run --separate-stderr gh_replay mcp --mcp https://api.githubcopilot.com/mcp/x/issues "${GH_FLAGS[i]}" "ping"
+        [ "$status" -eq 2 ]
+        grep -qF 'on the host of another --mcp server (or of --github or --github_ro)' <<<"$stderr"
+        grep -qF "${GH_URLS[i]}" <<<"$stderr"
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: two --mcp on one host exit 2, whatever the path, port or case" {
+    local second
+    for second in https://mcp.example.com/other https://mcp.example.com:8443/mcp https://MCP.Example.COM/mcp https://mcp-example.com/mcp; do
+        run --separate-stderr replay mcp --mcp https://mcp.example.com/mcp --mcp "$second" "ping"
+        [ "$status" -eq 2 ]
+        grep -qF -- "--mcp $second is on the host of another --mcp server" <<<"$stderr"
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+# Each --mcp and --mcp-tool value is one entry, never split. config.bash used
+# to split them on the default IFS, so a vertical tab or a carriage return
+# stayed inside a word while a space split it; the check and the request had
+# to agree on that. Since 0.3.3 an --mcp URL with any whitespace or control
+# character exits 2 before any request, and a tool name carrying one is no
+# <host>:<tool>, so there is nothing left for them to disagree on.
+@test "one-shot: an --mcp or --mcp-tool value with whitespace or a control character is never split, it exits 2" {
+    local url
+    for url in $'https://mcp.deepwiki.com/mcp\vhttps://mcp.example.com/sse' $'https://mcp.deepwiki.com/mcp\rx' \
+        'https://mcp.deepwiki.com/mcp https://mcp.example.com/sse'; do
+        run --separate-stderr env ASK_CLAUDE_MCP_TOKEN=tok_SHARED ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+            "$BIN" --mcp "$url" "ping"
+        [ "$status" -eq 2 ]
+        grep -q 'whitespace or a control character' <<<"$stderr"
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
     local bad
     for bad in $'mcp.deepwiki.com:ask_question\v' $'mcp.deepwiki.com:ask_question\r'; do
         run --separate-stderr replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool "$bad" "ping"
@@ -246,6 +354,52 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
         grep -q '<host>:<tool>' <<<"$stderr"
     done
     [ ! -e "$TMP/requests.jsonl" ]
+}
+
+# usage quotes a repeatable flag's value when it has a character outside
+# shell-words' safe set (a query string's ? and &, a quote, $, *), and leaves
+# {a,b} bare. config.bash undoes exactly that quoting, without eval: before
+# 0.3.3 the quotes stayed on, and a quoted URL failed the https check.
+@test "one-shot: an --mcp URL with a query string reaches the request as typed" {
+    url='https://mcp.supabase.com/mcp?project_ref=abc&read_only=true'
+    ASK_CLAUDE_MCP_TOKEN_MCP_SUPABASE_COM=sbp_FIXTURE replay mcp --mcp "$url" --mcp-tool mcp.supabase.com:execute_sql "ping" >/dev/null 2>&1
+    jq -e --arg u "$url" '.mcp_servers == [{type: "url", url: $u, name: "mcp-supabase-com", authorization_token: "sbp_FIXTURE"}]
+        and .tools[0].configs == {execute_sql: {enabled: true}}' "$TMP/requests.jsonl"
+}
+
+@test "one-shot: --mcp values go out verbatim, and nothing in them expands" {
+    # bait for https://d.example/*: a glob with slashes matches only through
+    # directories, so expanded it would become .../GLOBBED and fail the jq
+    # below. The 'https: twin catches a glob on the value usage still quotes.
+    mkdir -p "$TMP/cwd/https:/d.example" "$TMP/cwd/'https:/d.example"
+    : > "$TMP/cwd/https:/d.example/GLOBBED" && : > "$TMP/cwd/'https:/d.example/GLOBBED'" && cd "$TMP/cwd"
+    # shellcheck disable=SC2016  # the $(...) is a URL's text, never to run
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" \
+        --mcp 'https://a.example/{x,y}' --mcp "https://b.example/it's" --mcp 'https://c.example/$(touch${IFS}PWNED)' \
+        --mcp 'https://d.example/*' --mcp 'https://e.example/a\b' "ping"
+    [ "$status" -eq 0 ]
+    jq -e '.mcp_servers | map(.url) == ["https://a.example/{x,y}", "https://b.example/it'"'"'s",
+        "https://c.example/$(touch${IFS}PWNED)", "https://d.example/*", "https://e.example/a\\b"]' "$TMP/requests.jsonl"
+    [ ! -e "$TMP/cwd/PWNED" ]
+}
+
+@test "one-shot: an --mcp URL with whitespace exits 2 before any request" {
+    run --separate-stderr replay mcp --mcp 'https://a.example/b c' "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'whitespace or a control character' <<<"$stderr"
+    run --separate-stderr replay mcp --mcp $'https://a.example/b\tc' "ping"
+    [ "$status" -eq 2 ]
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: an --mcp host ends at ? and #, for the name, the token and --mcp-tool" {
+    ASK_CLAUDE_MCP_TOKEN_MCP_EXAMPLE_COM=tok_Q replay mcp --mcp 'https://mcp.example.com?x=1' --mcp 'https://mcp.deepwiki.com#f' \
+        --mcp-tool mcp.example.com:search "ping" >/dev/null 2>&1
+    jq -e '.mcp_servers | map(.name) == ["mcp-example-com", "mcp-deepwiki-com"]' "$TMP/requests.jsonl"
+    jq -e '.mcp_servers[0].authorization_token == "tok_Q" and .tools[0].configs == {search: {enabled: true}}' "$TMP/requests.jsonl"
+    run --separate-stderr replay mcp --mcp https://mcp.example.com/mcp --mcp 'https://mcp.example.com?x=1' "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'on the host of another --mcp server' <<<"$stderr"
 }
 
 # A pause_turn continuation without skills sends back the container the

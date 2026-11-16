@@ -10,7 +10,7 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
-## 0.3.3 (micro) - 2026-11-16
+## 0.3.3 (meso) - 2026-11-16
 
 - `--github` and `--github_ro` are shorthands for the long form, for
   GitHub's MCP server:
@@ -53,11 +53,13 @@ adds one, and `just check-effver` checks it against `VERSION`.
   It never had the quoting problem (clap hands it each value as given), but
   it split a value at whitespace the way the script did, and now refuses
   such a value instead.
-- Adopting needs nothing, unless a command does one of these:
-  - passes two `--mcp` URLs on one host, which now exits 2; keep one of
-    them;
-  - passes several URLs in one `--mcp` value, which now exits 2; give each
-    URL its own `--mcp`.
+- Adopting: check commands and scripts that pass `--mcp`.
+  - Several URLs in one `--mcp` value used to become several servers and
+    now exit 2. Give each URL its own `--mcp`.
+  - Two `--mcp` URLs on one host now exit 2 before any request. They
+    already failed in 0.3.2, at the API (`mcp_servers: MCP server names
+    must be unique`, exit 1; checked live), so only the exit code and the
+    message change. Keep one of them.
 
 ## 0.3.2 (meso) - 2026-11-14
 

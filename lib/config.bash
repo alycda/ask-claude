@@ -6,13 +6,13 @@
 #
 # reads:   usage_provider usage_base_url usage_mcp usage_mcp_tool usage_github
 #          usage_max_tokens ASK_CLAUDE_MCP_TOKEN ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM
-#          ANTHROPIC_API_KEY; STATE (ask-claude)
+#          ANTHROPIC_API_KEY ANTHROPIC_BASE_URL; STATE (ask-claude)
 # sets:    BASE_URL API HOST (read by common, messages, agent-api, agent-turn),
 #          usage_mcp usage_mcp_tool (unquoted, space-joined; --github adds
 #          to the first; read by messages), USAGE_WORDS mcp_urls mcp_tools
-#          GITHUB_MCP_URL mcp_count mcp_vars mcp_hosts h t state_owner
+#          GITHUB_MCP_URL base_url_from mcp_count mcp_vars mcp_hosts h t state_owner
 # defines: need_key ascii_lower usage_words
-# calls:   die (ask-claude)
+# calls:   die (ask-claude), safe_text (common)
 
 # Providers. The bash version speaks the Messages API only; the OpenAI
 # chat-completions shape (OpenAI, Venice at its own base URL) is the Rust
@@ -29,13 +29,23 @@ esac
 # is on the whole authority: "http://localhost:@example.com" starts like
 # localhost, but curl reads "localhost:" as user info and connects to
 # example.com. No API root carries user info, so any "@" is refused.
+# Without the flag, usage takes ANTHROPIC_BASE_URL (env= in the spec), the
+# official SDK's name, under the same gate; the provider check above keeps
+# it to -p anthropic. usage does not say which of the two the value came
+# from, so a value equal to the variable's counts as the variable's: they
+# differ only when the flag repeats the variable, and then what the
+# messages below say is still true. The variable is not typed at this
+# prompt and may carry terminal codes, so what they print of the root goes
+# through safe.
 BASE_URL="${usage_base_url:-https://api.anthropic.com}"
+base_url_from=--base-url
+[ -z "${ANTHROPIC_BASE_URL:-}" ] || [ "$BASE_URL" != "$ANTHROPIC_BASE_URL" ] || base_url_from=ANTHROPIC_BASE_URL
 case "$BASE_URL" in
-*@*) die "--base-url must not carry user info (an @), got: $BASE_URL" ;;
+*@*) die "$base_url_from must not carry user info (an @), got: $(safe_text "$BASE_URL")" ;;
 https://*) ;;
 *)
   [[ $BASE_URL =~ ^http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/.*)?$ ]] ||
-    die "--base-url must be https:// (or http:// on localhost), got: $BASE_URL"
+    die "$base_url_from must be https:// (or http:// on localhost), got: $(safe_text "$BASE_URL")"
   ;;
 esac
 # shellcheck disable=SC2034  # read by lib/messages.bash
@@ -43,6 +53,11 @@ API="${BASE_URL%/}/v1/messages"
 # the event log records where requests went, never the path or a query
 HOST="${BASE_URL#*://}"
 HOST="${HOST%%/*}"
+# The variable is often exported for other tools, and the key goes where it
+# points: a root from it that is not the default is said once, on stderr.
+if [ "$base_url_from" = ANTHROPIC_BASE_URL ] && [ "${BASE_URL%/}" != https://api.anthropic.com ]; then
+  echo "ask-claude: ANTHROPIC_BASE_URL is set; requests go to $(safe_text "$HOST")" >&2
+fi
 
 # usage_words <joined>: the values of a repeatable flag, into the array
 # USAGE_WORDS. usage joins them with spaces and quotes each the way the

@@ -20,6 +20,11 @@ setup() {
     TMP="$(mktemp -d)"
     export XDG_STATE_HOME="$TMP/state"
     export ANTHROPIC_API_KEY="sk-ant-test-not-a-key"
+    # the API root comes from --base-url or the test, never from the shell
+    # that runs the suite: an exported SDK variable would move every request;
+    # the same for -p openai's root, key and model (`just test-openai` reads
+    # them from .env, which a shell may have exported)
+    unset ANTHROPIC_BASE_URL OPENAI_BASE_URL OPENAI_API_KEY OPENAI_MODEL
 }
 
 teardown() {
@@ -44,15 +49,24 @@ assert_golden() {
 # under test. The script is that file itself (usage parses its header
 # comments). The Rust binary prints its spec with --usage-spec; it is
 # written under the same name, ask-claude, because usage names the spec
-# after the file and the tests match on that name.
+# after the file and the tests match on that name. It is written once per
+# test, and a binary that prints no spec is named on stderr and prints no
+# path, so usage fails on the empty -f instead of parsing a partial file.
 spec_file() {
     if head -c 64 "$BIN" | grep -q '^#!.*usage'; then
         printf '%s\n' "$BIN"
-    else
-        mkdir -p "$TMP/spec"
-        "$BIN" --usage-spec >"$TMP/spec/ask-claude"
-        printf '%s\n' "$TMP/spec/ask-claude"
+        return
     fi
+    local spec="$TMP/spec/ask-claude"
+    if [ ! -s "$spec" ]; then
+        mkdir -p "$TMP/spec"
+        if ! "$BIN" --usage-spec >"$spec" || [ ! -s "$spec" ]; then
+            echo "spec_file: $BIN --usage-spec printed no spec" >&2
+            rm -f "$spec"
+            return 1
+        fi
+    fi
+    printf '%s\n' "$spec"
 }
 
 # refute <command...>: the command must fail. A bare `! cmd` on any line but

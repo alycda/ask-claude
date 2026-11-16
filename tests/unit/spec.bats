@@ -12,6 +12,15 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     grep -qE '^\s+resume\b' <<<"$output"
 }
 
+# --help above is the binary's own (clap prints its subcommands whatever the
+# spec says); this one reads the spec usage parses, for either binary.
+@test "spec: the usage spec declares list, resume and agent" {
+    spec=$(spec_file)
+    run usage generate json -f "$spec"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.cmd.subcommands | keys | join(" ")' <<<"$output")" = "agent list resume" ]
+}
+
 @test "spec: every flag binds to its usage_ name" {
     run explain -m haiku -e high -S sys -s pptx --max-tokens 10 "hello there"
     [ "$status" -eq 0 ]

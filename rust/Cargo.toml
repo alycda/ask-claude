@@ -1,0 +1,56 @@
+[package]
+name = "ask-claude"
+# no `version`: the binary's is the repository's VERSION (src/lib.rs)
+edition = "2024"
+description = "Talk to Claude from a shell: the Rust port of the bash ask-claude (docs/plan.md, phase 4)"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "ask-claude"
+path = "src/main.rs"
+
+[dependencies]
+# Every version exact, dev-dependencies too, and Cargo.lock committed: a
+# bump is its own commit that reviews `cargo tree` (docs/plans, KTD20).
+
+# the CLI, from the same spec the bash script carries in its #USAGE block;
+# `env` binds ASK_CLAUDE_AGENT and friends the way usage does
+clap = { version = "=4.6.7", features = ["derive", "env"] }
+# `--usage-spec` prints the clap definition as a usage spec, so `usage diff`
+# can compare the two binaries; the same version as the `usage` CLI in
+# mise.toml, which parses the bash script through its shebang. Only the clap
+# conversion: the docs renderers (tera, roff, markdown) are not wanted here
+usage-lib = { version = "=7.3.0", default-features = false, features = ["clap"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+# `preserve_order`: objects keep insertion order, as jq does and the goldens
+# record; without it every object serializes with its keys sorted
+serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+# R5: POST /v1/messages. No `json` feature: the body is serde_json text
+# already, and the reply is SSE bytes for the printer, not one JSON value
+ureq = "=3.5.2"
+# R5, KTD5: line editing for the chat loop on a terminal, bracketed paste
+# on so one paste is one turn; no features: no sqlite history, no system
+# clipboard. Its tree is reviewed in the commit that adds it (KTD20)
+reedline = { version = "=0.53.0", default-features = false }
+
+# umask(2) and signal(2) at the top of main, which std does not expose: files
+# private as the script's `umask 077` makes them, and SIGPIPE back to its
+# default so `ask-claude | head` ends the way curl does; tcflush(3) so a
+# line typed before an approval prompt does not answer it. Already in the tree
+# under ring and getrandom, so the pin adds no crate.
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[dev-dependencies]
+# tests/cli.rs: the binary under test
+assert_cmd = "=2.2.2"
+predicates = "=3.1.4"
+tempfile = "=3.27.0"
+
+# benches/goldens.rs: how fast the pure parts run over the recorded fixtures
+criterion = "=0.8.2"
+
+[[bench]]
+name = "goldens"
+harness = false

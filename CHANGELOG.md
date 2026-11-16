@@ -48,6 +48,11 @@ adds one, and `just check-effver` checks it against `VERSION`.
   against the current directory. They were split with globbing on, so a
   value containing `*`, `?` or `[` could turn into the names of matching
   files.
+- The Rust build behaves the same in all of the above, so `just parity`
+  finds no breaking difference and the bats suite passes on both binaries.
+  It never had the quoting problem (clap hands it each value as given), but
+  it split a value at whitespace the way the script did, and now refuses
+  such a value instead.
 - Adopting needs nothing, unless a command does one of these:
   - passes two `--mcp` URLs on one host, which now exits 2; keep one of
     them;

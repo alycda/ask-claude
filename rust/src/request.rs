@@ -102,10 +102,14 @@ pub fn body(args: &Args) -> Value {
     Value::Object(b)
 }
 
+/// Where an MCP URL's host ends: the authority's end (`/`, `?`, `#`) or a
+/// port's colon; request.jq's `[^/:?#]+`.
+const HOST_END: [char; 4] = ['/', ':', '?', '#'];
+
 /// An MCP server's name: its host with every character outside
 /// `[A-Za-z0-9_-]` made `-`.
 fn host(url: &str) -> String {
-    crate::url_host(url, &['/', ':'])
+    crate::url_host(url, &HOST_END)
         .unwrap_or("")
         .chars()
         .map(|c| {
@@ -121,7 +125,7 @@ fn host(url: &str) -> String {
 /// The URL's hostname as written, lower-cased: what an `--mcp-tool` entry
 /// names, and what the config check matches entries against.
 pub(crate) fn hostname(url: &str) -> String {
-    crate::url_host(url, &['/', ':'])
+    crate::url_host(url, &HOST_END)
         .unwrap_or("")
         .to_ascii_lowercase()
 }

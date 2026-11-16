@@ -152,6 +152,15 @@ pub struct RequestFlags {
     #[arg(long, global = true, value_name = "mcp-tool")]
     pub mcp_tool: Vec<String>,
 
+    /// shorthand for --mcp https://api.githubcopilot.com/mcp/, GitHub's MCP server, default toolsets, read and write; needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM
+    #[arg(long, global = true)]
+    pub github: bool,
+
+    /// shorthand for --mcp https://api.githubcopilot.com/mcp/x/repos/readonly, GitHub's MCP server, repos toolset, read-only; needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM
+    // the script's spelling, an underscore: clap would make the field --github-ro
+    #[arg(long = "github_ro", global = true)]
+    pub github_ro: bool,
+
     /// `-m` came from the command line, not its default; filled by
     /// [`Cli::parse_args`]. `-p openai` takes `OPENAI_MODEL` otherwise
     #[arg(skip)]

@@ -25,11 +25,21 @@ adds one, and `just check-effver` checks it against `VERSION`.
   `--mcp` on `api.githubcopilot.com`. The request names each server after
   its host and reads its token from the host's variable, so both would go
   out under one name and share one token.
-- The values of `--mcp`, `--mcp-tool`, `--vault` and `--memory` are no
-  longer glob-expanded against the current directory. These flags repeat,
-  and usage hands their values over joined with spaces. They were split with
-  globbing on, so a value containing `*`, `?` or `[` could turn into the
-  names of matching files.
+- An `--mcp` URL with a query string works, for example
+  `'https://mcp.supabase.com/mcp?project_ref=<ref>&read_only=true'`. It
+  used to exit 2 with `--mcp takes https URLs`. usage hands a repeatable
+  flag's values over joined with spaces. It shell-quotes any value with a
+  character outside its safe set (`?`, `&`, a quote, `$`, `*`), and the
+  quotes stayed on. `lib/config.bash` now undoes exactly that quoting for
+  `--mcp` and `--mcp-tool`, without `eval`, so nothing in a value expands.
+- An `--mcp` URL containing whitespace or a control character exits 2.
+- An `--mcp` host ends at the first `/`, `:`, `?` or `#`.
+  `https://host?x=1` is named after `host`, and its token is
+  `ASK_CLAUDE_MCP_TOKEN_HOST`.
+- The values of `--vault` and `--memory` are no longer glob-expanded
+  against the current directory. They were split with globbing on, so a
+  value containing `*`, `?` or `[` could turn into the names of matching
+  files.
 - Adopting needs nothing, unless a command passes two `--mcp` URLs on one
   host. That now exits 2; keep one of them.
 

@@ -45,6 +45,14 @@ ask-claude --mcp https://mcp.deepwiki.com/mcp \
   --mcp-tool mcp.deepwiki.com:ask_question "how does tokio schedule tasks?"
 ```
 
+A URL can carry a query string, which some servers use for scoping. Quote
+it in your shell: unquoted, zsh treats the `?` as a glob and `&` ends the
+command.
+
+```sh
+ask-claude --mcp 'https://mcp.supabase.com/mcp?project_ref=<ref>&read_only=true' "…"
+```
+
 One server per host: two `--mcp` URLs on one host (another path, a port,
 the host in another case) exit 2. The request names each server after its
 host and reads its token from the host's variable, so the two would go out

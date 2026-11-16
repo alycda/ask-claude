@@ -8,9 +8,10 @@
 #          usage_max_tokens ASK_CLAUDE_MCP_TOKEN ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM
 #          ANTHROPIC_API_KEY; STATE (ask-claude)
 # sets:    BASE_URL API HOST (read by common, messages, agent-api, agent-turn),
-#          usage_mcp (--github appends to it; read by messages),
+#          usage_mcp usage_mcp_tool (unquoted, space-joined; --github adds
+#          to the first; read by messages), USAGE_WORDS mcp_urls mcp_tools
 #          GITHUB_MCP_URL mcp_count mcp_vars mcp_hosts h t state_owner
-# defines: need_key ascii_lower
+# defines: need_key ascii_lower usage_words
 # calls:   die (ask-claude)
 
 # Providers. The bash version speaks the Messages API only; the OpenAI
@@ -43,6 +44,42 @@ API="${BASE_URL%/}/v1/messages"
 HOST="${BASE_URL#*://}"
 HOST="${HOST%%/*}"
 
+# usage_words <joined>: the values of a repeatable flag, into the array
+# USAGE_WORDS. usage joins them with spaces and quotes each the way the
+# shell-words crate does: as it is when every character is in its safe set,
+# else in single quotes with each ' written '\'' ('' for an empty value). A
+# URL with a query string (?, &, =) arrives quoted. This undoes that quoting
+# and nothing else. There is no eval, so nothing in a value expands: not
+# $(...), not a glob, and not the {a,b} the safe set leaves bare. Returns 1
+# on a string that is not in that form.
+usage_words() {
+  local s=$1 w re_quoted="^'([^']*)'(.*)$" re_bare="^([^ '\\]+)(.*)$"
+  USAGE_WORDS=()
+  while [ -n "$s" ]; do
+    w=""
+    while [ -n "$s" ] && [ "${s:0:1}" != " " ]; do
+      if [[ $s =~ $re_quoted ]] || [[ $s =~ $re_bare ]]; then
+        w+=${BASH_REMATCH[1]} s=${BASH_REMATCH[2]}
+      elif [ "${s:0:2}" = "\\'" ]; then
+        w+="'" s=${s:2}
+      else
+        return 1
+      fi
+    done
+    USAGE_WORDS+=("$w")
+    s=${s# }
+  done
+}
+
+# --mcp and --mcp-tool, as lists. The checks below run on these, and both
+# flags are written back joined with single spaces, unquoted, for
+# lib/request.jq to split. That is safe because a URL that passes the checks
+# has no whitespace, and an --mcp-tool entry has no space in its character set.
+usage_words "${usage_mcp:-}" || die "cannot read the --mcp values usage passed: ${usage_mcp:-}"
+mcp_urls=("${USAGE_WORDS[@]}")
+usage_words "${usage_mcp_tool:-}" || die "cannot read the --mcp-tool values usage passed: ${usage_mcp_tool:-}"
+mcp_tools=("${USAGE_WORDS[@]}")
+
 # --github: shorthand for the long form, --mcp GITHUB_MCP_URL: GitHub's MCP
 # server with its repos toolset, read-only. It adds that URL to the --mcp
 # list here, before every --mcp check, so from then on it is one --mcp server
@@ -55,29 +92,33 @@ readonly GITHUB_MCP_URL=https://api.githubcopilot.com/mcp/x/repos/readonly
 if [ "${usage_github:-}" = true ]; then
   [ -n "${ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM:-}" ] ||
     die "--github needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM, a GitHub token (a fine-grained token with public repositories read-only is enough)"
-  usage_mcp="${usage_mcp:+$usage_mcp }$GITHUB_MCP_URL"
+  mcp_urls+=("$GITHUB_MCP_URL")
 fi
 
 # --mcp: servers the model may call through the MCP connector; https only,
-# like the docs require, and checked here so a typo is exit 2, not a 400.
+# like the docs require, and checked here so a typo is exit 2, not a 400. A
+# URL with whitespace or a control character is refused too: it is no URL,
+# and the list goes to request.jq space-joined.
+# The host ends at the first / : ? or #, the authority's end (a port's colon
+# included), exactly where lib/request.jq's `host` cuts it.
 # One server per host: lib/request.jq names a server after its host and
 # reads its token from the host's variable, so two URLs on one host (two
 # paths, a port, the host in another case, or --github beside an --mcp on
 # api.githubcopilot.com) would go out under one name, which the API takes
 # once, and share one token. The variable is the key: it folds everything
 # the name folds, and case too.
-# usage joins a repeatable flag's values with spaces: they are split here,
-# with globbing off (set -f), so a value with * ? [ cannot expand to the
-# names of files in the current directory. On again after the --mcp-tool loop.
-set -f
 mcp_count=0 mcp_vars=""
-for v in ${usage_mcp:-}; do
-  case "$v" in https://*) ;; *) die "--mcp takes https URLs, got: $v" ;; esac
+for v in "${mcp_urls[@]}"; do
+  case "$v" in
+  *[[:space:][:cntrl:]]*) die "--mcp takes https URLs, got one with whitespace or a control character: ${v@Q}" ;;
+  https://*) ;;
+  *) die "--mcp takes https URLs, got: $v" ;;
+  esac
   mcp_count=$((mcp_count + 1))
   # the variable lib/request.jq reads for this server's token: the host as
   # its `host` cuts it, upper-cased, every other character an underscore
   h=${v#https://}
-  h=${h%%[/:]*}
+  h=${h%%[/:?#]*}
   h=${h//[!A-Za-z0-9_]/_}
   case "$mcp_vars " in
   *" ASK_CLAUDE_MCP_TOKEN_${h^^} "*)
@@ -85,6 +126,7 @@ for v in ${usage_mcp:-}; do
   esac
   mcp_vars+=" ASK_CLAUDE_MCP_TOKEN_${h^^}"
 done
+usage_mcp="${mcp_urls[*]}"
 # --mcp-tool host:tool: that server offers only the tools named (lib/request.jq
 # turns its toolset into an allowlist). An entry whose host is no --mcp server
 # would match nothing, and a rule that matches nothing reads like a rule while
@@ -97,12 +139,12 @@ done
 # shellcheck disable=SC2018,SC2019  # ASCII only, on purpose: the classes would follow the locale
 ascii_lower() { LC_ALL=C tr 'A-Z' 'a-z' <<<"$1"; }
 mcp_hosts=" "
-for v in ${usage_mcp:-}; do
+for v in "${mcp_urls[@]}"; do
   h=${v#https://}
-  h=${h%%[/:]*}
+  h=${h%%[/:?#]*}
   mcp_hosts+="$(ascii_lower "$h") "
 done
-for t in ${usage_mcp_tool:-}; do
+for t in "${mcp_tools[@]}"; do
   [[ $t =~ ^[A-Za-z0-9.-]+:[A-Za-z0-9_.-]{1,128}$ ]] ||
     die "--mcp-tool takes <host>:<tool>, e.g. mcp.example.com:search, got: $t"
   h=${t%%:*}
@@ -111,7 +153,7 @@ for t in ${usage_mcp_tool:-}; do
   *) die "--mcp-tool $t names no --mcp server (hosts:${mcp_hosts% }); it would allow every tool, not only $h's ${t#*:}" ;;
   esac
 done
-set +f
+usage_mcp_tool="${mcp_tools[*]}"
 # A token is one server's credential: sent to several, each server's operator
 # would receive the others'. Refuse rather than drop it in silence.
 if [ "$mcp_count" -gt 1 ] && [ -n "${ASK_CLAUDE_MCP_TOKEN:-}" ]; then

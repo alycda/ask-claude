@@ -240,6 +240,48 @@ gh_replay() { ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH replay "$@"; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# usage quotes a repeatable flag's value when it has a character outside
+# shell-words' safe set (a query string's ? and &, a quote, $, *), and leaves
+# {a,b} bare. config.bash undoes exactly that quoting, without eval: before
+# 0.3.2 the quotes stayed on, and a quoted URL failed the https check.
+@test "one-shot: an --mcp URL with a query string reaches the request as typed" {
+    url='https://mcp.supabase.com/mcp?project_ref=abc&read_only=true'
+    ASK_CLAUDE_MCP_TOKEN_MCP_SUPABASE_COM=sbp_FIXTURE replay mcp --mcp "$url" --mcp-tool mcp.supabase.com:execute_sql "ping" >/dev/null 2>&1
+    jq -e --arg u "$url" '.mcp_servers == [{type: "url", url: $u, name: "mcp-supabase-com", authorization_token: "sbp_FIXTURE"}]
+        and .tools[0].configs == {execute_sql: {enabled: true}}' "$TMP/requests.jsonl"
+}
+
+@test "one-shot: --mcp values go out verbatim, and nothing in them expands" {
+    mkdir "$TMP/cwd" && : > "$TMP/cwd/'https:GLOBBED'" && cd "$TMP/cwd"
+    # shellcheck disable=SC2016  # the $(...) is a URL's text, never to run
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" \
+        --mcp 'https://a.example/{x,y}' --mcp "https://b.example/it's" --mcp 'https://c.example/$(touch${IFS}PWNED)' \
+        --mcp 'https://d.example/*' --mcp 'https://e.example/a\b' "ping"
+    [ "$status" -eq 0 ]
+    jq -e '.mcp_servers | map(.url) == ["https://a.example/{x,y}", "https://b.example/it'"'"'s",
+        "https://c.example/$(touch${IFS}PWNED)", "https://d.example/*", "https://e.example/a\\b"]' "$TMP/requests.jsonl"
+    [ ! -e "$TMP/cwd/PWNED" ]
+}
+
+@test "one-shot: an --mcp URL with whitespace exits 2 before any request" {
+    run --separate-stderr replay mcp --mcp 'https://a.example/b c' "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'whitespace or a control character' <<<"$stderr"
+    run --separate-stderr replay mcp --mcp $'https://a.example/b\tc' "ping"
+    [ "$status" -eq 2 ]
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: an --mcp host ends at ? and #, for the name, the token and --mcp-tool" {
+    ASK_CLAUDE_MCP_TOKEN_MCP_EXAMPLE_COM=tok_Q replay mcp --mcp 'https://mcp.example.com?x=1' --mcp 'https://mcp.deepwiki.com#f' \
+        --mcp-tool mcp.example.com:search "ping" >/dev/null 2>&1
+    jq -e '.mcp_servers | map(.name) == ["mcp-example-com", "mcp-deepwiki-com"]' "$TMP/requests.jsonl"
+    jq -e '.mcp_servers[0].authorization_token == "tok_Q" and .tools[0].configs == {search: {enabled: true}}' "$TMP/requests.jsonl"
+    run --separate-stderr replay mcp --mcp https://mcp.example.com/mcp --mcp 'https://mcp.example.com?x=1' "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'on the host of another --mcp server' <<<"$stderr"
+}
+
 # A pause_turn continuation without skills sends back the container the
 # previous round ran in (dynamic web filtering runs code there); the first
 # request of a turn sends none.

@@ -41,9 +41,10 @@
 #   stream         true         always SSE (lib/stream.jq prints it)
 #   cache_control  {type: "ephemeral"}   cache the growing conversation
 def words: split(" ") | map(select(length > 0));
-def host: capture("^[a-z]+://(?<h>[^/:]+)").h | gsub("[^A-Za-z0-9_-]"; "-");
+# the host ends at the first / : ? or # (lib/config.bash cuts it there too)
+def host: capture("^[a-z]+://(?<h>[^/:?#]+)").h | gsub("[^A-Za-z0-9_-]"; "-");
 # the URL's hostname as written, lower-cased: what an --mcp-tool entry names
-def hostname: capture("^[a-z]+://(?<h>[^/:]+)").h | ascii_downcase;
+def hostname: capture("^[a-z]+://(?<h>[^/:?#]+)").h | ascii_downcase;
 # $web, $mcp, $advisor and $mcptools are newer than the other arguments: read
 # through $ARGS.named so a caller that does not pass them (the goldens of
 # 0.1.0) still works

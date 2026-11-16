@@ -5,12 +5,14 @@
 # as it did in the single file.
 #
 # reads:   usage_provider usage_base_url usage_mcp usage_mcp_tool usage_github
-#          usage_max_tokens ASK_CLAUDE_MCP_TOKEN ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM
-#          ANTHROPIC_API_KEY ANTHROPIC_BASE_URL; STATE (ask-claude)
+#          usage_github_ro usage_max_tokens ASK_CLAUDE_MCP_TOKEN
+#          ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM ANTHROPIC_API_KEY
+#          ANTHROPIC_BASE_URL; STATE (ask-claude)
 # sets:    BASE_URL API HOST (read by common, messages, agent-api, agent-turn),
-#          usage_mcp usage_mcp_tool (unquoted, space-joined; --github adds
-#          to the first; read by messages), USAGE_WORDS mcp_urls mcp_tools
-#          GITHUB_MCP_URL base_url_from mcp_count mcp_vars mcp_hosts h t state_owner
+#          usage_mcp usage_mcp_tool (unquoted, space-joined; --github and
+#          --github_ro add to the first; read by messages), USAGE_WORDS
+#          mcp_urls mcp_tools GITHUB_MCP_URL GITHUB_RO_MCP_URL github_flag
+#          base_url_from mcp_count mcp_vars mcp_hosts h t state_owner
 # defines: need_key ascii_lower usage_words
 # calls:   die (ask-claude), safe_text (common)
 
@@ -95,20 +97,33 @@ mcp_urls=("${USAGE_WORDS[@]}")
 usage_words "${usage_mcp_tool:-}" || die "cannot read the --mcp-tool values usage passed: ${usage_mcp_tool:-}"
 mcp_tools=("${USAGE_WORDS[@]}")
 
-# --github: shorthand for the long form, --mcp GITHUB_MCP_URL: GitHub's MCP
-# server with its repos toolset, read-only. It adds that URL to the --mcp
-# list here, before every --mcp check, so from then on it is one --mcp server
-# like any other (its token variable, --mcp-tool, the duplicate-host check).
+# --github and --github_ro: shorthands for the long form, --mcp <url>, with
+# GitHub's MCP server. --github is GITHUB_MCP_URL, its default toolsets with
+# read and write; --github_ro is GITHUB_RO_MCP_URL, the repos toolset,
+# read-only. Each adds its URL to the --mcp list here, before every --mcp
+# check, so from then on it is one --mcp server like any other (its token
+# variable, --mcp-tool, the one-server-per-host check). Both are on one
+# host, so together they exit 2, here, with a message that names both flags.
 # GitHub answers 401 to a request without a token on every path, /readonly
-# included, so the shorthand requires the server's own variable: exit 2 here,
-# not a failed request. ASK_CLAUDE_MCP_TOKEN does not count: the shorthand
-# names one variable, and it is the one it reads.
-readonly GITHUB_MCP_URL=https://api.githubcopilot.com/mcp/x/repos/readonly
-if [ "${usage_github:-}" = true ]; then
-  [ -n "${ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM:-}" ] ||
-    die "--github needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM, a GitHub token (a fine-grained token with public repositories read-only is enough)"
-  mcp_urls+=("$GITHUB_MCP_URL")
+# included, so each requires the server's own variable: exit 2 here, not a
+# failed request. ASK_CLAUDE_MCP_TOKEN does not count: the shorthand names
+# one variable, and it is the one it reads. With --github the token's own
+# permissions are the only limit on what the model can change.
+readonly GITHUB_MCP_URL=https://api.githubcopilot.com/mcp/
+readonly GITHUB_RO_MCP_URL=https://api.githubcopilot.com/mcp/x/repos/readonly
+if [ "${usage_github:-}" = true ] && [ "${usage_github_ro:-}" = true ]; then
+  die "--github and --github_ro are one server, api.githubcopilot.com: pass one (--github reads and writes, --github_ro reads repos only)"
 fi
+github_flag=""
+if [ "${usage_github:-}" = true ]; then
+  github_flag=--github
+  mcp_urls+=("$GITHUB_MCP_URL")
+elif [ "${usage_github_ro:-}" = true ]; then
+  github_flag=--github_ro
+  mcp_urls+=("$GITHUB_RO_MCP_URL")
+fi
+[ -z "$github_flag" ] || [ -n "${ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM:-}" ] ||
+  die "$github_flag needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM, a GitHub token (for --github_ro, a fine-grained token with public repositories read-only is enough)"
 
 # --mcp: servers the model may call through the MCP connector; https only,
 # like the docs require, and checked here so a typo is exit 2, not a 400. A
@@ -118,8 +133,8 @@ fi
 # included), exactly where lib/request.jq's `host` cuts it.
 # One server per host: lib/request.jq names a server after its host and
 # reads its token from the host's variable, so two URLs on one host (two
-# paths, a port, the host in another case, or --github beside an --mcp on
-# api.githubcopilot.com) would go out under one name, which the API takes
+# paths, a port, the host in another case, or --github or --github_ro beside
+# an --mcp on api.githubcopilot.com) would go out under one name, which the API takes
 # once, and share one token. The variable is the key: it folds everything
 # the name folds, and case too.
 mcp_count=0 mcp_vars=""
@@ -137,7 +152,7 @@ for v in "${mcp_urls[@]}"; do
   h=${h//[!A-Za-z0-9_]/_}
   case "$mcp_vars " in
   *" ASK_CLAUDE_MCP_TOKEN_${h^^} "*)
-    die "--mcp $v is on the host of another --mcp server (or of --github): the API takes one server per name, and request.jq names a server after its host; give one URL per host" ;;
+    die "--mcp $v is on the host of another --mcp server (or of --github or --github_ro): the API takes one server per name, and request.jq names a server after its host; give one URL per host" ;;
   esac
   mcp_vars+=" ASK_CLAUDE_MCP_TOKEN_${h^^}"
 done

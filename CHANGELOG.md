@@ -12,17 +12,23 @@ adds one, and `just check-effver` checks it against `VERSION`.
 
 ## 0.3.3 (micro) - 2026-11-16
 
-- `--github` is shorthand for the long form,
-  `--mcp https://api.githubcopilot.com/mcp/x/repos/readonly`: GitHub's MCP
-  server, repos toolset, read-only. It sends that request byte for byte,
-  and `--mcp-tool api.githubcopilot.com:<tool>` narrows it. GitHub refuses
-  requests without a token on every path, so `--github` requires
-  `ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM` and exits 2 before any
-  request without it. `ASK_CLAUDE_MCP_TOKEN` does not stand in for it.
-  `.env.example` lists the variable.
+- `--github` and `--github_ro` are shorthands for the long form, for
+  GitHub's MCP server:
+  - `--github` is `--mcp https://api.githubcopilot.com/mcp/`: the default
+    toolsets, read and write.
+  - `--github_ro` is
+    `--mcp https://api.githubcopilot.com/mcp/x/repos/readonly`: the repos
+    toolset, read-only.
+
+  Each sends its long form's request byte for byte, and
+  `--mcp-tool api.githubcopilot.com:<tool>` narrows it. They are one
+  server, so both together exit 2. GitHub refuses requests without a token
+  on every path, so both require `ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM`
+  and exit 2 before any request without it. `ASK_CLAUDE_MCP_TOKEN` does not
+  stand in for it. `.env.example` lists the variable.
 - Two `--mcp` URLs on one host now exit 2 before any request. This includes
-  another path, a port, the host in another case, and `--github` beside an
-  `--mcp` on `api.githubcopilot.com`. The request names each server after
+  another path, a port, the host in another case, and `--github` or
+  `--github_ro` beside an `--mcp` on `api.githubcopilot.com`. The request names each server after
   its host and reads its token from the host's variable, so both would go
   out under one name and share one token.
 - An `--mcp` URL with a query string works, for example
@@ -33,6 +39,8 @@ adds one, and `just check-effver` checks it against `VERSION`.
   quotes stayed on. `lib/config.bash` now undoes exactly that quoting for
   `--mcp` and `--mcp-tool`, without `eval`, so nothing in a value expands.
 - An `--mcp` URL containing whitespace or a control character exits 2.
+  Each `--mcp` value is one URL; one value is no longer split into several
+  servers at its whitespace.
 - An `--mcp` host ends at the first `/`, `:`, `?` or `#`.
   `https://host?x=1` is named after `host`, and its token is
   `ASK_CLAUDE_MCP_TOKEN_HOST`.
@@ -40,8 +48,11 @@ adds one, and `just check-effver` checks it against `VERSION`.
   against the current directory. They were split with globbing on, so a
   value containing `*`, `?` or `[` could turn into the names of matching
   files.
-- Adopting needs nothing, unless a command passes two `--mcp` URLs on one
-  host. That now exits 2; keep one of them.
+- Adopting needs nothing, unless a command does one of these:
+  - passes two `--mcp` URLs on one host, which now exits 2; keep one of
+    them;
+  - passes several URLs in one `--mcp` value, which now exits 2; give each
+    URL its own `--mcp`.
 
 ## 0.3.2 (meso) - 2026-11-14
 

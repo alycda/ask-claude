@@ -15,7 +15,8 @@
 #USAGE flag "--web" help="let the model search and fetch the web (server tools; searches cost extra)" global=#true
 #USAGE flag "--mcp <url>" help="an MCP server (https) the model may call; repeatable; its token in ASK_CLAUDE_MCP_TOKEN_<HOST>, or ASK_CLAUDE_MCP_TOKEN for a lone server" var=#true global=#true
 #USAGE flag "--mcp-tool <host:tool>" help="only these tools of that --mcp server, e.g. mcp.example.com:search; repeatable; a server not named keeps all its tools" var=#true global=#true
-#USAGE flag "--github" help="shorthand for --mcp https://api.githubcopilot.com/mcp/x/repos/readonly, GitHub's MCP server, repos read-only; needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM" global=#true
+#USAGE flag "--github" help="shorthand for --mcp https://api.githubcopilot.com/mcp/, GitHub's MCP server, default toolsets, read and write; needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM" global=#true
+#USAGE flag "--github_ro" help="shorthand for --mcp https://api.githubcopilot.com/mcp/x/repos/readonly, GitHub's MCP server, repos toolset, read-only; needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM" global=#true
 #USAGE flag "--advisor <model>" help="a model the reply may consult mid-turn (server tool, at most 3 calls a turn, billed at that model's rates); must be at least as capable as -m" global=#true
 #USAGE flag "-V --version" help="print the version"
 #USAGE cmd "list" help="chats on disk, newest first"

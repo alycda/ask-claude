@@ -368,7 +368,11 @@ gh_replay() { ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=tok_GH replay "$@"; }
 }
 
 @test "one-shot: --mcp values go out verbatim, and nothing in them expands" {
-    mkdir "$TMP/cwd" && : > "$TMP/cwd/'https:GLOBBED'" && cd "$TMP/cwd"
+    # bait for https://d.example/*: a glob with slashes matches only through
+    # directories, so expanded it would become .../GLOBBED and fail the jq
+    # below. The 'https: twin catches a glob on the value usage still quotes.
+    mkdir -p "$TMP/cwd/https:/d.example" "$TMP/cwd/'https:/d.example"
+    : > "$TMP/cwd/https:/d.example/GLOBBED" && : > "$TMP/cwd/'https:/d.example/GLOBBED'" && cd "$TMP/cwd"
     # shellcheck disable=SC2016  # the $(...) is a URL's text, never to run
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" \
         --mcp 'https://a.example/{x,y}' --mcp "https://b.example/it's" --mcp 'https://c.example/$(touch${IFS}PWNED)' \

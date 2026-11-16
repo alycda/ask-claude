@@ -1,0 +1,8 @@
+---
+syntax: shell
+---
+
+ASK_CLAUDE_MCP_TOKEN=... ask-claude --mcp https://mcp.supabase.com ..
+ASK_CLAUDE_MCP_TOKEN_MCP_SUPABASE_COM=... ask-claude --mcp https://mcp.supabase.com --mcp ...
+
+see: https://supabase.com/docs/guides/ai-tools/mcp

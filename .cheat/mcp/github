@@ -1,0 +1,8 @@
+---
+syntax: shell
+---
+
+ASK_CLAUDE_MCP_TOKEN=$(gh auth token) ask-claude --mcp https://api.githubcopilot.com/mcp ..
+ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM=$(gh auth token) ask-claude --mcp https://api.githubcopilot.com/mcp --mcp ..
+
+see: https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md

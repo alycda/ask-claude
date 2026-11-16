@@ -1,0 +1,42 @@
+tv ask-claude
+
+```
+# television cable channel: pick an ask-claude chat and resume it.  Usage: `tv ask-claude`
+#
+# Chats are the JSON history files ask-claude (mise http:ask-claude, which
+# replaced ~/Desktop/claude.sh on 2026-11-06) keeps in ~/.local/state/ask-claude/,
+# one per conversation; the claude.sh chats were copied there. Each row is
+# "<id> <turns> <first prompt>"; `{split: :0}` is the id, which
+# `ask-claude resume` accepts as a prefix. The channel keeps its old name.
+# ask-claude reads only $ANTHROPIC_API_KEY, so the actions fill it from
+# ~/.config/anthropic/api_key when it is not already set. Enter resumes the chat in this terminal,
+# ctrl-n starts a new one. Preview is the transcript, thinking blocks skipped.
+[metadata]
+name = "ask-claude"
+description = "Resume an ask-claude (curl + jq) chat; preview the transcript"
+requirements = ["jq"]
+
+[source]
+command = """ls -1t "$HOME"/.local/state/ask-claude/*.json 2>/dev/null | while IFS= read -r f; do jq -r --arg id "$(basename "$f" .json)" '"\\($id) \\(length)t " + ((first(.[] | select(.role=="user")) | .content | if type=="string" then .[:80] else "" end) // "(empty)" | gsub("\\n"; " "))' "$f"; done"""
+output = "{split: :0}"
+no_sort = true
+frecency = false
+
+[preview]
+command = """jq -r '.[] | (if .role=="user" then "you" else "claude" end) as $who | (if (.content|type)=="string" then .content else [.content[] | select(.type=="text") | .text] | join("\\n") end) as $t | "\\($who): \\($t)\\n"' "$HOME/.local/state/ask-claude/{split: :0}.json\""""
+
+[keybindings]
+enter = "actions:resume"
+ctrl-n = "actions:new"
+
+[actions.resume]
+description = "Resume the selected chat"
+command = "ANTHROPIC_API_KEY=\"${ANTHROPIC_API_KEY:-$(cat \"$HOME/.config/anthropic/api_key\")}\" ask-claude resume '{split: :0}'"
+mode = "execute"
+
+[actions.new]
+description = "Start a new chat"
+command = "ANTHROPIC_API_KEY=\"${ANTHROPIC_API_KEY:-$(cat \"$HOME/.config/anthropic/api_key\")}\" ask-claude"
+mode = "execute"
+
+```

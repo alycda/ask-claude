@@ -1,8 +1,8 @@
 # Shared setup for the bats suite. Loaded with `load helpers` from each file.
 #
 # ROOT     repo root
-# BIN      the binary under test; ASK_CLAUDE_BIN overrides it so the same
-#          suite can run against the Rust port (plan R5)
+# BIN      the binary under test: the debug build `just unit-tests` makes
+#          first; ASK_CLAUDE_BIN overrides it (a release build, an install)
 # FIX      tests/fixtures
 # TMP      per-test scratch dir, removed in teardown; XDG_STATE_HOME points
 #          inside it so no test touches ~/.local/state
@@ -13,7 +13,7 @@
 bats_require_minimum_version 1.5.0
 
 ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-BIN="${ASK_CLAUDE_BIN:-$ROOT/ask-claude}"
+BIN="${ASK_CLAUDE_BIN:-$ROOT/rust/target/debug/ask-claude}"
 FIX="$ROOT/tests/fixtures"
 
 setup() {
@@ -45,18 +45,13 @@ assert_golden() {
     fi
 }
 
-# spec_file: a file `usage` can read the #USAGE spec from, for the binary
-# under test. The script is that file itself (usage parses its header
-# comments). The Rust binary prints its spec with --usage-spec; it is
-# written under the same name, ask-claude, because usage names the spec
-# after the file and the tests match on that name. It is written once per
-# test, and a binary that prints no spec is named on stderr and prints no
-# path, so usage fails on the empty -f instead of parsing a partial file.
+# spec_file: a file `usage` can read the spec from, for the binary under
+# test, which prints it with --usage-spec. It is written under the name
+# ask-claude, because usage names the spec after the file and the tests match
+# on that name. It is written once per test, and a binary that prints no spec
+# is named on stderr and prints no path, so usage fails on the empty -f
+# instead of parsing a partial file.
 spec_file() {
-    if head -c 64 "$BIN" | grep -q '^#!.*usage'; then
-        printf '%s\n' "$BIN"
-        return
-    fi
     local spec="$TMP/spec/ask-claude"
     if [ ! -s "$spec" ]; then
         mkdir -p "$TMP/spec"

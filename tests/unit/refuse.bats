@@ -1,21 +1,14 @@
 #!/usr/bin/env bats
 load helpers
 
-# What the bash version will never build is refused with exit 2 before any
-# key check, request or history file: the OpenAI shape is the Rust port's
-# (docs/plan.md, phase 3). tests/unit/provider.bats pins the flags.
+# What is refused with exit 2 before any key check, request or history
+# file. tests/unit/provider.bats pins the provider flags.
 
 refused() { # args...
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" "$@"
     [ "$status" -eq 2 ]
     [ ! -e "$TMP/requests.jsonl" ]
     [ -z "$(ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null)" ]
-}
-
-# bats test_tags=bash-only
-@test "refuse: -p openai, with the pointer to the plan" {
-    refused -p openai "hi"
-    grep -q '^ask-claude: --provider openai is not implemented in the bash version, see docs/plan.md$' <<<"$stderr"
 }
 
 @test "refuse: -p anthropic is the default and still works" {

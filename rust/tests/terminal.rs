@@ -3,12 +3,12 @@
 //! history file is written. The bats suite has no terminal, so these drive
 //! the binary through util-linux `script`, which gives it a pty and passes
 //! the bytes written here as typed keys. Linux only, and skipped where
-//! `script` is missing; on macOS they are the manual check `just pty-test`
-//! names.
+//! `script` is missing; on macOS they are a manual check, the last step of
+//! the phase 5 gate in docs/plan.md.
 //!
-//! `ASK_CLAUDE_BIN=<path>` runs them against another binary. The script
-//! fails the paste test by design: `read -e` keeps only the first line of
-//! a paste and drops the rest, the bug this branch exists to fix.
+//! `ASK_CLAUDE_BIN=<path>` runs them against another binary. The bash
+//! script this binary replaced failed the paste test by design: `read -e`
+//! kept only the first line of a paste and dropped the rest.
 
 #![cfg(target_os = "linux")]
 

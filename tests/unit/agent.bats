@@ -145,12 +145,6 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     refute grep -q GLOBBED <<<"$stderr"
 }
 
-# bats test_tags=bash-only
-@test "resources: the token never goes on a command line" {
-    refute grep -qE -- '--arg(json)? +token' "$BIN"
-    grep -q 'env.GITHUB_TOKEN' "$ROOT/lib/session-create.jq"
-}
-
 # the live paths the replay seam used to skip (review of 0.2.3)
 
 @test "live paths: a terminated session without an error still exits 1" {

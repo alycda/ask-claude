@@ -8,14 +8,6 @@
 
 load helpers
 
-# shim <name> <script body>: a command first on PATH
-shim() {
-    mkdir -p "$TMP/bin"
-    printf '#!/bin/sh\n%s\n' "$2" >"$TMP/bin/$1"
-    chmod +x "$TMP/bin/$1"
-    export PATH="$TMP/bin:$PATH"
-}
-
 # refused <pattern>: a one shot over a recorded reply exits 2 naming the
 # problem, and no request was made
 refused() {
@@ -37,12 +29,6 @@ refused() {
     ln -s "$TMP/elsewhere" "$XDG_STATE_HOME/ask-claude"
     refused 'is a symlink'
     [ -z "$(ls -A "$TMP/elsewhere")" ]
-}
-
-# bats test_tags=bash-only
-@test "state-dir: a directory that cannot be made private is refused" {
-    shim chmod 'echo "chmod: Operation not permitted" >&2; exit 1'
-    refused 'cannot make .* private'
 }
 
 @test "state-dir: a directory that cannot be created is refused" {
@@ -71,15 +57,6 @@ refused() {
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
-# bats test_tags=bash-only
-@test "state-dir: a directory another account owns is refused" {
-    # the script compares the directory's owner with id -u; a shim reports
-    # another uid, so the check runs without a second account
-    # shellcheck disable=SC2016  # the shim's own $1 and $@, expanded when it runs
-    shim id 'if [ "$1" = -u ]; then echo 99999; else exec /usr/bin/id "$@"; fi'
-    refused 'owned by uid'
-}
-
 @test "state-dir: a directory another account owns is refused (real chown, root only)" {
     [ "$(id -u)" -eq 0 ] || skip "needs root to make a directory another account owns"
     mkdir -p "$XDG_STATE_HOME/ask-claude"
@@ -89,10 +66,8 @@ refused() {
     refused 'owned by uid 65534'
 }
 
-# The Rust twin of the chmod shim above, staged through the file system: a
-# directory root owns, which another account cannot chmod. bash needs the
-# shim instead, since its `usage` shebang is not on that account's PATH.
-# bats test_tags=rust-only
+# A directory that cannot be made private, staged through the file system: a
+# directory root owns, which another account cannot chmod.
 @test "state-dir: a directory whose mode cannot be set is refused (another account, root only)" {
     [ "$(id -u)" -eq 0 ] || skip "needs root to run the binary as an account that does not own the directory"
     command -v setpriv >/dev/null || skip "needs setpriv (util-linux) to drop to another account"

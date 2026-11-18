@@ -64,22 +64,6 @@ confirm_fixture() {
     printf '%s\n\n' "$usage" 'data: {"type":"session.status_idle","stop_reason":{"type":"end_turn"}}' >"$1/2.sse"
 }
 
-# bats test_tags=bash-only
-@test "confirm: an always answer left by an earlier process with this PID answers nothing" {
-    confirm_fixture "$TMP/fx"
-    mkdir -p "$XDG_STATE_HOME/ask-claude"
-    # plant the grant for the PID the script will run as: exec keeps the PID,
-    # and the script is run by bash directly with the usage_* variables set
-    # shellcheck disable=SC2016  # $$ is the inner shell's PID
-    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/fx" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
-        usage_cmd=agent usage_prompt=ping usage_model=m usage_max_tokens=16000 usage_budget=100 \
-        usage_agent=agent_FIXTURE usage_environment=env_FIXTURE \
-        bash -c ': >"$XDG_STATE_HOME/ask-claude/.always.$$"; exec bash "$1"' _ "$BIN" </dev/null
-    [ "$status" -eq 0 ]
-    request 2 | jq -e '.events[0].result=="deny"'
-    [ -z "$(find "$XDG_STATE_HOME/ask-claude" -maxdepth 1 -name '.always.*')" ]
-}
-
 @test "confirm: the input is shown encoded once, so a newline is not a literal \\n" {
     confirm_fixture "$TMP/fx"
     # two commands on two lines, the way a model can propose them

@@ -1,7 +1,7 @@
 //! The binary: its interface (R0), the bytes at its edges (R1: a stream
 //! line is bytes, decoded the way jq decodes it) and the first end-to-end
 //! turn through the replay seam (R5). The rest of the behaviour is the bats
-//! suite, run against this binary by `just test-rust`.
+//! suite, run against this binary by `just unit-tests`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -175,7 +175,7 @@ fn r0_unknown_flag_is_an_error() {
 }
 
 /// R5: the one shot through `ASK_CLAUDE_REPLAY`, the way `tests/unit/oneshot.bats`
-/// drives the bash script. Green means `just test-rust` is worth running.
+/// drives the binary. Green means `just unit-tests` is worth running.
 #[test]
 fn r5_one_shot_through_replay_prints_pong() {
     let state = tempfile::tempdir().unwrap();

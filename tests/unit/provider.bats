@@ -8,13 +8,6 @@ load helpers
     grep -qE '^\s+flag\s+--provider\s+anthropic' <<<"$output"
 }
 
-# bats test_tags=bash-only
-@test "provider: openai is refused by the bash version, exit 2" {
-    run --separate-stderr "$BIN" -p openai "hi"
-    [ "$status" -eq 2 ]
-    grep -q 'not implemented' <<<"$stderr"
-}
-
 @test "provider: --base-url binds; Venice is openai at its own base URL" {
     run usage explain -f "$(spec_file)" -- ask-claude -p openai --base-url https://api.venice.ai/api/v1 "hi"
     grep -qE '^\s+flag\s+--provider\s+openai' <<<"$output"
@@ -92,7 +85,6 @@ load helpers
     refute grep -q 'ANTHROPIC_BASE_URL' <<<"$stderr"
 }
 
-# bats test_tags=rust-only
 @test "base url: with -p openai the Anthropic variable is ignored and OPENAI_BASE_URL applies" {
     run --separate-stderr env ANTHROPIC_BASE_URL=http://example.com OPENAI_BASE_URL=http://localhost:9 OPENAI_API_KEY=sk-openai-test-not-a-key ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" -p openai -m gpt-4.1-mini "hi"
     [ "$status" -ne 2 ]
@@ -102,8 +94,7 @@ load helpers
     jq -e '.host=="localhost:9"' "$XDG_STATE_HOME/ask-claude/events.jsonl"
 }
 
-# -p openai, the chat-completions shape (R7): the Rust port's alone, so
-# every scenario is rust-only. The streams under fixtures/openai/ are
+# -p openai, the chat-completions shape (R7). The streams under fixtures/openai/ are
 # hand-written from the shape tests/providers/openai-compatible.hurl
 # asserts; rust/tests/http.rs holds the headers and the path.
 
@@ -111,7 +102,6 @@ openai() { # args...: the one shot through the replay seam, the request logged
     run --separate-stderr env OPENAI_API_KEY=sk-openai-test-not-a-key ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" -p openai "$@"
 }
 
-# bats test_tags=rust-only
 @test "openai: OPENAI_BASE_URL passes the same gate as --base-url, exit 2 before any request" {
     openai -m gpt-4.1-mini "hi"
     [ "$status" -eq 0 ]
@@ -128,7 +118,6 @@ openai() { # args...: the one shot through the replay seam, the request logged
     grep -q '^ask-claude: --base-url must be https' <<<"$stderr"
 }
 
-# bats test_tags=rust-only
 @test "openai: the one shot prints the reply and logs the chat-completions body" {
     openai -m gpt-4.1-mini -S "be brief" --max-tokens 64 "hi"
     [ "$status" -eq 0 ]
@@ -137,7 +126,6 @@ openai() { # args...: the one shot through the replay seam, the request logged
         messages: [{role: "system", content: "be brief"}, {role: "user", content: "hi"}]}' "$TMP/requests.jsonl"
 }
 
-# bats test_tags=rust-only
 @test "openai: the model is OPENAI_MODEL's when -m is not given, and -m wins" {
     OPENAI_MODEL=gemini-4-argon openai "hi"
     [ "$status" -eq 0 ]
@@ -147,7 +135,6 @@ openai() { # args...: the one shot through the replay seam, the request logged
 gpt-4.1-mini" ]
 }
 
-# bats test_tags=rust-only
 @test "openai: a chat sends the earlier reply back as text, and saves it as the Messages path does" {
     run --separate-stderr env OPENAI_API_KEY=k ASK_CLAUDE_REPLAY="$FIX/openai/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" -p openai -m gpt-4.1-mini <<<$'first\nsecond\n/quit'
     [ "$status" -eq 0 ]
@@ -155,7 +142,6 @@ gpt-4.1-mini" ]
     jq -e '.[1] == {role: "assistant", content: [{type: "text", text: "pong"}]} and length == 4' "$XDG_STATE_HOME"/ask-claude/*.json
 }
 
-# bats test_tags=rust-only
 @test "openai: the Messages API's server tools are refused, exit 2 before any request" {
     for flags in "--web" "--mcp https://mcp.example.com" "-s pptx" "--advisor claude-opus-5-5"; do
         # shellcheck disable=SC2086
@@ -166,11 +152,10 @@ gpt-4.1-mini" ]
     done
 }
 
-# bats test_tags=bash-only
 @test "base url: the recording script reads ANTHROPIC_BASE_URL, and the test-only name is gone" {
     # the retired name, spelled so this file does not match it
     local old="ASK_CLAUDE_""BASE_URL"
     grep -q 'ANTHROPIC_BASE_URL' "$ROOT/tests/record-session.sh"
-    refute grep -rqF "$old" "$ROOT/ask-claude" "$ROOT/lib" "$ROOT/tests" "$ROOT/README.md" "$ROOT/justfile" "$ROOT/.env.example" \
+    refute grep -rqF "$old" "$ROOT/tests" "$ROOT/README.md" "$ROOT/justfile" "$ROOT/.env.example" \
         "$ROOT/rust/src" "$ROOT/rust/tests"
 }

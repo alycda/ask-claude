@@ -3,7 +3,7 @@
 load helpers
 
 # The event log: $XDG_STATE_HOME/ask-claude/events.jsonl, one JSON line per
-# request (lib/event.jq builds the line; tests/unit/event.bats has its goldens).
+# request (rust/src/event.rs builds the line; rust/tests/goldens.rs has its goldens).
 # These run the binary under test against recorded fixtures.
 
 replay() { ASK_CLAUDE_REPLAY="$FIX/sse/$1.sse" "$BIN" "${@:2}"; }

@@ -50,10 +50,6 @@ completions shell *flags: build
     set -euo pipefail
     rust/target/debug/ask-claude --usage-spec | usage generate completion {{ quote(shell) }} ask-claude -f - {{ flags }}
 
-# Skips the tests tagged pty, which need a terminal name readline reports
-# bracketed paste for (`just pty-test` runs them), and rust-only, behaviour the
-# script does not have.
-
 [group('bash')]
 lint-bash:
     #!/usr/bin/env bash
@@ -63,29 +59,20 @@ lint-bash:
     printf '%s\n' "${files[@]}"
     shellcheck -x "${files[@]}"
 
-# offline: bats over recorded fixtures (tests/unit), no key needed
+# offline: bats over recorded fixtures (tests/unit) against the debug build, no key needed
 [group('bash')]
-unit-tests:
-    bats --filter-tags '!pty,!rust-only' tests/unit
-
-# the pty-tagged tests alone, under a TERM readline reports bracketed paste for
-[group('bash')]
-pty-test:
-    TERM=xterm-256color bats --filter-tags pty tests/unit
+unit-tests: build
+    bats tests/unit
 
 # the GitHub Actions workflows; mise fetches actionlint, so mise.toml stays the script's own toolchain
 [group('ci')]
 actionlint:
     mise x actionlint@1.7.12 -- actionlint
 
-# one bats file, filtered as unit-tests filters the suite, so the two agree
+# one bats file of the suite
 [group('bash')]
-unit-test unit:
-    bats --filter-tags '!pty,!rust-only' tests/unit/{{ quote(unit) }}.bats
-
-[group('bash')]
-step name:
-    bats --filter-tags {{ quote("step:" + name) }} tests/unit/*-steps.bats
+unit-test unit: build
+    bats tests/unit/{{ quote(unit) }}.bats
 
 # live Anthropic contracts: cheap calls, two of them one web search each (1 cent
 # per search), one listing an MCP server's tools. Only the live recipes (this one and
@@ -249,11 +236,3 @@ check-spec: build
     set -euo pipefail
     diff -u ask-claude.usage.kdl <(rust/target/debug/ask-claude --usage-spec) \
         || { echo "check-spec: ask-claude.usage.kdl is stale; run \`just spec\` and commit it" >&2; exit 1; }
-
-# Skips pty like unit-tests, and bash-only: the tests that read the script as a
-# file or pin what only the script does.
-
-# the bats suite against the Rust binary (R5 onwards; bash stays the oracle until R8)
-[group('rust')]
-test-rust: build
-    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats --filter-tags '!pty,!bash-only' tests/unit

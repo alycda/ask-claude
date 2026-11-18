@@ -48,6 +48,25 @@ fn r0_usage_spec_is_the_bash_spec() {
     );
 }
 
+/// The spec has a record in the tree: `ask-claude.usage.kdl` at the root is
+/// what `--usage-spec` prints, byte for byte. `just effort-floor` and review
+/// read that file at any commit without building the binary of that commit,
+/// so a spec change that does not move the file is a spec change nothing
+/// records. The environment is cleared because the spec names environment
+/// variables and must not read them.
+#[test]
+fn d1_usage_spec_is_the_tracked_snapshot() {
+    let snapshot = std::fs::read(repo().join("ask-claude.usage.kdl"))
+        .expect("ask-claude.usage.kdl is tracked at the root");
+    let out = bin().arg("--usage-spec").env_clear().output().unwrap();
+    assert!(out.status.success());
+    assert!(
+        out.stdout == snapshot,
+        "--usage-spec is not ask-claude.usage.kdl; `just spec` rewrites the snapshot:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
 /// `-V` prints the repository's `VERSION`, the number `just bump` moves and
 /// the bats `version:` test reads, not a second copy in `Cargo.toml`; run
 /// from a directory with no `.env`, since the binary never reads one.

@@ -14,6 +14,15 @@ spec() {
     } >ask-claude
 }
 
+# snapshot <flag>...: ask-claude.usage.kdl, the tracked record of the Rust
+# binary's spec, one flag per argument
+snapshot() {
+    {
+        printf 'bin "ask-claude"\n'
+        for f in "$@"; do printf 'flag "%s"\n' "$f"; done
+    } >ask-claude.usage.kdl
+}
+
 commit() {
     git add -A
     git -c user.name=t -c user.email=t@t commit -q -m "$1"
@@ -43,6 +52,19 @@ setup_repo() {
     tools
     spec '-m --model <model>'
     commit "a script, no version yet"
+}
+
+# setup_snapshot_repo: a repo whose first commit has the snapshot, no script
+# and no VERSION
+setup_snapshot_repo() {
+    command -v just >/dev/null 2>&1 || skip "just is not installed"
+    command -v usage >/dev/null 2>&1 || skip "usage is not installed"
+    cd "$TMP" || return
+    git init -q -b main repo
+    cd repo || return
+    tools
+    snapshot '-m --model <model>'
+    commit "a snapshot, no script, no version yet"
 }
 
 @test "effort-floor: before any version commit there is nothing to compare" {
@@ -207,4 +229,65 @@ setup_repo() {
     run just effort-floor
     grep -qE '^since [0-9a-f]{12}, version\(0\.1\.0\): macro$' <<<"$output"
     grep -q '^floor: meso' <<<"$output"
+}
+
+@test "effort-floor: with the snapshot at both commits, the floor is the snapshot's diff" {
+    setup_snapshot_repo
+    release 0.1.0 macro
+    snapshot '-e --effort <effort>'
+    commit "the model flag is gone"
+    run just effort-floor
+    [ "$status" -eq 0 ]
+    grep -qE '^since [0-9a-f]{12}, version\(0\.1\.0\): macro$' <<<"$output"
+    grep -q '^floor: meso' <<<"$output"
+    snapshot '-m --model <model>' '-e --effort <effort>'
+    commit "a second flag"
+    run just effort-floor
+    [ "$status" -eq 0 ]
+    grep -q '^floor: micro' <<<"$output"
+}
+
+@test "effort-floor: the script at the last version and the snapshot at the tip are compared" {
+    # the one release that spans the removal of the script
+    setup_repo
+    release 0.1.0 macro
+    git rm -q ask-claude
+    snapshot '-m --model <model>' '-e --effort <effort>'
+    commit "the script is gone, the snapshot records the same flag and one more"
+    run just effort-floor
+    [ "$status" -eq 0 ]
+    grep -qE '^since [0-9a-f]{12}, version\(0\.1\.0\): macro$' <<<"$output"
+    grep -q '^floor: micro' <<<"$output"
+    snapshot '-e --effort <effort>'
+    commit "the model flag is gone"
+    run just effort-floor
+    [ "$status" -eq 0 ]
+    grep -q '^floor: meso' <<<"$output"
+}
+
+@test "effort-floor: the snapshot is read before the script when a commit has both" {
+    # the script's spec and the snapshot disagree, so the answer says which was read
+    setup_repo
+    snapshot '-m --model <model>'
+    release 0.1.0 macro
+    snapshot '-e --effort <effort>'
+    commit "the snapshot loses the model flag, the script keeps it"
+    run just effort-floor
+    [ "$status" -eq 0 ]
+    grep -q '^floor: meso' <<<"$output"
+}
+
+@test "effort-floor: with neither the snapshot nor the script there is nothing to compare" {
+    command -v just >/dev/null 2>&1 || skip "just is not installed"
+    command -v usage >/dev/null 2>&1 || skip "usage is not installed"
+    cd "$TMP" && git init -q -b main bare && cd bare
+    tools
+    commit "tools only"
+    release 0.1.0 macro
+    printf 'notes\n' >README.md
+    commit "docs"
+    run just effort-floor
+    [ "$status" -eq 0 ]
+    grep -q 'nothing to compare' <<<"$output"
+    refute grep -q '^floor:' <<<"$output"
 }

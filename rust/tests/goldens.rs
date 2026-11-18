@@ -1367,3 +1367,554 @@ fn r6_event_tools_and_tool_calls() {
     assert_eq!(session["tools"], Value::Null);
     assert_eq!(session["tool_calls"], Value::Null);
 }
+
+// ---- D3: twins of the script-side tests that build their input by hand ----
+//
+// The tests below are the ones tests/unit/{reassemble,stream,request}-steps
+// .bats, stream.bats, request.bats and session.bats ran through `jq -f
+// lib/*.jq` and that no test above already pins. Each names the bats test
+// it twins. Expected values come from the events themselves or from what
+// the bats test wrote out; none comes from running the Rust code.
+
+/// The events of a fixture whose type is one of `types`, in stream order
+/// (the bats `pick`).
+fn pick(fixture: &str, types: &[&str]) -> Vec<Value> {
+    events(&format!("sse/{fixture}.sse"))
+        .into_iter()
+        .filter(|e| types.contains(&e["type"].as_str().unwrap_or("")))
+        .collect()
+}
+
+fn of_type<'a>(ev: &'a [Value], kind: &str) -> Vec<&'a Value> {
+    ev.iter().filter(|e| e["type"] == kind).collect()
+}
+
+/// The deltas of one block, by delta type, as the strings they carry.
+fn deltas(ev: &[Value], index: &Value, kind: &str, field: &str) -> Vec<String> {
+    of_type(ev, "content_block_delta")
+        .into_iter()
+        .filter(|e| e["index"] == *index && e["delta"]["type"] == kind)
+        .map(|e| e["delta"][field].as_str().unwrap().to_string())
+        .collect()
+}
+
+fn is_tool(start: &Value) -> bool {
+    matches!(
+        start["content_block"]["type"].as_str(),
+        Some("tool_use" | "server_tool_use")
+    )
+}
+
+/// The block the fold keeps for a `content_block_start`. The fixtures'
+/// indexes run 0, 1, 2, so the index is the position in `content`.
+fn block<'a>(out: &'a Value, start: &Value) -> &'a Value {
+    &out["content"][start["index"].as_u64().unwrap() as usize]
+}
+
+/// reassemble-steps.bats, "step message_start: model, usage and container
+/// come from .message".
+#[test]
+fn d3_step_message_start_gives_model_usage_and_container() {
+    for f in ["text", "code-execution"] {
+        let ev = pick(f, &["message_start"]);
+        let out = reassemble::message(&ev).unwrap();
+        let m = &ev[0]["message"];
+        assert_eq!(out["model"], m["model"], "{f}");
+        assert_eq!(out["usage"], m["usage"], "{f}");
+        assert_eq!(out["container"], m["container"], "{f}");
+    }
+}
+
+/// reassemble-steps.bats, "step content_block_start: each block is stored
+/// under its index", and "tool blocks get partial \"\", others none".
+#[test]
+fn d3_step_content_block_start_stores_each_block_under_its_index() {
+    for f in ["text", "thinking", "code-execution"] {
+        let ev = pick(f, &["message_start", "content_block_start"]);
+        let out = reassemble::message(&ev).unwrap();
+        let starts = of_type(&ev, "content_block_start");
+        assert_eq!(
+            out["content"].as_array().unwrap().len(),
+            starts.len(),
+            "{f}"
+        );
+        for s in starts {
+            let mut b = block(&out, s).clone();
+            let partial = b.as_object_mut().unwrap().remove("partial");
+            assert_eq!(b, s["content_block"], "{f}");
+            if is_tool(s) {
+                assert_eq!(
+                    partial,
+                    Some(Value::from("")),
+                    "{f}: a tool block starts at \"\""
+                );
+            } else {
+                assert_eq!(partial, None, "{f}: only a tool block has a partial");
+            }
+        }
+    }
+}
+
+/// reassemble-steps.bats, "step content_block_delta: text, thinking,
+/// signature and partial accumulate per block".
+#[test]
+fn d3_step_content_block_delta_accumulates_per_block() {
+    for f in ["text", "thinking", "code-execution"] {
+        let ev = pick(
+            f,
+            &[
+                "message_start",
+                "content_block_start",
+                "content_block_delta",
+            ],
+        );
+        let out = reassemble::message(&ev).unwrap();
+        for s in of_type(&ev, "content_block_start") {
+            let b = block(&out, s);
+            let from_start = |k: &str| s["content_block"][k].as_str().unwrap_or("").to_string();
+            let text = deltas(&ev, &s["index"], "text_delta", "text");
+            if !text.is_empty() {
+                assert_eq!(b["text"], from_start("text") + &text.concat(), "{f}");
+            }
+            let thinking = deltas(&ev, &s["index"], "thinking_delta", "thinking");
+            if !thinking.is_empty() {
+                assert_eq!(
+                    b["thinking"],
+                    from_start("thinking") + &thinking.concat(),
+                    "{f}"
+                );
+            }
+            let signature = deltas(&ev, &s["index"], "signature_delta", "signature");
+            if let Some(last) = signature.last() {
+                assert_eq!(b["signature"], last.as_str(), "{f}");
+            }
+            let partial = deltas(&ev, &s["index"], "input_json_delta", "partial_json");
+            if !partial.is_empty() {
+                assert_eq!(b["partial"], partial.concat(), "{f}");
+            }
+        }
+    }
+}
+
+/// reassemble-steps.bats, "step content_block_stop: tool input is parsed
+/// from partial, partial dropped".
+#[test]
+fn d3_step_content_block_stop_parses_the_tool_input() {
+    let ev = pick(
+        "code-execution",
+        &[
+            "message_start",
+            "content_block_start",
+            "content_block_delta",
+            "content_block_stop",
+        ],
+    );
+    let out = reassemble::message(&ev).unwrap();
+    let mut tools = 0;
+    for s in of_type(&ev, "content_block_start") {
+        let b = block(&out, s);
+        assert!(b.get("partial").is_none(), "{b}");
+        if is_tool(s) {
+            let partial = deltas(&ev, &s["index"], "input_json_delta", "partial_json").concat();
+            let input: Value = if partial.is_empty() {
+                serde_json::json!({})
+            } else {
+                serde_json::from_str(&partial).unwrap()
+            };
+            assert_eq!(b["input"], input);
+            tools += 1;
+        }
+    }
+    assert!(tools > 0, "code-execution.sse has a tool block");
+}
+
+/// reassemble-steps.bats, "step message_delta: stop reason, stop details,
+/// merged usage, container".
+#[test]
+fn d3_step_message_delta_gives_the_stop_and_merges_usage() {
+    for f in ["text", "refusal", "pause-turn", "code-execution"] {
+        let ev = pick(f, &["message_start", "message_delta"]);
+        let out = reassemble::message(&ev).unwrap();
+        let m = &of_type(&ev, "message_start")[0]["message"];
+        let d = of_type(&ev, "message_delta")[0];
+        assert_eq!(out["stop_reason"], d["delta"]["stop_reason"], "{f}");
+        assert_eq!(out["stop_details"], d["delta"]["stop_details"], "{f}");
+        // jq's `$m.usage + ($d.usage // {})`: the delta's keys win
+        let mut usage = m["usage"].as_object().unwrap().clone();
+        if let Some(more) = d["usage"].as_object() {
+            usage.extend(more.clone());
+        }
+        assert_eq!(out["usage"], Value::Object(usage), "{f}");
+        let container = match &d["delta"]["container"] {
+            Value::Null => &m["container"],
+            c => c,
+        };
+        assert_eq!(out["container"], *container, "{f}");
+    }
+}
+
+/// reassemble-steps.bats, "step error: the error object is kept".
+/// error.sse is a bare JSON error body (HTTP 404), not an SSE stream.
+#[test]
+fn d3_step_error_keeps_the_error_object() {
+    let body = json("sse/error.sse");
+    let out = reassemble::message(std::slice::from_ref(&body)).unwrap();
+    assert_eq!(out["error"], body["error"]);
+    assert_eq!(out["error"]["type"], "not_found_error");
+}
+
+/// reassemble-steps.bats, "step finish: .blocks becomes .content in index
+/// order".
+#[test]
+fn d3_step_finish_gives_content_in_index_order() {
+    for f in ["thinking", "code-execution"] {
+        let ev = pick(
+            f,
+            &[
+                "message_start",
+                "content_block_start",
+                "content_block_delta",
+                "content_block_stop",
+                "message_delta",
+            ],
+        );
+        let out = reassemble::message(&ev).unwrap();
+        assert!(out.get("blocks").is_none(), "{f}");
+        let mut starts = of_type(&ev, "content_block_start");
+        starts.sort_by_key(|s| s["index"].as_u64());
+        let want: Vec<&Value> = starts.iter().map(|s| &s["content_block"]["type"]).collect();
+        let got: Vec<&Value> = out["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| &b["type"])
+            .collect();
+        assert_eq!(got, want, "{f}");
+    }
+}
+
+fn printed(ev: &[Value]) -> String {
+    ev.iter().map(stream::line).collect()
+}
+
+/// stream-steps.bats, "step stream_content_block_start: a marker per
+/// non-text block, nothing for text". The expected marker is the bats
+/// test's own table, not the printer's.
+#[test]
+fn d3_step_stream_content_block_start_prints_a_marker_per_non_text_block() {
+    for f in ["text", "thinking", "code-execution"] {
+        let ev = pick(f, &["content_block_start"]);
+        let want: String = ev
+            .iter()
+            .map(|e| {
+                let b = &e["content_block"];
+                match b["type"].as_str() {
+                    Some("thinking") => "(thinking) ".to_string(),
+                    Some("server_tool_use") => "(running code) ".to_string(),
+                    Some("bash_code_execution_tool_result") => {
+                        format!("(result rc={}) ", b["content"]["return_code"])
+                    }
+                    _ => String::new(),
+                }
+            })
+            .collect();
+        assert_eq!(printed(&ev), want, "{f}");
+    }
+}
+
+/// stream-steps.bats, "step stream_content_block_start: a missing return
+/// code prints rc=?".
+#[test]
+fn d3_step_stream_a_missing_return_code_prints_a_question_mark() {
+    let ev = lines(
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"bash_code_execution_tool_result","content":{}}}"#,
+    );
+    assert_eq!(printed(&ev), "(result rc=?) ");
+}
+
+/// stream-steps.bats, "step stream_text_delta: text deltas print their
+/// text, in order", "step stream_message_stop: the stream ends with one
+/// newline", and "step stream_else: every other event prints nothing".
+#[test]
+fn d3_step_stream_text_deltas_the_last_newline_and_nothing_else() {
+    for f in ["text", "thinking", "code-execution"] {
+        let ev = pick(f, &["content_block_delta"]);
+        let want: String = ev
+            .iter()
+            .filter(|e| e["delta"]["type"] == "text_delta")
+            .map(|e| e["delta"]["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(printed(&ev), want, "{f}");
+
+        let mut silent = pick(
+            f,
+            &[
+                "ping",
+                "message_start",
+                "message_delta",
+                "content_block_stop",
+            ],
+        );
+        silent.extend(
+            ev.into_iter()
+                .filter(|e| e["delta"]["type"] != "text_delta"),
+        );
+        assert!(!silent.is_empty(), "{f}");
+        assert_eq!(printed(&silent), "", "{f}");
+    }
+    assert_eq!(printed(&pick("text", &["message_stop"])), "\n");
+}
+
+/// stream.bats, "stream: ping and message_delta print nothing".
+#[test]
+fn d3_stream_ping_and_message_delta_print_nothing() {
+    let ev = lines(concat!(
+        r#"{"type":"ping"}"#,
+        "\n",
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#,
+    ));
+    assert_eq!(printed(&ev), "");
+}
+
+/// stream.bats, "stream: an advisor call prints its marker, plaintext or
+/// encrypted advice alike", its last assertion: an advisor error names its
+/// code and the reply goes on. (The two goldens are in the sweep above.)
+#[test]
+fn d3_stream_an_advisor_error_names_its_code() {
+    let ev = lines(
+        r#"{"type":"content_block_start","index":1,"content_block":{"type":"advisor_tool_result","tool_use_id":"srvtoolu_FIXTURE","content":{"type":"advisor_tool_result_error","error_code":"overloaded"}}}"#,
+    );
+    assert_eq!(printed(&ev), "(advisor error: overloaded) ");
+}
+
+/// stream.bats, "stream: bidirectional formatting characters never reach
+/// the terminal, the marks do": the same two events, through the printer
+/// and not `safe` alone.
+#[test]
+fn d3_stream_the_printer_drops_the_nine_bidi_characters_and_keeps_the_marks() {
+    let ev = lines(concat!(
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a\u202ab\u202bc\u202cd\u202de\u202ef\u2066g\u2067h\u2068i\u2069j"}}"#,
+        "\n",
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\u200ex\u200fy\u061cz"}}"#,
+    ));
+    assert_eq!(printed(&ev), "abcdefghij\u{200e}x\u{200f}y\u{61c}z");
+}
+
+/// request.bats, "request: --web sends the dynamic versions for every model
+/// id and alias": the builder does not special-case a model id.
+#[test]
+fn d3_request_web_sends_the_same_tools_for_every_model() {
+    for m in [
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
+        "claude-fable-5-1",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
+        "haiku",
+        "sonnet",
+        "opus",
+        "fable",
+        "claude-haiku-4-5",
+        "claude-sonnet-4-5-20250929",
+        "us.anthropic.claude-opus-5-5-v1:0",
+    ] {
+        let mut a = args("", "", "", "", true, &[], "");
+        a.model = m.into();
+        let types: Vec<Value> = request::body(&a)["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["type"].clone())
+            .collect();
+        assert_eq!(types, ["web_search_20260318", "web_fetch_20260318"], "{m}");
+    }
+}
+
+/// request.bats, "request: with several servers the shared token reaches
+/// none of them". (Each server's own `ASK_CLAUDE_MCP_TOKEN_<HOST>` is read
+/// from the environment and is tested through the binary: oneshot.bats,
+/// "several --mcp with their own tokens each send their own" and "the
+/// variable the refusal names is the one the request reads", and cli.rs,
+/// `d3_a_lone_servers_own_token_wins_over_the_shared_one`.)
+#[test]
+fn d3_request_with_several_servers_the_shared_token_reaches_none() {
+    let body = request::body(&args(
+        "",
+        "",
+        "",
+        "",
+        false,
+        &[
+            "https://mcp.deepwiki.com/mcp",
+            "https://mcp.example.com/sse",
+        ],
+        "tok_SHARED",
+    ));
+    let servers = body["mcp_servers"].as_array().unwrap();
+    assert_eq!(servers.len(), 2);
+    for s in servers {
+        assert!(s.get("authorization_token").is_none(), "{s}");
+    }
+}
+
+fn advisor_args(messages: Value) -> request::Args {
+    let mut a = args("", "", "", "", false, &[], "");
+    a.model = "claude-haiku-5-5".into();
+    a.advisor = "claude-sonnet-5".into();
+    a.messages = messages;
+    a
+}
+
+/// request.bats, "request: --advisor adds the advisor tool, last, capped at
+/// 3 calls a turn": the advisor.json golden, by value and by its text, so
+/// the tool's place after the web tools is held too.
+#[test]
+fn d3_request_advisor_matches_its_golden() {
+    let mut a = advisor_args(json("request/history-one-turn.json"));
+    a.web = true;
+    let body = request::body(&a);
+    assert_eq!(body, json("request/advisor.json"));
+    assert_eq!(
+        serde_json::to_string_pretty(&body).unwrap() + "\n",
+        read("request/advisor.json")
+    );
+}
+
+/// request.bats' `advisor_history`: a chat whose last user message is
+/// followed by one paused reply holding `now` advisor calls, after a turn
+/// that held `before`.
+fn advisor_history(now: usize, before: usize) -> Value {
+    let reply = |n: usize| {
+        let mut content = vec![
+            serde_json::json!({"type": "server_tool_use", "id": "srvtoolu_FIXTURE",
+                               "name": "advisor", "input": {}});
+            n
+        ];
+        content.push(serde_json::json!({"type": "text", "text": "..."}));
+        serde_json::json!({"role": "assistant", "content": content})
+    };
+    serde_json::json!([
+        {"role": "user", "content": "first"}, reply(before),
+        {"role": "user", "content": "second"}, reply(now),
+    ])
+}
+
+/// request.bats, "a paused turn's advisor calls count against the 3",
+/// "with 3 calls made this turn the advisor tool is left out", and "calls
+/// from an earlier turn do not count".
+#[test]
+fn d3_request_the_advisor_cap_counts_this_turns_calls_only() {
+    assert_eq!(
+        request::body(&advisor_args(advisor_history(2, 0)))["tools"],
+        serde_json::json!([{"type": "advisor_20260301", "name": "advisor",
+                            "model": "claude-sonnet-5", "max_uses": 1}])
+    );
+    assert!(
+        request::body(&advisor_args(advisor_history(3, 0)))
+            .get("tools")
+            .is_none()
+    );
+    assert_eq!(
+        request::body(&advisor_args(advisor_history(0, 3)))["tools"][0]["max_uses"],
+        3
+    );
+}
+
+/// request.bats, "--mcp-tool makes that server's toolset an allowlist; a
+/// server it does not name keeps every tool" (the mcp-tool.json golden),
+/// "--mcp-tool matches the host whatever its case, and ignores the URL's
+/// port and path", and "without --mcp-tool the MCP golden is untouched"
+/// (`r3_request_web_mcp_and_everything` is that call).
+#[test]
+fn d3_request_mcp_tool_makes_an_allowlist_for_the_server_it_names() {
+    let mut a = args(
+        "",
+        "",
+        "",
+        "",
+        false,
+        &[
+            "https://mcp.deepwiki.com/mcp",
+            "https://mcp.example.com/sse",
+        ],
+        "",
+    );
+    a.mcp_tool = "mcp.deepwiki.com:read_wiki_structure mcp.deepwiki.com:ask_question".into();
+    let body = request::body(&a);
+    assert_eq!(body, json("request/mcp-tool.json"));
+    assert_eq!(
+        serde_json::to_string_pretty(&body).unwrap() + "\n",
+        read("request/mcp-tool.json")
+    );
+    assert_eq!(
+        body["tools"][1],
+        serde_json::json!({"type": "mcp_toolset", "mcp_server_name": "mcp-example-com"})
+    );
+
+    let mut a = args(
+        "",
+        "",
+        "",
+        "",
+        false,
+        &["https://MCP.Example.com:8443/sse"],
+        "",
+    );
+    a.mcp_tool = "mcp.EXAMPLE.com:search".into();
+    assert_eq!(
+        request::body(&a)["tools"][0]["configs"],
+        serde_json::json!({"search": {"enabled": true}})
+    );
+}
+
+/// request.bats, "a container id without skills goes out as the plain id
+/// (a pause_turn continuation)".
+#[test]
+fn d3_request_a_container_id_without_skills_is_the_plain_id() {
+    assert_eq!(
+        request::body(&args("", "", "", "container_FIXTURE", false, &[], ""))["container"],
+        "container_FIXTURE"
+    );
+    assert!(
+        request::body(&args("", "", "", "", false, &[], ""))
+            .get("container")
+            .is_none()
+    );
+}
+
+/// request-steps.bats, "step skills_entries: one entry per non-empty line,
+/// version defaults to latest": the script turned commas into newlines
+/// before `lib/skills.jq`, so an empty entry between two commas, or after
+/// the last, is no entry. Oracle: `printf 'pptx,,skill_abc@skver_1,' | tr
+/// ',' '\n' | jq -R -s -c -f lib/skills.jq` prints skills.json.
+#[test]
+fn d3_skills_an_empty_entry_is_no_entry() {
+    assert_eq!(
+        request::skills("pptx,,skill_abc@skver_1,"),
+        json("request/skills.json")
+    );
+}
+
+/// session.bats, "session: the history drops bidirectional formatting
+/// characters and keeps the marks": the same page, a user turn and an
+/// agent turn.
+#[test]
+fn d3_session_history_drops_bidi_from_both_speakers() {
+    let page: Value = serde_json::from_str(
+        r#"{"data":[{"type":"user.message","content":[{"type":"text","text":"x\u202ay"}]},{"type":"agent.message","content":[{"type":"text","text":"a\u202eb\u2066c\u200fd"}]}]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        session::history(&page),
+        "you: xy\n\nagent: abc\u{200f}d\n\n"
+    );
+    // session.bats, "bidirectional formatting characters in an agent
+    // message never reach the terminal": the same event it prints
+    let message: Value = serde_json::from_str(
+        r#"{"type":"agent.message","content":[{"type":"text","text":"a\u202eb\u2066c\u2069d\u200fe"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(session::line(&message), "abcd\u{200f}e");
+}

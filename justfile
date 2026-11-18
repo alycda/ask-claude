@@ -237,6 +237,19 @@ parity: build
     set -euo pipefail
     usage diff ask-claude <(rust/target/debug/ask-claude --usage-spec)
 
+# rewrite ask-claude.usage.kdl, the tracked record of the spec, from the binary
+[group('rust')]
+spec: build
+    rust/target/debug/ask-claude --usage-spec > ask-claude.usage.kdl
+
+# ask-claude.usage.kdl is what the binary prints: a spec change that did not run `just spec` fails
+[group('rust')]
+check-spec: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    diff -u ask-claude.usage.kdl <(rust/target/debug/ask-claude --usage-spec) \
+        || { echo "check-spec: ask-claude.usage.kdl is stale; run \`just spec\` and commit it" >&2; exit 1; }
+
 # Skips pty like unit-tests, and bash-only: the tests that read the script as a
 # file or pin what only the script does.
 

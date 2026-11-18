@@ -26,10 +26,10 @@ The test seam that substitutes a recorded Stream for the network, so every behav
 The server-sent event stream an API returns for one turn: Messages events for the Messages path, session events for a Session.
 
 ### Printer
-A jq program that prints a Stream while it arrives, one string per event, with markers for tool use and nothing for events the user need not see. Everything a Printer emits passes through the safe filter.
+The function that prints a Stream while it arrives, one string per event, with markers for tool use and nothing for events the user need not see. Everything a Printer emits passes through the safe filter.
 
 ### Fold
-A jq program that reads a whole Stream at once and produces one value from it. The Messages fold reassembles the reply into the assistant turn; the session fold produces what the shell decides on after an idle: stop reason, usage, error, pending confirmations.
+The function that reads a whole Stream at once and produces one value from it. The Messages fold reassembles the reply into the assistant turn; the session fold produces what the client decides on after an idle: stop reason, usage, error, pending confirmations.
 *Avoid:* reassembler, for the general concept; it names the Messages fold only.
 
 ### safe
@@ -98,10 +98,10 @@ A directory in Claude Code's plugin format, found through a marketplace file, th
 ## Testing
 
 ### Oracle
-The reference implementation whose behaviour defines correctness: originally the imported script, then the bash ask-claude once it reached parity, and the bash binary again while the Rust port is measured against it. A Golden is what the Oracle does, not a design choice.
+What defines correct output. It was a reference implementation: the imported script, then the bash ask-claude, then the bash ask-claude again while the Rust port was measured against it. Since the script was removed, the Oracle is the Goldens, frozen, and the Live contracts. No second implementation is left to run, so a Golden cannot be regenerated: it is read.
 
 ### Golden
-The expected output recorded by running the Oracle over a Fixture. A Golden changes only in a commit that says why the Oracle was wrong.
+The expected output for a Fixture. A Golden recorded before the script was removed is what the script printed. A Golden added after it is the binary's output, read line by line in the commit that adds it. A Golden changes only in a commit that says why it was wrong.
 
 ### Fixture
 A recorded Stream, or a recorded request or response body, with every id and name redacted, tracked in the repository so the Unit suite runs offline. A Fixture that cannot be recorded, such as a refusal, is derived by hand from a recorded one.
@@ -110,7 +110,7 @@ A recorded Stream, or a recorded request or response body, with every id and nam
 The pass that replaces every API identifier and name in a Fixture before it is tracked. It matches values, never keys, and it is tested without the API.
 
 ### Unit suite
-The bats tests that run the script over Fixtures through the Replay seam and compare against Goldens. It needs no key.
+The bats tests that run the binary over Fixtures through the Replay seam, and the Rust tests that hold the crate's functions to the Goldens. It needs no key.
 
 ### Live contract
 A hurl file that makes one cheap call against a real API and checks the shape of what comes back. Live contracts are the only tests that read the key, and none runs by default.
@@ -146,10 +146,10 @@ EffVer's measure of a release: how much work adopting it takes. Macro is a large
 The lowest Effort a release may claim, found by diffing the usage spec against the last version: a breaking interface change forbids micro.
 
 ### Usage spec
-The declarative description of the command line, carried at the top of the script, from which help, parsing and shell completion are generated. Diffing two specs is how interface change is measured, for the Effort floor and for parity between the bash and Rust binaries.
+The declarative description of the command line. Its source is the clap definition in the crate, and `ask-claude.usage.kdl` at the root is its tracked snapshot, held byte for byte to what the binary prints. Help, parsing and shell completion come from the source. Diffing two snapshots is how interface change is measured for the Effort floor.
 
 ### Parity
-The point at which the Rust port replaces the bash script: every unit test green on both binaries, an empty usage spec diff, and the Live contracts green.
+The point at which the Rust port replaced the bash script: every unit test green on both binaries, a usage spec diff with no breaking change, and the Live contracts green. It is history now. The script is gone, and the Parity gate that compared the two has nothing left to compare.
 
 ## Flagged ambiguities
 

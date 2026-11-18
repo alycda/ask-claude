@@ -35,6 +35,14 @@ everything it did. It is still in the history: as imported, in "feat: import
 claude.sh as originally written", and as last kept, with the security-audit
 fixes, at the `v0.1.4` bookmark (`jj file show -r v0.1.4 docs/claude.sh`).
 
+The bash `ask-claude` was the oracle after that, through the Rust port. It
+was removed with `lib/` in "chore: remove the script and lib/" (phase 5) and is
+kept at `v0.3.3` (`jj file show -r v0.3.3 ask-claude`). Since then the oracle
+is the goldens, frozen, and the live contracts. Nothing is left to regenerate
+a golden from: a new fixture's golden is the Rust binary's output, read line
+by line in the commit that adds it, and an existing golden still changes only
+with a commit message saying why it was wrong.
+
 Fixtures (recorded 2026-11-02 against api.anthropic.com, ids redacted):
 
 | File | What it exercises |
@@ -223,7 +231,7 @@ to the script, removing it turns every test red at once.
 | D3 | test: Rust twins of what the script's tests pin | `rust/tests/goldens.rs`, `rust/tests/cli.rs` | green on arrival: it moves assertions, it adds no behaviour. Each assertion in the eight jq-program bats files, and the `session-history.jq` test in `agent-chat.bats`, is matched to a test in `goldens.rs` in the commit body, or ported. Each of the 14 `bash-only` tests gets the disposition below. A test that turns out red is a parity bug and gets its own test-then-feat pair before M5. Done: 24 twins added, none red; the commit body has the table | C | [x] |
 | D4 | test: the suite runs the Rust binary | `tests/unit/helpers.bash`, `tests/unit/*.bats`, `justfile` | `BIN` defaults to `rust/target/debug/ask-claude`; `unit-tests` builds first; `test-rust`, `pty-test`, `step` and the `bash-only` and `rust-only` tags are gone; `spec_file` has one branch; the eight jq-program files, the `session-history.jq` test and the `bash-only` tests are deleted. `just unit-tests` green with the script still in the tree and unread: `chmod -x ask-claude` changes no result. Also `bash.yml`, which ran `just pty-test` and had no Rust toolchain: it installs one and runs the suite once | C | [x] |
 | D5 | chore: remove the script and `lib/` | `ask-claude`, `lib/`, `justfile` (`_help`, `_agents-help`, `ask-bash`, `bench-compare`, `parity`, `check-version-line`, the `sed` in `bump`), `mise.toml` and `mise.lock` (hyperfine), `.github/workflows/` (`bash.yml` becomes the bats job on the Rust binary; `rust.yml` loses the `ask-claude` path and `continue-on-error`; the `spec` job in `lint.yml` reads the snapshot; the `entity-diff.yml` comment) | `git grep -n 'lib/.*\.bash\|\./ask-claude'` finds no recipe or workflow; `just lint-bash` still covers bats, `tools/` and `tests/record-session.sh`; `just unit-tests`, `just rust-test`, `just check-spec`, `just actionlint` green. Also `tests/record-session.sh`, which sourced `lib/common.bash` for `safe_text` and now carries it; `r0_usage_spec_is_the_bash_spec` in `rust/tests/cli.rs`, which diffed against the script; and the `help` recipes, which ran `./ask-claude` from the build directory | A | [x] |
-| D6 | docs: one binary | `README.md` (install, no runtime dependencies, the bash 5.1 line gone), `AGENTS.md`, `CONCEPTS.md` (Oracle, Unit suite, Usage spec, Parity gate), `CODING_STANDARDS.md` (the jq-program rules and the bash-arithmetic rule retired, each with the commit that retired it), this file's Oracle section | no document names a file D5 removed, except as history at the bookmark. Doc comments in `rust/src` that cite `lib/*.jq` stay: they name the oracle a function was matched against | C | [ ] |
+| D6 | docs: one binary | `README.md` (install, no runtime dependencies, the bash 5.1 line gone), `AGENTS.md`, `CONCEPTS.md` (Oracle, Unit suite, Usage spec, Parity gate), `CODING_STANDARDS.md` (the jq-program rules and the bash-arithmetic rule retired, each with the commit that retired it), this file's Oracle section | no document names a file D5 removed, except as history at the bookmark. Doc comments in `rust/src` that cite `lib/*.jq` stay: they name the oracle a function was matched against. Kept, not retired: the bash-arithmetic rule, because `tools/effver/check-effver` is still bash and still does that arithmetic. `REVIEW.md` is touched too, where it said what a golden is | C | [x] |
 
 The 14 `bash-only` tests (12 tagged, and the 2 of `argv.bats`, tagged as a file):
 

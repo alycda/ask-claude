@@ -1,10 +1,11 @@
 # ask-claude: instructions for agents
 
 ask-claude is a shell client for the Anthropic Messages API and Managed
-Agents sessions. The bash script `ask-claude` is the reference. A Rust port
-lives in `rust/` on its own line and replaces the script when it reaches
-parity. `docs/plan.md` is the contract: settled decisions, the commit graph,
-and one row per commit with its validation. Read it before any change.
+Agents sessions. The client is the Rust binary in `rust/`. The bash script
+it replaced was removed in "chore: remove the script and lib/" and is kept at
+`v0.3.3` (`jj file show -r v0.3.3 ask-claude`). `docs/plan.md` is the
+contract: settled decisions, the commit graph, and one row per commit with
+its validation. Read it before any change.
 
 ## The loop: plan, fail, build, verify
 
@@ -16,9 +17,13 @@ Every step leaves a commit, so the work can be reviewed from history alone.
    order.
 2. **Fail.** A `test:` commit comes first and is red on its parent for
    exactly the new tests. Unit tests are bats over recorded fixtures and
-   goldens (`just unit-tests`); live contracts are hurl (`just test`,
-   `just test-openai`). Goldens are what the oracle does today; change one
-   only in a commit that says why the oracle was wrong.
+   goldens (`just unit-tests`) and Rust tests over the same goldens (`just
+   rust-test`); live contracts are hurl (`just test`, `just test-openai`).
+   The goldens are frozen: they are what the bash script printed when it
+   was removed, and no second implementation is left to regenerate them.
+   Change one only in a commit that says why it was wrong. A new fixture's
+   golden is the binary's output, read line by line in the commit that
+   adds it.
 3. **Build.** The `feat:` commit is the child of its test commit and turns
    it green with no edit to the test. If the test must change, that is its
    own commit with the reason.
@@ -70,11 +75,12 @@ something stays in history; squash only fixups with no lesson.
 - `tests/fixtures/` — recorded SSE and session streams, ids redacted, and
   their goldens. Re-record live only when a `TODO:` commit says so.
 - `tools/effver/` — `bump`, `check-effver`, `effort-floor`.
-- `rust/` — the port, phase 4 of the plan.
+- `rust/` — the crate: the binary and its tests.
+- `ask-claude.usage.kdl` — the tracked snapshot of the command-line spec.
+  `just spec` rewrites it; `just check-spec` fails when it is stale.
 
 ## Providers
 
-Venice is a base URL, not a provider. `-p openai` is refused in bash; the
-OpenAI chat-completions shape belongs to the Rust port's
-`OpenAiCompatible { base_url }`. `--base-url` must be https, or http on
-loopback.
+Venice is a base URL, not a provider. `-p openai` is the OpenAI
+chat-completions shape, `OpenAiCompatible { base_url }` in
+`rust/src/openai.rs`. `--base-url` must be https, or http on loopback.

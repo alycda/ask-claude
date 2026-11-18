@@ -2,8 +2,8 @@
 
 [![AI:W WRITE](https://img.shields.io/badge/AI-WRITE-grey?style=flat&logoSize=auto&labelColor=13171f)](https://0rwx.com)
 
-Talk to Claude from a shell with nothing but `curl` and `jq`. One script,
-one request shape, streaming always on.
+Talk to Claude from a shell. One binary, one request shape, streaming
+always on.
 
 ```sh
 ask-claude "one question"           one shot, prints the answer
@@ -26,8 +26,8 @@ server's authorization token is `ASK_CLAUDE_MCP_TOKEN_<HOST>`, the host
 upper-cased with every other character an underscore
 (`ASK_CLAUDE_MCP_TOKEN_MCP_EXAMPLE_COM` for `https://mcp.example.com/mcp`),
 and each server gets only its own. `ASK_CLAUDE_MCP_TOKEN` is for a lone
-`--mcp`: with several, it would reach every server's operator, so the
-script exits 2 and names each server's variable. Both work with
+`--mcp`: with several, it would reach every server's operator, so
+ask-claude exits 2 and names each server's variable. Both work with
 `-s`, in the one-shot and in the chat; the stream shows `(web_search) `,
 `(web_fetch) ` and `(mcp <server>) ` while the model uses them.
 
@@ -130,7 +130,7 @@ One JSON array of turns per chat, named by its start time
 beside it in `<name>.json.container`, so the next turn reuses the container.
 An empty chat leaves no file.
 
-The state directory must be a real directory you own, mode 700. The script
+The state directory must be a real directory you own, mode 700. ask-claude
 sets the mode and exits 2 when the directory is a symlink, cannot be created
 or made private, or is owned by another account.
 
@@ -154,13 +154,13 @@ session's so far (`usage_scope: "session"`). To total a session, take the
 last line or the maximum, not the sum.
 A session that fails to start gets one error line with `chat: null`.
 
-One known gap: Ctrl-C during a Messages request ends the script before the
+One known gap: Ctrl-C during a Messages request ends ask-claude before the
 line is written, so an interrupted Messages request leaves no line. A session
 turn interrupted with Ctrl-C writes `interrupted`.
 
 | Field | Value |
 | --- | --- |
-| `v`, `ask_claude` | line format (1) and script version |
+| `v`, `ask_claude` | line format (1) and ask-claude version |
 | `ts` | UTC, ISO 8601, to the second |
 | `kind` | `messages` or `session` |
 | `chat` | the chat's name as `list` shows it, the session id, or `null` for a session that never started |
@@ -321,14 +321,24 @@ are listed in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/sessions/`;
 | 1 | the API returned an error; the unanswered turn is not saved |
 | 2 | bad input: no key, unreadable `-f` file, unknown chat for `resume` |
 
+## Install
+
+`cargo install --locked --path rust` builds the binary and puts `ask-claude`
+on `PATH`. It needs a Rust toolchain; `mise install` provides the one pinned
+in `mise.toml`.
+
 ## Runtime dependencies
 
-`curl`, `jq`, and [`usage`](https://usage.jdx.dev), which parses the
-`#USAGE` block at the top of the script into flags, help, and shell
-completions. `mise install` provides `jq` and `usage` at the versions
-pinned in `mise.toml`; `curl` comes from the system.
+None. ask-claude is one binary and makes its own HTTPS requests (rustls). It
+runs no other program, with one exception: `--local-mcp` starts the command
+you give it with `sh`.
 
-bash 5.1 or newer, so a multi-line paste in the chat loop is one turn.
+[`usage`](https://usage.jdx.dev) is needed only by `just completions`, which
+turns `ask-claude --usage-spec` into shell completions.
+
+Through 0.3.3 the repository also had a bash script of the same name, which
+needed `curl`, `jq`, `usage` and bash 5.1. It is kept in the history:
+`git show v0.3.3:ask-claude`.
 
 ## Development
 

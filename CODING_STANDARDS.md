@@ -9,10 +9,11 @@ enforce belong elsewhere.
 ## Secrets and process arguments
 
 - **Nothing private goes on a command line.** The API key, request bodies,
-  prompt text, file contents and chat lines reach curl and jq through a pipe,
-  a process-substitution file (`-H @<(...)`, `--secrets-file <(...)`), stdin
-  (`--data-binary @-`), or `--rawfile <var> /dev/stdin`. Other local accounts
-  can read process arguments, and arguments have a size limit. Source: "keep
+  prompt text, file contents and chat lines reach another program through a
+  pipe, a process-substitution file (`--secrets-file <(...)`) or stdin. The
+  binary starts one program, the `--local-mcp` command, and the recipes and
+  the recorder start curl, jq and hurl. Other local accounts can read
+  process arguments, and arguments have a size limit. Source: "keep
   the API key and request body off the command line", "request text reaches
   jq on stdin, not on its command line".
 - **A key file is refused unless it is private to the user.** Treat a
@@ -23,8 +24,8 @@ enforce belong elsewhere.
 ## What reaches the terminal
 
 - **Every string not typed by the user at this prompt goes through `safe`
-  before it is printed.** That includes values the shell extracts itself,
-  not only the jq renderers: tool names and inputs, tool results, skill
+  before it is printed.** That includes values taken out of an event one
+  at a time, not only what the printers render: tool names and inputs, tool results, skill
   bodies, stop reasons, event ids, raw bytes of a non-SSE body. `safe`
   keeps tab and newline and drops every other C0 and C1 control character
   and the bidirectional formatting characters U+202A to U+202E and U+2066
@@ -32,8 +33,8 @@ enforce belong elsewhere.
   terminal control characters from everything ask-claude prints", "every
   Managed Agents value the shell prints goes through safe", "safe drops the
   bidi formatting characters in every jq definition".
-- **A value shown for approval is encoded exactly once, by `jq -c`.** Never
-  stack `tostring` with `@tsv` or another escaping layer; the double
+- **A value shown for approval is encoded exactly once, as compact JSON.**
+  Never stack another escaping layer on it; the double
   encoding displays a different command from the one being approved.
   Inside that one encoding, every code point `safe` would drop and every
   invisible one it keeps (the bidi marks, zero-width characters, U+FEFF)
@@ -83,25 +84,23 @@ enforce belong elsewhere.
   Source: "history stays consistent when a request fails or a reply cannot
   be parsed".
 
-## jq programs
+## jq in the recorder and the tests
 
-- **Every `last(...)` and `first(...)` carries an explicit default**, and
-  `//` is applied outside the pipe it guards. Since jq 1.8, `last(empty)`
-  yields nothing rather than null, so a missing event silently empties the
-  whole fold. Source: "explicit defaults for every last(), so jq 1.8 folds
-  a turn".
-- **A jq program takes its inputs the way the oracle passed them**
-  (`--arg`, `--argjson`, `--rawfile`, `--slurpfile`, same names), so the
-  goldens stay valid and the Rust port has one shape to match. Source:
-  `docs/plan.md`, "jq file contract".
 - **A redaction filter matches values, not keys**, and lists every id
   prefix the API can emit. Source: "redact ids as values only, and
   agent_name, file_ and memstore_ ids".
 
+Retired by "chore: remove the script and lib/", which removed every jq
+program the client ran: the rule that every `last(...)` and `first(...)`
+carries an explicit default, and the rule that a jq program takes its inputs
+the way the oracle passed them. No jq program is left that folds a stream or
+has a golden. The first rule's defect is held on the Rust side by the test
+that folds a turn with no usage and no error to zeros.
+
 ## Tests
 
 - **A regression test fails on the parent commit and passes on the fix.**
-  The commit message says so. A test that passes against the old script
+  The commit message says so. A test that passes against the old code
   has not shown anything. Source: every `fix:` commit since the audit;
   "argv.bats ... reworked until it discriminated".
 - **A live-path failure the replay seam skips gets a fixture that replays

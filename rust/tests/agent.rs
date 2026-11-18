@@ -426,7 +426,6 @@ fn agent_ctrl_c_during_a_local_tool_call_sends_no_further_call() {
 /// 1800 s limit).
 #[test]
 fn agent_a_turn_closes_its_stream_at_the_idle() {
-    use std::os::fd::AsRawFd;
     let dir = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     let path = fifo(dir.path(), 1);
@@ -443,18 +442,18 @@ fn agent_a_turn_closes_its_stream_at_the_idle() {
         )
         .unwrap();
         w.flush().unwrap();
-        // the write end reports an error once no reader holds the FIFO
+        // A write fails with EPIPE once no reader holds the FIFO. poll(2)
+        // is not asked: Linux reports POLLERR on this end, macOS reports
+        // POLLOUT alone. The probe is an SSE comment, so a reader that is
+        // still there reads nothing from it.
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut gone = false;
         while !gone && Instant::now() < deadline {
-            let mut p = libc::pollfd {
-                fd: w.as_raw_fd(),
-                events: libc::POLLOUT,
-                revents: 0,
-            };
-            // SAFETY: poll(2) on one descriptor this thread owns
-            unsafe { libc::poll(&mut p, 1, 50) };
-            gone = p.revents & (libc::POLLERR | libc::POLLHUP) != 0;
+            thread::sleep(Duration::from_millis(50));
+            gone = matches!(
+                w.write_all(b":\n"),
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe
+            );
         }
         let _ = closed_tx.send(gone);
     });

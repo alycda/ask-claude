@@ -18,34 +18,12 @@ fn repo() -> PathBuf {
 }
 
 #[test]
-fn r0_usage_spec_is_the_bash_spec() {
+fn r0_usage_spec_names_the_binary_and_its_agent_command() {
     let out = bin().arg("--usage-spec").output().unwrap();
     assert!(out.status.success());
     let spec = String::from_utf8(out.stdout).unwrap();
     assert!(spec.contains("bin ask-claude"), "{spec}");
     assert!(spec.contains("cmd agent"), "{spec}");
-
-    // usage diff against the script itself, when the usage CLI is here
-    if which::which_usage().is_none() {
-        eprintln!("usage not on PATH: the diff is left to `just parity`");
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let kdl = dir.path().join("rust.kdl");
-    std::fs::write(&kdl, &spec).unwrap();
-    let diff = Command::new("usage")
-        .arg("diff")
-        .arg(repo().join("ask-claude"))
-        .arg(&kdl)
-        .output()
-        .unwrap();
-    let report =
-        String::from_utf8_lossy(&diff.stdout).to_string() + &String::from_utf8_lossy(&diff.stderr);
-    // newer usage says "No interface changes." when the specs agree
-    assert!(
-        report.contains("Found 0 breaking") || report.contains("No interface changes"),
-        "{report}"
-    );
 }
 
 /// The spec has a record in the tree: `ask-claude.usage.kdl` at the root is
@@ -689,15 +667,4 @@ fn d3_a_lone_servers_own_token_wins_over_the_shared_one() {
     let log = std::fs::read_to_string(dir.path().join("requests.jsonl")).unwrap();
     let request: serde_json::Value = serde_json::from_str(log.lines().next().unwrap()).unwrap();
     assert_eq!(request["mcp_servers"][0]["authorization_token"], "tok_A");
-}
-
-mod which {
-    /// `usage` on PATH, or None.
-    pub fn which_usage() -> Option<std::path::PathBuf> {
-        std::env::var_os("PATH").and_then(|paths| {
-            std::env::split_paths(&paths)
-                .map(|d| d.join("usage"))
-                .find(|p| p.is_file())
-        })
-    }
 }

@@ -1,19 +1,14 @@
 # EffVer recipes. The justfile pulls them in with `import 'tools/effver/effver.just'`.
 # bump-effver and check-effver are copied unchanged from alycda/dotfiles@effver.
 
-# MACRO.MESO.MICRO (0.MACRO.MICRO below 1.0); also updates the script's own copy
+# MACRO.MESO.MICRO (0.MACRO.MICRO below 1.0); the binary reads VERSION when it is built
 bump effort:
     tools/effver/bump-effver {{ effort }}
-    if [ -f ask-claude ]; then sed -i.bak "s/^readonly ASK_CLAUDE_VERSION=.*/readonly ASK_CLAUDE_VERSION=$(cat VERSION)/" ask-claude && rm ask-claude.bak; fi
 
 # Check VERSION and CHANGELOG.md in every commit of REVSET (default: the stack not on trunk yet).
 # Without .jj, REVSET is a git range such as origin/main..HEAD, and there is no default.
 check-effver revset='':
     if [ -d .jj ]; then tools/effver/check-effver --jj {{ quote(revset) }}; elif [ -n {{ quote(revset) }} ]; then tools/effver/check-effver {{ quote(revset) }}; else echo 'usage: just check-effver <git range>, e.g. origin/main..HEAD' >&2; exit 2; fi
-
-# The script's copy of the version matches VERSION
-check-version-line:
-    grep -qx "readonly ASK_CLAUDE_VERSION=$(cat VERSION)" ask-claude
 
 # Lowest effort the next bump can claim: usage diff of the spec since the last version commit.
 # The spec is ask-claude.usage.kdl, or the script's #USAGE block where a tree has no snapshot.

@@ -1,22 +1,12 @@
 import 'tools/effver/effver.just'
 
-[group('bash')]
-_help:
-    ./ask-claude --help
-
-[group('bash')]
-_agents-help:
-    ./ask-claude agent --help
-
 [group('rust')]
-[working-directory: 'rust/target/debug']
 help: build
-    ./ask-claude --help
+    rust/target/debug/ask-claude --help
 
 [group('rust')]
-[working-directory: 'rust/target/debug']
 agent-help: build
-    ./ask-claude agent --help
+    rust/target/debug/ask-claude agent --help
 
 # Each argument reaches the binary as one word ("$@", so `-S 'be terse'`
 # stays whole), flags before the question, and the binary runs where just
@@ -29,13 +19,8 @@ agent-help: build
 ask question="" *FLAGS: build
     bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
 
-[group('bash')]
-[positional-arguments]
-ask-bash question="" *FLAGS:
-    bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
-
-# shell completions from the Rust binary's usage spec (bash, fish, nu,
-# powershell, zsh), which `just parity` holds to the script's #USAGE block.
+# shell completions from the binary's usage spec (bash, fish, nu,
+# powershell, zsh), the spec ask-claude.usage.kdl records (`just check-spec`).
 # The completion script embeds the spec, so re-run it after the spec changes.
 # --install writes it where the shell looks (zsh
 # ~/.local/share/zsh/site-functions/_ask-claude, bash
@@ -64,7 +49,7 @@ lint-bash:
 unit-tests: build
     bats tests/unit
 
-# the GitHub Actions workflows; mise fetches actionlint, so mise.toml stays the script's own toolchain
+# the GitHub Actions workflows; mise fetches actionlint, so mise.toml stays the project's own toolchain
 [group('ci')]
 actionlint:
     mise x actionlint@1.7.12 -- actionlint
@@ -192,37 +177,6 @@ lint:
 [working-directory: 'rust']
 bench:
     cargo bench
-
-# bash vs Rust end to end: the replayed one shot over each recorded stream,
-# release build, timed with hyperfine (rust/target/bench-compare/)
-[group('rust')]
-bench-compare:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cargo build --release --quiet --manifest-path rust/Cargo.toml
-    out=rust/target/bench-compare
-    rm -rf "$out/state" && mkdir -p "$out/state"
-    export ANTHROPIC_API_KEY=sk-ant-test-not-a-key XDG_STATE_HOME="$PWD/$out/state"
-    fixtures=text,thinking,code-execution,web-search,mcp
-    # the same reply out of both, or the timing compares different work
-    for f in ${fixtures//,/ }; do
-        sse=tests/fixtures/sse/$f.sse
-        diff <(ASK_CLAUDE_REPLAY=$sse ./ask-claude ping 2>/dev/null) \
-             <(ASK_CLAUDE_REPLAY=$sse rust/target/release/ask-claude ping 2>/dev/null) \
-            || { echo "bench-compare: bash and Rust print different replies for $f" >&2; exit 1; }
-    done
-    hyperfine --shell=none --warmup 3 \
-        -L fixture "$fixtures" -L bin ./ask-claude,rust/target/release/ask-claude \
-        --export-markdown "$out/summary.md" --export-json "$out/summary.json" \
-        "env ASK_CLAUDE_REPLAY=tests/fixtures/sse/{fixture}.sse {bin} ping"
-    echo "tables: $out/summary.md, raw: $out/summary.json"
-
-# the two binaries agree on their interface: usage diff of the bash spec and the Rust one
-[group('rust')]
-parity: build
-    #!/usr/bin/env bash
-    set -euo pipefail
-    usage diff ask-claude <(rust/target/debug/ask-claude --usage-spec)
 
 # rewrite ask-claude.usage.kdl, the tracked record of the spec, from the binary
 [group('rust')]

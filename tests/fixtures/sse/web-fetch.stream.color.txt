@@ -1,0 +1,1 @@
+[2m(web_fetch) [0m[2m(thinking) [0mThe jqlang.org homepage says jq is "a lightweight and flexible command-line JSON processor."

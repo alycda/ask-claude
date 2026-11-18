@@ -45,6 +45,18 @@ pub fn line(event: &Value) -> String {
     safe(&out)
 }
 
+/// What one event prints on a stream that gets colour (docs/plan.md, phase
+/// 6): `line`, with each marker inside one span. A marker is dim; a result
+/// whose return code is not 0 and an advisor error are red. The reply's
+/// text is never coloured. A span opens and closes inside the one string an
+/// event prints, so nothing can leave the terminal coloured, and the
+/// sequences are added after `safe`, which still removes an escape that
+/// came from the API.
+pub fn coloured(event: &Value) -> String {
+    let _ = event;
+    todo!("K6: feat: the stream printer colours markers")
+}
+
 /// The `safe` of every printer (`def safe` in `lib/stream.jq`, the `SAFE`
 /// prefix in `lib/common.bash`): keep tab and newline, drop every other C0
 /// and C1 control character, so a reply cannot drive the terminal, and the

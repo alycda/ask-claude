@@ -312,7 +312,7 @@ each colours a different writer and reads only `color::enabled`.
 
 | # | Commit | Files | Validation | Owner | Status |
 | --- | --- | --- | --- | --- | --- |
-| K1 | test: `--color` in the spec | `ask-claude.usage.kdl`, `tests/unit/spec.bats` | red for exactly: the snapshot test (the binary has no such flag); `usage` binds `--color` with choices `auto always never`; `--color sometimes` exits 2 before any request | C | [ ] |
+| K1 | test: `--color` in the spec | `ask-claude.usage.kdl`, `tests/unit/spec.bats` | red for exactly: the snapshot test (the binary has no such flag) and with it `just check-spec`; `usage` binds `--color` with choices `auto always never` and the default `auto`; `--color sometimes` exits 2 before any request, as a bad value and not as an unknown flag. The snapshot is the spec a scratch build with the flag printed, so K2 turns it green only by matching it: the flag after `-f`, its help text, the value name `when` | C | [x] |
 | K2 | feat: the `--color` flag | `rust/src/cli.rs` | K1 green; the flag is parsed and read by nothing yet, so every other test is unchanged | A | [ ] |
 | K3 | test: when colour is on | `rust/src/color.rs` (the signature, `todo!()` body), `rust/tests/color.rs` | red for exactly the truth table of `color::enabled(when, is_terminal, no_color, term)`: 3 x 2 x 3 x 2 rows, `NO_COLOR` unset, empty and set, `TERM` `dumb` and not | C | [ ] |
 | K4 | feat: `color::enabled` | `rust/src/color.rs`, `rust/src/main.rs` | K3 green; one decision per stream, made once at startup | A | [ ] |

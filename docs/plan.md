@@ -320,7 +320,7 @@ each colours a different writer and reads only `color::enabled`.
 | K6 | feat: the stream printer colours markers | `rust/src/stream.rs` | K5 green; every `*.stream.txt` test unchanged | A | [ ] |
 | K7 | test: stderr lines | `tests/unit/oneshot.bats`, `tests/unit/agent.bats` | red for exactly: under `--color=always` the usage line is dim, `[stopped: …]` yellow, the `ask-claude:` prefix bold red, each closed by a reset before its newline; with stdout a pipe and stderr forced on, stdout carries no SGR. Bold red is the bold sequence then the red one, two of the five constants; a `[pause_turn: …]` line is yellow too; an error refused before any request has the prefix as well | C | [x] |
 | K8 | feat: the stderr lines | `rust/src/lib.rs`, `rust/src/agent.rs` | K7 green | A | [ ] |
-| K9 | test: prompts | `rust/tests/terminal.rs` | red for exactly: on a pty the chat prompt is bold and `NO_COLOR=1` makes it plain; the confirmation prompt's tool name is bold and the value shown for approval is byte for byte what it was | C | [ ] |
+| K9 | test: prompts | `rust/tests/terminal.rs` | red for exactly: on a pty the chat prompt is bold and `NO_COLOR=1` makes it plain; the confirmation prompt's tool name is bold and the value shown for approval is byte for byte what it was. The four existing confirmation tests wait for the prompt as plain text and now run under `NO_COLOR=1`, or K10 would break them; the harness clears an inherited `NO_COLOR`. Linux only: run in a container, not on macOS | C | [x] |
 | K10 | feat: prompts | `rust/src/chat.rs`, `rust/src/agent.rs` | K9 green | A | [ ] |
 
 The colour goldens have no oracle to copy. Each is the plain golden with the

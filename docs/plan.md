@@ -194,12 +194,12 @@ Phase 5 removes the script the way claude.sh was removed after 0.1.4. It
 starts from the verified phase 4 gate and changes no behaviour of the Rust
 binary: `usage diff` between the last script and the first snapshot is empty.
 
-### Decisions (proposed 2026-11-18, not settled)
+### Decisions (proposed 2026-11-18; settled where a row says so)
 
 | Decision | Choice | Consequence, and the alternative not taken |
 | --- | --- | --- |
 | Oracle | the goldens, frozen, and the live contracts | `lib/*.jq` goes with the script. A new fixture's golden is the Rust binary's output, read line by line in the commit that adds it. Not taken: `lib/*.jq` kept under `tests/` as a test-only oracle, which keeps a second implementation to write for every feature |
-| Spec | clap is the source; `ask-claude.usage.kdl` at the root is its tracked snapshot | the `#USAGE` block was both source and record. `just effort-floor` and review need a spec in the tree at every version commit, without building an old binary. Not taken: `effort-floor` builds the last version's binary, which needs a toolchain and minutes for a diff |
+| Spec (settled 2026-11-18) | clap is the source; `ask-claude.usage.kdl` at the root is its tracked snapshot | the `#USAGE` block was both source and record. `just effort-floor` and review need a spec in the tree at every version commit, without building an old binary. Not taken: `effort-floor` builds the last version's binary, which needs a toolchain and minutes for a diff |
 | Black-box suite | bats stays, run against the Rust binary | about 260 of the 364 tests drive a binary through the replay seam and do not care what it is written in. The developer's machine still needs bash for bats, the justfile's shebang recipes, `tools/effver/` and `tests/record-session.sh`; a machine that only runs the binary needs none |
 | jq-program tests | deleted, after each assertion has a twin in `rust/tests/goldens.rs` | `reassemble`, `stream`, `request`, `session`, `event` and the three `*-steps` files (92 tests) run `jq -f lib/*.jq` and test nothing once it is gone; so does one test in `agent-chat.bats`, over `lib/session-history.jq` |
 | Crate location | `rust/` stays | moving it to the root rewrites every path in CI, the justfile and the docs for no change an adopter sees |

@@ -458,3 +458,61 @@ with_container() {
     [ -s "$TMP/betas" ]
     refute grep -q 'advisor' "$TMP/betas"
 }
+
+# stderr under --color (docs/plan.md, phase 6). The usage line is dim, a
+# [stopped: ...] or [pause_turn: ...] line is yellow, and an error line has
+# its "ask-claude:" prefix in bold red and its message plain. A span is
+# closed by a reset before the newline. bats gives the binary pipes, so
+# only --color=always turns colour on here.
+
+ESC=$'\033'
+
+# unclosed <text>: a line whose last SGR sequence is not the reset
+unclosed() { grep -qE "${ESC}\[[1-9][0-9;]*m[^${ESC}]*\$" <<<"$1"; }
+
+@test "color: under --color=always the usage line is dim, and stdout carries no SGR" {
+    run --separate-stderr replay text --color=always "ping"
+    [ "$status" -eq 0 ]
+    # the reply is never coloured, and stdout here is a pipe like stderr
+    [ "$output" = "pong" ]
+    grep -qE "^${ESC}\[2m\[claude-opus-5-5 in=[0-9]+ cache_read=[0-9]+ cache_write=[0-9]+ out=[0-9]+ [0-9]+s\]${ESC}\[0m\$" <<<"$stderr"
+    refute unclosed "$stderr"
+}
+
+@test "color: under --color=always a stopped line and a pause_turn line are yellow" {
+    run --separate-stderr replay max-tokens --color=always "count"
+    [ "$status" -eq 0 ]
+    grep -qxF "${ESC}[33m[stopped: max_tokens reached, raise --max-tokens]${ESC}[0m" <<<"$stderr"
+    refute unclosed "$stderr"
+    run --separate-stderr replay pause-turn --color=always "ping"
+    grep -qxF "${ESC}[33m[pause_turn: continuing, round 1]${ESC}[0m" <<<"$stderr"
+    grep -qxF "${ESC}[33m[stopped: pause_turn]${ESC}[0m" <<<"$stderr"
+    refute unclosed "$stderr"
+}
+
+@test "color: under --color=always an error has a bold red prefix and a plain message" {
+    run --separate-stderr replay error --color=always "ping"
+    [ "$status" -eq 1 ]
+    grep -qxF "${ESC}[1m${ESC}[31mask-claude:${ESC}[0m API error: model: claude-does-not-exist" <<<"$stderr"
+    # a refusal before any request is an error line like any other
+    rm -f "$TMP/requests.jsonl"
+    run --separate-stderr replay text --color=always --mcp http://mcp.example.com/mcp "ping"
+    [ "$status" -eq 2 ]
+    grep -qE "^${ESC}\[1m${ESC}\[31mask-claude:${ESC}\[0m .*https" <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "color: --color=never and --color=auto into a pipe put no SGR on stderr" {
+    local when
+    for when in never auto; do
+        run --separate-stderr replay max-tokens "--color=$when" "count"
+        [ "$status" -eq 0 ]
+        grep -qxF '[stopped: max_tokens reached, raise --max-tokens]' <<<"$stderr"
+        refute grep -q "$ESC" <<<"$stderr"
+        run --separate-stderr replay error "--color=$when" "ping"
+        [ "$status" -eq 1 ]
+        grep -qxF 'ask-claude: API error: model: claude-does-not-exist' <<<"$stderr"
+        refute grep -q "$ESC" <<<"$stderr"
+    done
+}
+

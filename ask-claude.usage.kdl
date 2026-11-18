@@ -19,7 +19,7 @@ flag "-S --system" help="system prompt" global=#true {
 flag "-s --skills" help="comma-separated <skill_id>[@<version>]" global=#true {
     arg <skills>
 }
-flag "-p --provider" help="anthropic|openai; only anthropic is implemented in bash" global=#true default=anthropic {
+flag "-p --provider" help="anthropic, or openai for any chat-completions API (see --base-url)" global=#true default=anthropic {
     arg <provider>
 }
 flag --base-url help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" global=#true env=ANTHROPIC_BASE_URL {

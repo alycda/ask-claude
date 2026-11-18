@@ -1,7 +1,8 @@
-//! The CLI: one clap definition that mirrors the `#USAGE` block of
-//! the bash `ask-claude` flag for flag. `--usage-spec` (main.rs) prints it as a usage
-//! spec so `usage diff ../ask-claude <(ask-claude --usage-spec)` can say
-//! whether the two binaries still agree (docs/plan.md R0, the parity gate).
+//! The CLI: one clap definition, matched flag for flag to the `#USAGE`
+//! block of the bash script it replaced. `--usage-spec` (main.rs) prints
+//! it as a usage spec; `ask-claude.usage.kdl` is that output, tracked, so
+//! `just effort-floor` can `usage diff` two versions without building
+//! either (docs/plan.md, phase 5).
 
 use clap::parser::ValueSource;
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
@@ -116,7 +117,7 @@ pub struct RequestFlags {
     #[arg(short = 's', long, global = true, value_name = "skills")]
     pub skills: Option<String>,
 
-    /// anthropic|openai; only anthropic is implemented in bash
+    /// anthropic, or openai for any chat-completions API (see --base-url)
     #[arg(
         short = 'p',
         long,

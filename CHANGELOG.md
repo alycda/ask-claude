@@ -8,7 +8,45 @@ no effort. In `0.x` the format is `0.MACRO.MICRO`.
 Each heading is `## <version> (<effort>) - <date>`. `just bump <effort>`
 adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
-`usage diff` of the `#USAGE` spec since the last version.
+`usage diff` of the spec snapshot, `ask-claude.usage.kdl`, since the last
+version.
+
+## 0.4.0 (macro) - 2026-11-18
+
+- ask-claude is one Rust binary. The bash script `ask-claude` and `lib/`
+  are removed. 0.3.3 is the last version that has them:
+  `git show v0.3.3:ask-claude`.
+- No runtime dependencies. The script needed `curl`, `jq`, `usage` and
+  bash 5.1. The binary makes its own HTTPS requests and starts one other
+  program, the `--local-mcp` command, through `sh`.
+- It runs where `/bin/bash` is 3.2, which is macOS. The script needed
+  bash 4.4 for `--mcp` and 5.1 for a multi-line paste in the chat loop to
+  be one turn. Both were checked by hand on such a machine before this
+  release.
+- The command line is unchanged. `usage diff` of the script's spec at
+  0.3.3 against the binary's finds 0 breaking changes, 1 compatible and
+  11 metadata. The compatible one: `agent --budget` accepts a negative
+  number, which is then refused as not a whole number of cents.
+- `-p openai`, which the script refused, works in the binary.
+- `ask-claude.usage.kdl` at the root is the tracked record of the spec.
+  `just spec` rewrites it from the binary and `just check-spec` fails when
+  it is stale. `just effort-floor` reads it, and reads the script's spec
+  where a version has no snapshot.
+- `just unit-tests` builds the binary and runs the bats suite against it.
+  The recipes `ask-bash`, `parity`, `bench-compare`, `test-rust`,
+  `pty-test`, `step` and `check-version-line` are gone, and `hyperfine` is
+  out of the toolchain.
+- The goldens under `tests/fixtures/` are frozen. No second implementation
+  is left to regenerate one, so a new fixture's golden is the binary's
+  output, read in the commit that adds it.
+- Adopting: build the binary. A copy of the script, or a download of the
+  repository's files, no longer gives a runnable `ask-claude`.
+  - `cargo install --locked --path rust` builds it and puts it on `PATH`.
+    It needs a Rust toolchain; `mise install` provides the pinned one.
+  - Flags, environment variables, the state directory and the files in it
+    are the same, so chats and sessions made with the script continue.
+  - This is macro because every adopter has to change how they install,
+    not because any command changed. `just effort-floor` says micro.
 
 ## 0.3.3 (meso) - 2026-11-16
 

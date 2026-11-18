@@ -149,7 +149,173 @@ rust-test`, `just rust-lint`, `just parity`, then `just test-rust` from R5.
 | R5 | feat: transport trait, replay impl | `transport::Transport` with `ASK_CLAUDE_REPLAY` (a file, or a directory of turns) and `ASK_CLAUDE_REQUEST_LOG`; `r5_one_shot_through_replay_prints_pong`, then `just test-rust` (the bats suite with `ASK_CLAUDE_BIN` at the Rust binary) | [x] |
 | R6 | feat: history, list, resume, chat loop, sessions, event log lines | the same bats files, same `XDG_STATE_HOME` seam; `session::{line, fold, create_body, history}` against the U1 goldens (`r6_*`); the event log (`docs/plans/2026-11-07-001-feat-request-event-log-plan.md`) is `tests/unit/events.bats`, the same line shape as `lib/event.jq`'s goldens | [x] |
 | R7 | feat: `Provider` trait: `Anthropic`, `OpenAiCompatible { base_url }`, and the `Sessions` transport (one stream per turn, events sent after the stream opens) | `tests/providers/openai-compatible.hurl` green; `tests/agents/*.hurl` green; `--web` and `--mcp` through `request::body` | [x] |
-| R8 | chore: `just test-rust` green, `just rust-bench` recorded | both binaries green on the whole suite; `just parity` 0 breaking; the three live hurl sets green; bash stays the oracle until R8 is merged | [ ] |
+| R8 | chore: `just test-rust` green, `just rust-bench` recorded | both binaries green on the whole suite; `just parity` 0 breaking; the three live hurl sets green; bash stays the oracle until R8 is merged | [x] |
 
 Parity gate before replacing the bash binary: every bats test green on both,
 `usage diff` empty, the three live hurl files green.
+
+### The phase 4 gate
+
+R8 is the last row of phase 4. Its validation was met on 2026-11-14 and is
+recorded in `verified(1.0.0): the gate passed on rust-parity@ 2026-11-14`:
+both binaries green on the whole suite, `just parity` 0 breaking, the three
+live hurl sets green. The row is checked for that. That gate built the
+benchmarks (`cargo bench --no-run`) and recorded no timing, so steps 1 to 5
+below are a rerun and step 6 is new. The gate, in order (the row above says
+`just rust-bench` and `just rust-lint`; the recipes are `just bench` and
+`just lint`):
+
+1. `just lint-bash`, `just lint`, `just actionlint`
+2. `just unit-tests`, `just pty-test`: the script
+3. `just rust-test`, `just test-rust`: the Rust binary on the same suite
+4. `just parity`: 0 breaking
+5. `just test`, `just test-openai`, `just test-agents`: live, with keys
+6. `just bench`, `just bench-compare`: recorded in the verified commit's
+   body, `rust/target/bench-compare/summary.md` pasted whole
+
+`just bench-compare` times the script against the Rust binary, so this gate
+is the last place that comparison can be made: phase 5 removes one side of
+it. "The Rust binary is faster" is a claim only once this table exists.
+
+## Phase 5: the Rust binary alone
+
+Planned 2026-11-18. The script needs bash 4.4 for `--mcp` (`${v@Q}`,
+`${h^^}` in `lib/config.bash`) and bash 5.1 for a paste in the chat loop;
+the machine it was written for has `/bin/bash` 3.2 and runs the Rust binary.
+Phase 5 removes the script the way claude.sh was removed after 0.1.4. It
+starts from the verified phase 4 gate and changes no behaviour of the Rust
+binary: `usage diff` between the last script and the first snapshot is empty.
+
+### Decisions (proposed 2026-11-18, not settled)
+
+| Decision | Choice | Consequence, and the alternative not taken |
+| --- | --- | --- |
+| Oracle | the goldens, frozen, and the live contracts | `lib/*.jq` goes with the script. A new fixture's golden is the Rust binary's output, read line by line in the commit that adds it. Not taken: `lib/*.jq` kept under `tests/` as a test-only oracle, which keeps a second implementation to write for every feature |
+| Spec | clap is the source; `ask-claude.usage.kdl` at the root is its tracked snapshot | the `#USAGE` block was both source and record. `just effort-floor` and review need a spec in the tree at every version commit, without building an old binary. Not taken: `effort-floor` builds the last version's binary, which needs a toolchain and minutes for a diff |
+| Black-box suite | bats stays, run against the Rust binary | about 260 of the 364 tests drive a binary through the replay seam and do not care what it is written in. The developer's machine still needs bash for bats, the justfile's shebang recipes, `tools/effver/` and `tests/record-session.sh`; a machine that only runs the binary needs none |
+| jq-program tests | deleted, after each assertion has a twin in `rust/tests/goldens.rs` | `reassemble`, `stream`, `request`, `session`, `event` and the three `*-steps` files (92 tests) run `jq -f lib/*.jq` and test nothing once it is gone; so does one test in `agent-chat.bats`, over `lib/session-history.jq` |
+| Crate location | `rust/` stays | moving it to the root rewrites every path in CI, the justfile and the docs for no change an adopter sees |
+| Recovery | a bookmark at the last version that ships the script | `jj file show -r <bookmark> ask-claude`, as `v0.1.4` keeps claude.sh |
+
+### Graph
+
+```file
+└─ P5  docs: plan phases 5 and 6                           (this section)
+   └─ R8  chore: the parity gate recorded → V4 verifier    A
+      ├─ D1  test: the spec snapshot  → D2 feat: effort-floor reads it   C, A
+      ├─ D3  test: Rust twins of what the script's tests pin             C
+      ├─ M5  merge: the spec line and the twins line                     A
+      └─ D4  test: the suite runs the Rust binary                        C
+         └─ D5  chore: remove the script and lib/                        A
+            └─ D6  docs: one binary                                      C
+               └─ V5 verifier → version                                  A
+```
+
+D1 and D3 are independent: one adds a file the tools read, the other adds
+Rust tests. D4 needs both, because it deletes the tests D3 twins and the
+`parity` recipe D2 replaces. D5 needs D4: until the suite no longer defaults
+to the script, removing it turns every test red at once.
+
+| # | Commit | Files | Validation | Owner | Status |
+| --- | --- | --- | --- | --- | --- |
+| D1 | test: the spec snapshot | `ask-claude.usage.kdl` (the output of `ask-claude --usage-spec`, the golden); `rust/tests/cli.rs`; `tests/unit/effort-floor.bats` | red on its parent for exactly: `--usage-spec` equals the snapshot byte for byte; `effort-floor` with the snapshot at both commits; with the script at the last version and the snapshot at the tip (the one release that spans the removal); with neither, "nothing to compare" | C | [ ] |
+| D2 | feat: `effort-floor` and `check-spec` read the snapshot | `tools/effver/effver.just`, `justfile` | D1 green, no edit to it. `just spec` rewrites the snapshot; `just check-spec` fails when it is stale and replaces `just parity` in `rust.yml`. `effort-floor` reads `ask-claude.usage.kdl` at the last version commit and falls back to `ask-claude` when that commit has no snapshot | A | [ ] |
+| D3 | test: Rust twins of what the script's tests pin | `rust/tests/goldens.rs`, `rust/tests/cli.rs` | green on arrival: it moves assertions, it adds no behaviour. Each assertion in the eight jq-program bats files, and the `session-history.jq` test in `agent-chat.bats`, is matched to a test in `goldens.rs` in the commit body, or ported. Each of the 13 `bash-only` tests gets the disposition below. A test that turns out red is a parity bug and gets its own test-then-feat pair before M5 | C | [ ] |
+| D4 | test: the suite runs the Rust binary | `tests/unit/helpers.bash`, `tests/unit/*.bats`, `justfile` | `BIN` defaults to `rust/target/debug/ask-claude`; `unit-tests` builds first; `test-rust`, `pty-test`, `step` and the `bash-only` and `rust-only` tags are gone; `spec_file` has one branch; the eight jq-program files, the `session-history.jq` test and the `bash-only` tests are deleted. `just unit-tests` green with the script still in the tree and unread: `chmod -x ask-claude` changes no result | C | [ ] |
+| D5 | chore: remove the script and `lib/` | `ask-claude`, `lib/`, `justfile` (`_help`, `_agents-help`, `ask-bash`, `bench-compare`, `parity`, `check-version-line`, the `sed` in `bump`), `mise.toml` and `mise.lock` (hyperfine), `.github/workflows/` (`bash.yml` becomes the bats job on the Rust binary; `rust.yml` loses the `ask-claude` path and `continue-on-error`; the `spec` job in `lint.yml` reads the snapshot; the `entity-diff.yml` comment) | `git grep -n 'lib/.*\.bash\|\./ask-claude'` finds no recipe or workflow; `just lint-bash` still covers bats, `tools/` and `tests/record-session.sh`; `just unit-tests`, `just rust-test`, `just check-spec`, `just actionlint` green | A | [ ] |
+| D6 | docs: one binary | `README.md` (install, no runtime dependencies, the bash 5.1 line gone), `AGENTS.md`, `CONCEPTS.md` (Oracle, Unit suite, Usage spec, Parity gate), `CODING_STANDARDS.md` (the jq-program rules and the bash-arithmetic rule retired, each with the commit that retired it), this file's Oracle section | no document names a file D5 removed, except as history at the bookmark. Doc comments in `rust/src` that cite `lib/*.jq` stay: they name the oracle a function was matched against | C | [ ] |
+
+The 13 `bash-only` tests:
+
+| Test | Disposition |
+| --- | --- |
+| `agent-confirm`: an always answer left by an earlier process with this PID | deleted: the Rust binary keeps the grant in memory (`session.rs`), so there is no file to plant |
+| `chat`: bash >= 5.1, twice | deleted: `terminal_one_paste_is_one_turn_and_ctrl_d_quits` in `rust/tests/terminal.rs` tests the paste itself |
+| `refuse` and `provider`: `-p openai` refused by the bash version | deleted: the Rust binary implements it, under the `rust-only` tests that lose their tag |
+| `layout`: both | deleted with `lib/` |
+| `agent`: the token never goes on a command line | deleted; the rule stays in `CODING_STANDARDS.md`, and its surface in Rust is the one `Command::new` in `local_mcp.rs` |
+| `argv`: both | the same |
+| `spec`: the script's copy of the version | replaced: `--version` prints `VERSION` (D3 checks `rust/tests/cli.rs` has it) |
+| `provider`: the recording script reads `ANTHROPIC_BASE_URL` | kept, tag dropped, `ask-claude` and `lib` out of its grep |
+| `state-dir`: cannot be made private; another account owns it | deleted: `history.rs` tests both messages without a shim |
+
+Gate (V5), in order: `just lint-bash`, `just lint`, `just actionlint`,
+`just rust-test`, `just unit-tests`, `just check-spec`, `just test`, `just
+test-openai`, `just test-agents`; then, on the machine with `/bin/bash` 3.2,
+a release build, one shot, `--mcp` with a query-string URL, and a two-line
+paste in the chat loop that is one turn. The last step is the reason for the
+phase, so it is in the gate and not left to the release notes.
+
+Version: `usage diff` is empty, so `just effort-floor` says micro. The floor
+does not see that adopting this release means building a binary where a
+script was copied; the label is the maintainer's.
+
+## Phase 6: colour
+
+Planned 2026-11-18, after phase 5: with one binary there is one printer to
+colour and no second set of goldens to keep in step. No TUI: every role
+below is a property of a line the binary already prints.
+
+### Decisions (proposed 2026-11-18, not settled)
+
+| Decision | Choice | Consequence, and the alternative not taken |
+| --- | --- | --- |
+| Flag | `--color <when>`: `auto` (the default), `always`, `never`; global | a spec change: the snapshot moves in the commit that adds it, and an added optional flag keeps the floor at micro |
+| `auto` | decided per stream: on when that stream is a terminal, `NO_COLOR` is unset or empty, and `TERM` is not `dumb` | `ask-claude q \| less` keeps the usage line on stderr coloured and stdout plain. `always` and `never` beat the environment. Not taken: `CLICOLOR`, `CLICOLOR_FORCE`, `FORCE_COLOR`, which the flag already covers |
+| Existing goldens | none changes | under bats no stream is a terminal, so `auto` is off and every `*.stream.txt` holds byte for byte. Colour has its own goldens, `*.stream.color.txt`, made under `--color=always` |
+| Never coloured | the reply's text; history files; event log lines; the request log; a value shown for approval | the reply is the output, and the rest is read by programs or must be shown exactly as encoded (`CODING_STANDARDS.md`, "What reaches the terminal") |
+| Sequences | dim, bold, red, yellow and reset, as five constants | the terminal's theme decides contrast. Not taken: 256-colour or truecolor, and a styling crate; `nu-ansi-term` is already in the tree under reedline, but five constants need no dependency and no tree review |
+| Spans | a span opens and closes inside one write | no interrupt, error or `SIGPIPE` can leave the terminal coloured, so there is no signal handler to write. SGR is added after `safe`, which is unchanged: an escape in API-controlled text is still removed under `--color=always` |
+
+Roles:
+
+| Line | Stream | Style |
+| --- | --- | --- |
+| reply text | stdout | none |
+| `(thinking) `, `(web_search) `, `(web_fetch) `, `(running code) `, `(mcp <server>) `, `(advisor) `, `(result rc=0) ` | stdout | dim |
+| `(result rc=<n>) ` with n not 0, `(advisor error: <code>) ` | stdout | red |
+| `[<model> in=… out=… <s>s]`, the agent usage line | stderr | dim |
+| `[stopped: …]`, `[pause_turn: …]` | stderr | yellow |
+| `ask-claude:` in an error line | stderr | bold red, the prefix only: the message stays at full contrast |
+| the chat prompt, the tool name in a confirmation prompt | terminal | bold |
+
+### Graph
+
+```file
+└─ V5  the phase 5 gate, verified
+   └─ K1  test: --color in the spec     → K2 feat: the flag            C, A
+      └─ K3  test: when colour is on    → K4 feat: color::enabled      C, A
+         ├─ K5  test: stdout markers    → K6 feat: the stream printer  C, A
+         ├─ K7  test: stderr lines      → K8 feat: the stderr lines    C, A
+         ├─ K9  test: prompts           → K10 feat: prompts            C, A
+         └─ M6  merge: the three printers → V6 verifier → version      A
+```
+
+K3 needs the flag K2 parses. K5, K7 and K9 are independent of each other:
+each colours a different writer and reads only `color::enabled`.
+
+| # | Commit | Files | Validation | Owner | Status |
+| --- | --- | --- | --- | --- | --- |
+| K1 | test: `--color` in the spec | `ask-claude.usage.kdl`, `tests/unit/spec.bats` | red for exactly: the snapshot test (the binary has no such flag); `usage` binds `--color` with choices `auto always never`; `--color sometimes` exits 2 before any request | C | [ ] |
+| K2 | feat: the `--color` flag | `rust/src/cli.rs` | K1 green; the flag is parsed and read by nothing yet, so every other test is unchanged | A | [ ] |
+| K3 | test: when colour is on | `rust/src/color.rs` (the signature, `todo!()` body), `rust/tests/color.rs` | red for exactly the truth table of `color::enabled(when, is_terminal, no_color, term)`: 3 x 2 x 3 x 2 rows, `NO_COLOR` unset, empty and set, `TERM` `dumb` and not | C | [ ] |
+| K4 | feat: `color::enabled` | `rust/src/color.rs`, `rust/src/main.rs` | K3 green; one decision per stream, made once at startup | A | [ ] |
+| K5 | test: stdout markers | `tests/fixtures/sse/*.stream.color.txt`, `rust/tests/goldens.rs`, `tests/unit/stream.bats` or its successor | red for exactly: each fixture's printer output under colour equals its colour golden; stripping SGR from a colour golden gives the plain golden; an `ESC[31m` inside a text delta is removed under `--color=always`; `--color=always` into a pipe emits SGR and `--color=never` emits none | C | [ ] |
+| K6 | feat: the stream printer colours markers | `rust/src/stream.rs` | K5 green; every `*.stream.txt` test unchanged | A | [ ] |
+| K7 | test: stderr lines | `tests/unit/oneshot.bats`, `tests/unit/agent.bats` | red for exactly: under `--color=always` the usage line is dim, `[stopped: …]` yellow, the `ask-claude:` prefix bold red, each closed by a reset before its newline; with stdout a pipe and stderr forced on, stdout carries no SGR | C | [ ] |
+| K8 | feat: the stderr lines | `rust/src/lib.rs`, `rust/src/agent.rs` | K7 green | A | [ ] |
+| K9 | test: prompts | `rust/tests/terminal.rs` | red for exactly: on a pty the chat prompt is bold and `NO_COLOR=1` makes it plain; the confirmation prompt's tool name is bold and the value shown for approval is byte for byte what it was | C | [ ] |
+| K10 | feat: prompts | `rust/src/chat.rs`, `rust/src/agent.rs` | K9 green | A | [ ] |
+
+The colour goldens have no oracle to copy. Each is the plain golden with the
+role table applied by hand, and K5's commit says so; the role table is what
+a later change to a colour golden is argued against.
+
+Gate (V6), in order: `just lint`, `just rust-test`, `just unit-tests`, `just
+check-spec`, `just test`; then by eye on a dark and a light terminal theme,
+and on the machine phase 5 was for: a reply with thinking, one with a failed
+code execution, an error, a chat, `--color=never`, and `NO_COLOR=1`.
+
+Version: one optional flag, so `just effort-floor` says micro. Colour on by
+default on a terminal changes what a person sees and nothing a program
+reads; the label is the maintainer's.

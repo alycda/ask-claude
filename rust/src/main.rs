@@ -4,21 +4,31 @@
 // No panic reaches main: every input error is the bash exit code (KTD4).
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
+use std::process::ExitCode;
+
 use clap::CommandFactory;
 
 use ask_claude::cli::Cli;
 
-fn main() {
+fn main() -> ExitCode {
     process_defaults();
     let cli = Cli::parse_args();
     if cli.version {
         println!("ask-claude {}", ask_claude::version());
-        return;
+        return ExitCode::SUCCESS;
     }
     if cli.usage_spec {
         print!("{}", usage_spec());
-        return;
+        return ExitCode::SUCCESS;
     }
+
+    if let Some(ref prompt) = cli.prompt {
+      if prompt.to_lowercase().trim() == "help" {
+        eprintln!("ask-claude: did you mean --help?");
+        return ExitCode::from(2);
+      }
+    }
+
     std::process::exit(ask_claude::run(cli));
 }
 

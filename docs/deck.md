@@ -4,11 +4,11 @@ title: ask-claude
 paginate: true
 ---
 
-# ask-claude 0.3.0
+# ask-claude 0.3.1
 
 Talk to Claude from a shell with nothing but `curl` and `jq`.
 
-Released 2026-11-07 · EffVer macro · local MCP servers for sessions
+Released 2026-11-13 · EffVer micro · `--mcp-tool` allowlists
 
 <!--
 This deck is rewritten at every release, so its history is the project's
@@ -27,7 +27,7 @@ One script, two APIs, streaming always on.
 ask-claude "one question"           # Messages API: one shot
 ask-claude                          # chat loop
 ask-claude --web "what changed?"    # the model may search and fetch
-ask-claude --advisor <model> "..."  # consult a second model mid-turn
+ask-claude --mcp <url> --mcp-tool <host>:<tool> "..."   # one MCP tool
 ask-claude agent "question"         # a Managed Agents session
 ask-claude agent --local-mcp <cmd>  # its custom tools run on this machine
 ```
@@ -38,42 +38,40 @@ A session's transcript lives with the API.
 <!--
 The split to explain: plain `ask-claude` talks to the Messages API and
 keeps history on disk. `ask-claude agent` runs a Managed Agents session,
-where the agent and the transcript are on Anthropic's side. With
-`--local-mcp`, the session's custom tool calls come back to a stdio MCP
-server started here.
+where the agent and the transcript are on Anthropic's side. `--advisor`
+is still there; it left the slide to make room.
 -->
 
 ---
 
-## New since 0.2.7
+## New since 0.3.0
 
-- `agent --local-mcp <command>` answers a session's custom tool calls
-  with a stdio MCP server on this machine, each call behind the same
-  confirmation as the agent's other tools
-- `agent tools --local-mcp <command>` prints the server's tools as
-  definitions to paste into the agent; it needs no API key
-- `--mcp` tokens are per server: `ASK_CLAUDE_MCP_TOKEN_<HOST>`
-- The state directory is refused when it is a symlink, when
-  `chmod 700` fails, or when another account owns it
-- Security audit run 2: 3 low findings confirmed, not fixed here
+- `--mcp-tool <host>:<tool>` limits an `--mcp` server to the tools
+  named: its toolset goes out as an allowlist, every other tool off
+- `--web` sends the dynamic-filtering tools, `web_search_20260318` and
+  `web_fetch_20260318`: the model filters results in code before they
+  reach its context
+- Each event-log line gains `tools` (what the request let the model
+  reach) and `tool_calls` (what it used)
 
 <!--
-Custom-tool rounds are capped at 8 a turn. The server starts in its own
-process group and the group is stopped when ask-claude exits, SIGKILL
-if SIGTERM fails. Only text and embedded text resources go back to the
-session; other content is named, not sent. Be plain about the audit:
-the three lows are open at this release.
+Why the allowlist matters: Anthropic calls an MCP server from its side,
+so ask-claude cannot ask before a call. The allowlist decides before the
+reply which tools the model can call at all. The new web tools need
+Claude 4.6 or later; an older model gets the API's 400. The event line
+format stays `v: 1`: the two keys are appended, nothing moves.
 -->
 
 ---
 
 ## How it is built
 
-- One bash script and nine `jq` filters in `lib/`: 1,646 lines
+- A bash entry script, seven sourced `lib/*.bash` files and nine `jq`
+  filters: 1,871 lines
 - [`usage`](https://usage.jdx.dev), pinned at 7.3.0, reads the `#USAGE`
   block at the top of the script: flags, help, shell completions
 - Every `feat:` and `fix:` commit follows a test that is red without it
-- 281 bats tests replay recorded SSE and session streams
+- 307 bats tests replay recorded SSE and session streams
   (`ASK_CLAUDE_REPLAY`); 5 hurl files check the live API contracts
 - GitHub Actions runs the gates on pull requests
 - Versions are [EffVer](https://jacobtomlinson.dev/effver/): the number
@@ -81,8 +79,10 @@ the three lows are open at this release.
 
 <!--
 Line and test counts are `wc -l` and `grep -c '^@test'` on this
-release's tree. The script is three times its size at 0.1.4 and is
-still one file; that is the pressure behind what comes next.
+release's tree. The one file was split between 0.3.0 and this release:
+common, config, chat, messages, local-mcp, agent-api and agent-turn,
+one refactor commit each, behind a test that a missing lib file is
+exit 2 and names the file.
 -->
 
 ---
@@ -99,6 +99,7 @@ still one file; that is the pressure behind what comes next.
 | 0.2.6 | micro | 2026-11-06 | `--advisor`, the advisor tool on Messages |
 | 0.2.7 | micro | 2026-11-06 | The event log, `events.jsonl` |
 | 0.3.0 | macro | 2026-11-07 | `agent --local-mcp`, per-server MCP tokens |
+| 0.3.1 | micro | 2026-11-13 | `--mcp-tool` allowlists, dynamic-filtering web tools |
 
 <!--
 One row per GitHub release. Versions between rows exist in CHANGELOG.md
@@ -116,19 +117,15 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ask-claude "one question"       # with ask-claude on PATH
 ```
 
-Coming from 0.2.7, three things can need a change:
-
-- Several `--mcp` servers on the shared `ASK_CLAUDE_MCP_TOKEN`: move to
-  one `ASK_CLAUDE_MCP_TOKEN_<HOST>` per server
-- An `agent` one-shot prompt starting with the word `tools`: it now
-  runs `agent tools`
-- A state directory that is a symlink or another account's: point
-  `XDG_STATE_HOME` at a directory of your own
+- Coming from 0.3.0: nothing to do
+- `ask-claude` needs `lib/` beside it, as before; the directory now
+  holds bash as well as `jq`
+- A reader that compares whole event lines byte for byte sees two new
+  keys at the end
+- `--web` needs Claude 4.6 or later
 
 <!--
-This is why the release is macro: three ways an existing setup can
-behave differently. The token and the state directory cases exit 2
-before any request; the `tools` case runs another command. For a new user,
-`agent` still needs an environment and an agent made in the Console
-(`ASK_CLAUDE_ENVIRONMENT`, `ASK_CLAUDE_AGENT`).
+Coming from before 0.3.0, the three macro changes still apply: per-server
+MCP tokens, `agent tools` as a command, and the state directory checks.
+`agent` needs an environment and an agent made in the Console.
 -->

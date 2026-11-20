@@ -1,0 +1,1 @@
+(advisor) The safest order is to stop accepting new work by closing the job input channel (or cancelling the submit path), let the workers finish the jobs already in flight by ranging over the channel until it is drained, and then block on a sync.WaitGroup until every worker has exited before the program returns.

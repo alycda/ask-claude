@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016  # a jq program in single quotes mentions $ on purpose
 load helpers
 
 # `agent budget <sesn> <cents>`, `agent archive <sesn>`, `agent trace <sesn>`.

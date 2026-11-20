@@ -7,6 +7,11 @@
 # TMP      per-test scratch dir, removed in teardown; XDG_STATE_HOME points
 #          inside it so no test touches ~/.local/state
 
+# `run --separate-stderr` and `run -N` need bats 1.5. Declaring that here,
+# once, stops bats printing warning BW02 at the end of every run: helpers is
+# loaded at the top of every file, before the first `run`.
+bats_require_minimum_version 1.5.0
+
 ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 BIN="${ASK_CLAUDE_BIN:-$ROOT/ask-claude}"
 FIX="$ROOT/tests/fixtures"

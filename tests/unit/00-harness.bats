@@ -10,7 +10,7 @@ present() {
 }
 
 @test "harness: fixtures are present and parse" {
-    for f in text thinking code-execution pause-turn refusal web-search web-fetch mcp; do
+    for f in text thinking code-execution pause-turn refusal web-search web-fetch mcp advisor advisor-redacted; do
         present "$FIX/sse/$f.sse"
         events "$f" | jq -e 'select(.type=="message_stop")' >/dev/null
     done

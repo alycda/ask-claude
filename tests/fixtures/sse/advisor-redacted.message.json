@@ -1,0 +1,85 @@
+{
+  "model": "claude-haiku-5-5",
+  "stop_reason": "end_turn",
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 1498,
+    "cache_read_input_tokens": 1037,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 1037,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 120,
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard",
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "iterations": [
+      {
+        "input_tokens": 4,
+        "output_tokens": 26,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 1037,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 1037,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message",
+        "model": null
+      },
+      {
+        "input_tokens": 2623,
+        "output_tokens": 754,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "advisor_message",
+        "model": "claude-haiku-5-5"
+      },
+      {
+        "input_tokens": 2,
+        "output_tokens": 94,
+        "cache_read_input_tokens": 1037,
+        "cache_creation_input_tokens": 461,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 461,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message",
+        "model": null
+      }
+    ]
+  },
+  "container": null,
+  "error": null,
+  "content": [
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "advisor",
+      "input": {}
+    },
+    {
+      "type": "advisor_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": {
+        "type": "advisor_redacted_result",
+        "encrypted_content": "REDACTED"
+      }
+    },
+    {
+      "type": "text",
+      "text": "Stop accepting new submissions, close the job channel only after all producers have finished, let the workers drain what remains and exit, wait on a WaitGroup (with a bounded timeout, after which unfinished jobs are explicitly persisted, logged, or retried), and only then close the result channels."
+    }
+  ]
+}

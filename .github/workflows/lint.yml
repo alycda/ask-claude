@@ -1,0 +1,64 @@
+# Static checks on the shell. shellcheck runs over the script, the recorder,
+# the test helpers, the bats files and the EffVer tools. A second job parses
+# the #USAGE spec with the usage CLI the script runs under. shfmt is not here
+# yet: the script is not in shfmt's shape, and a formatting commit comes
+# first.
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # shellcheck at the version mise.toml pins, not the runner image's. The
+      # image ships 0.9.0, which reports findings 0.11.0 does not. The bats
+      # files that use an idiom shellcheck reads as a mistake name the code
+      # at their top.
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: shellcheck
+
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          shellcheck --version | head -2
+          mapfile -t files < <(git grep -l -E '^#!/usr/bin/env (bash|bats|-S usage bash)$' -- . ; git ls-files '*.bash')
+          printf '%s\n' "${files[@]}"
+          shellcheck -x "${files[@]}"
+
+  spec:
+    name: "the #USAGE spec parses"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: usage
+
+      - name: usage reads the spec and explains a call
+        run: |
+          usage explain -f ask-claude -- ask-claude -m haiku "hello" | grep -E '^\s+flag\s+--model\s+haiku'
+          usage generate completion zsh ask-claude -f ask-claude | grep -q '^#compdef ask-claude$'
+
+  workflows:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: just
+
+      - run: just actionlint

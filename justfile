@@ -29,6 +29,10 @@ unit-tests:
 pty-test:
     TERM=xterm-256color bats --filter-tags pty tests/unit
 
+# the GitHub Actions workflows; mise fetches actionlint, so mise.toml stays the script's own toolchain
+actionlint:
+    mise x actionlint@1.7.12 -- actionlint
+
 unit-test unit:
     bats tests/unit/{{ quote(unit) }}.bats
 

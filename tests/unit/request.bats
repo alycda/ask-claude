@@ -77,3 +77,51 @@ request2() { # sys eff skills cid web mcp
     request2 "" "" "" "" "" "" > "$TMP/out.json"
     assert_golden "$FIX/request/plain.json" "$TMP/out.json"
 }
+
+# the advisor tool (0.2.6)
+
+@test "request: --advisor adds the advisor tool, last, capped at 3 calls a turn" {
+    jq -n --arg m claude-haiku-5-5 --argjson max 16000 \
+        --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web 1 --arg mcp "" --arg advisor claude-sonnet-5 \
+        --slurpfile msgs "$FIX/request/history-one-turn.json" \
+        -f "$ROOT/lib/request.jq" > "$TMP/out.json"
+    assert_golden "$FIX/request/advisor.json" "$TMP/out.json"
+}
+
+@test "request: without --advisor the web golden is untouched" {
+    request2 "" "" "" "" 1 "" > "$TMP/out.json"
+    assert_golden "$FIX/request/web.json" "$TMP/out.json"
+}
+
+# the cap is 3 a turn: a pause_turn continuation is a new request, so the
+# advisor calls already in this turn's paused replies count against it
+
+# advisor_history <calls this turn> <calls in the turn before>: a chat whose
+# last user message is followed by one paused reply holding that many calls
+advisor_history() {
+    jq -n --argjson now "$1" --argjson before "$2" '
+        def call: {type: "server_tool_use", id: "srvtoolu_FIXTURE", name: "advisor", input: {}};
+        def reply(n): {role: "assistant", content: ([range(n) | call] + [{type: "text", text: "..."}])};
+        [{role: "user", content: "first"}, reply($before),
+         {role: "user", content: "second"}, reply($now)]' > "$TMP/hist.json"
+}
+advisor_request() {
+    jq -n --arg m claude-haiku-5-5 --argjson max 16000 \
+        --arg sys "" --arg eff "" --arg skills "" --arg cid "" --arg web "" --arg mcp "" --arg advisor claude-sonnet-5 \
+        --slurpfile msgs "$TMP/hist.json" -f "$ROOT/lib/request.jq"
+}
+
+@test "request: a paused turn's advisor calls count against the 3" {
+    advisor_history 2 0
+    advisor_request | jq -e '.tools == [{type: "advisor_20260301", name: "advisor", model: "claude-sonnet-5", max_uses: 1}]'
+}
+
+@test "request: with 3 calls made this turn the advisor tool is left out" {
+    advisor_history 3 0
+    advisor_request | jq -e 'has("tools") | not'
+}
+
+@test "request: calls from an earlier turn do not count" {
+    advisor_history 0 3
+    advisor_request | jq -e '.tools[0].max_uses == 3'
+}

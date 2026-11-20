@@ -1,0 +1,85 @@
+{
+  "model": "claude-haiku-5-5",
+  "stop_reason": "end_turn",
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 141,
+    "cache_read_input_tokens": 2074,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 115,
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard",
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "iterations": [
+      {
+        "input_tokens": 4,
+        "output_tokens": 26,
+        "cache_read_input_tokens": 1037,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message",
+        "model": null
+      },
+      {
+        "input_tokens": 2319,
+        "output_tokens": 110,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "advisor_message",
+        "model": "claude-sonnet-5"
+      },
+      {
+        "input_tokens": 2,
+        "output_tokens": 89,
+        "cache_read_input_tokens": 1037,
+        "cache_creation_input_tokens": 141,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 141,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message",
+        "model": null
+      }
+    ]
+  },
+  "container": null,
+  "error": null,
+  "content": [
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_FIXTURE",
+      "name": "advisor",
+      "input": {}
+    },
+    {
+      "type": "advisor_tool_result",
+      "tool_use_id": "srvtoolu_FIXTURE",
+      "content": {
+        "type": "advisor_result",
+        "text": "Call the advisor now—you haven't yet, and the instruction was explicit: call it before answering. Once you have its input, give the one-sentence answer: stop accepting new work (close the input channel), let workers drain in-flight jobs, then wait (via sync.WaitGroup or similar) for all workers to finish before returning/exiting."
+      }
+    },
+    {
+      "type": "text",
+      "text": "The safest order is to stop accepting new work by closing the job input channel (or cancelling the submit path), let the workers finish the jobs already in flight by ranging over the channel until it is drained, and then block on a sync.WaitGroup until every worker has exited before the program returns."
+    }
+  ]
+}

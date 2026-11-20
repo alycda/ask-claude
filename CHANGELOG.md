@@ -10,6 +10,14 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.6 (micro) - 2026-11-07
+
+- `--advisor <model>` lets the reply consult another model mid-turn, through
+  the advisor tool (beta): at most 3 calls a turn, billed at the advisor's
+  rates. The stream shows `(advisor) `, or `(advisor error: <code>) `, and
+  the footer adds `advisor=<model> in=… out=…`. A chat that used an advisor
+  resumes without the flag.
+
 ## 0.2.5 (micro) - 2026-11-06
 
 - Ten fixes from the security audit (`docs/security-audit/`): `--base-url`

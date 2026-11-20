@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016,SC2059  # a jq program in single quotes; a format string from the test itself
 load helpers
 
 # `ask-claude agent` with no prompt: a chat on a session; `agent resume`,

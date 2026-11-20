@@ -1,7 +1,8 @@
 //! The chat loop off a terminal: each line on stdin is a turn, `/history`,
-//! `/new` and `/quit` act, and the end of input quits. The twins of
-//! `tests/unit/chat.bats`, one test each, with the same patterns; a pattern
-//! grep read as a basic regex has its literal parentheses escaped here.
+//! `/new` and `/quit` act, and the end of input quits. Ported from
+//! `tests/unit/chat.bats`, removed once these were green, one test each,
+//! with the same patterns; a pattern grep read as a basic regex has its
+//! literal parentheses escaped here.
 //! The loop on a terminal is `terminal.rs`.
 
 mod support;

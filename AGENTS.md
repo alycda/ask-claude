@@ -19,6 +19,8 @@ Every step leaves a commit, so the work can be reviewed from history alone.
    exactly the new tests. Unit tests are bats over recorded fixtures and
    goldens (`just unit-tests`) and Rust tests over the same goldens (`just
    rust-test`); live contracts are hurl (`just test`, `just test-openai`).
+   A new test of the binary is Rust, through `rust/tests/support/`, never
+   `use ask_claude` (`docs/plan.md`, "Binary tests in Rust").
    The goldens are frozen: they are what the bash script printed when it
    was removed, and no second implementation is left to regenerate them.
    Change one only in a commit that says why it was wrong. A new fixture's

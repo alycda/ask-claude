@@ -43,13 +43,18 @@ flag --github_ro help="shorthand for --mcp https://api.githubcopilot.com/mcp/x/r
 flag "-f --file" help="prepend this file's contents to the prompt" global=#true {
     arg <file>
 }
+flag --color help="colour the markers and status lines: auto when the stream is a terminal" global=#true default=auto {
+    arg <when> {
+        choices auto always never
+    }
+}
 flag "-V --version" help="print the version"
 arg "[prompt]" help="one shot, prints the response" required=#false
-cmd list display_order=16 args_override_self=#false help="chats on disk, newest first"
-cmd resume display_order=17 args_override_self=#false help="continue a chat" {
+cmd list display_order=17 args_override_self=#false help="chats on disk, newest first"
+cmd resume display_order=18 args_override_self=#false help="continue a chat" {
     arg "[chat]" help="chat name or unique prefix; newest chat if omitted" required=#false
 }
-cmd agent display_order=18 args_override_self=#false help="a Managed Agents session: one shot with a prompt, a chat without" {
+cmd agent display_order=19 args_override_self=#false help="a Managed Agents session: one shot with a prompt, a chat without" {
     flag --agent help="agent id from the Console" global=#true env=ASK_CLAUDE_AGENT {
         arg <id>
     }

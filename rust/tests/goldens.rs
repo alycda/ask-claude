@@ -1918,3 +1918,133 @@ fn d3_session_history_drops_bidi_from_both_speakers() {
     .unwrap();
     assert_eq!(session::line(&message), "abcd\u{200f}e");
 }
+
+// ---- K5: the stream printer under colour ----
+//
+// The colour goldens have no oracle to copy. Each `*.stream.color.txt` is
+// its plain golden with the role table of docs/plan.md applied: a marker is
+// dim, a failed result and an advisor error are red, and each span is the
+// whole marker, its trailing space included, closed by a reset.
+
+const DIM: &str = "\u{1b}[2m";
+const RED: &str = "\u{1b}[31m";
+const RESET: &str = "\u{1b}[0m";
+
+fn printed_in_colour(ev: &[Value]) -> String {
+    ev.iter().map(stream::coloured).collect()
+}
+
+/// A string without its SGR sequences (`ESC [ ... m`).
+fn without_sgr(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("\u{1b}[") {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 2..];
+        let end = after.find('m').expect("an SGR sequence ends in m");
+        assert!(
+            after[..end].chars().all(|c| c.is_ascii_digit() || c == ';'),
+            "not an SGR sequence: {:?}",
+            &after[..=end]
+        );
+        rest = &after[end + 1..];
+    }
+    out + rest
+}
+
+#[test]
+fn k5_the_printer_under_colour_matches_every_colour_golden() {
+    let mut n = 0;
+    for rel in sse_files("sse") {
+        let golden = golden_for(&rel, ".stream.color.txt");
+        if !fixtures().join(&golden).exists() {
+            continue;
+        }
+        assert_eq!(printed_in_colour(&events(&rel)), read(&golden), "{rel}");
+        n += 1;
+    }
+    assert_eq!(n, 9, "one colour golden for each plain one");
+}
+
+/// Colour adds sequences and changes nothing else: a colour golden without
+/// its SGR is the plain golden, byte for byte, and every plain golden has
+/// one. This holds the goldens, not the printer, so it is green before the
+/// printer is written.
+#[test]
+fn k5_a_colour_golden_without_its_sgr_is_the_plain_golden() {
+    let mut n = 0;
+    for rel in sse_files("sse") {
+        let plain = golden_for(&rel, ".stream.txt");
+        if !fixtures().join(&plain).exists() {
+            continue;
+        }
+        let colour = read(&golden_for(&rel, ".stream.color.txt"));
+        assert_eq!(without_sgr(&colour), read(&plain), "{rel}");
+        n += 1;
+    }
+    assert_eq!(n, 9);
+}
+
+/// No recorded stream has a failed result or an advisor error, so the red
+/// role is held by events built here. A return code that is not a number
+/// prints `rc=?` and is red too: it is not a 0.
+#[test]
+fn k5_a_failed_result_and_an_advisor_error_are_red() {
+    let result = |content: &str| {
+        lines(&format!(
+            r#"{{"type":"content_block_start","index":0,"content_block":{{"type":"bash_code_execution_tool_result","content":{content}}}}}"#
+        ))
+    };
+    assert_eq!(
+        printed_in_colour(&result(r#"{"return_code":0}"#)),
+        format!("{DIM}(result rc=0) {RESET}")
+    );
+    assert_eq!(
+        printed_in_colour(&result(r#"{"return_code":1}"#)),
+        format!("{RED}(result rc=1) {RESET}")
+    );
+    assert_eq!(
+        printed_in_colour(&result("{}")),
+        format!("{RED}(result rc=?) {RESET}")
+    );
+    let error = lines(
+        r#"{"type":"content_block_start","index":1,"content_block":{"type":"advisor_tool_result","tool_use_id":"srvtoolu_FIXTURE","content":{"type":"advisor_tool_result_error","error_code":"overloaded"}}}"#,
+    );
+    assert_eq!(
+        printed_in_colour(&error),
+        format!("{RED}(advisor error: overloaded) {RESET}")
+    );
+}
+
+/// The reply's text is never coloured, and an escape inside it is removed
+/// under colour as it is without: the sequences the printer adds come after
+/// `safe`, and the ones the API sends never pass it.
+#[test]
+fn k5_reply_text_is_plain_and_an_escape_in_it_is_still_removed() {
+    let ev = lines(
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a\u001b[31mred\u001b[0m (thinking) b"}}"#,
+    );
+    assert_eq!(printed_in_colour(&ev), "a[31mred[0m (thinking) b");
+    // what prints nothing prints nothing, and the last newline is bare
+    let ev = lines(concat!(
+        r#"{"type":"ping"}"#,
+        "\n",
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+        "\n",
+        r#"{"type":"message_stop"}"#,
+    ));
+    assert_eq!(printed_in_colour(&ev), "\n");
+}
+
+/// A server name is API text inside a marker: through `safe` first, then
+/// the span, so the name cannot close the span or open one of its own.
+#[test]
+fn k5_an_escape_in_a_marker_value_cannot_end_the_span() {
+    let ev = lines(
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"mcp_tool_use","server_name":"x\u001b[0m\u001b[31my"}}"#,
+    );
+    assert_eq!(
+        printed_in_colour(&ev),
+        format!("{DIM}(mcp x[0m[31my) {RESET}")
+    );
+}

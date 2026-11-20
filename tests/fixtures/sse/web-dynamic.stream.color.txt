@@ -1,0 +1,1 @@
+[2m(running code) [0m[2m(web_search) [0m[2m(running code) [0m[2m(running code) [0m[2m(web_fetch) [0m[2m(web_fetch) [0m[2m(thinking) [0mThe latest jq release is 1.8.2, which its GitHub release notes call a patch release with security and bug fixes since 1.8.1, plus new builds for Windows arm64 and Docker arm/v7.

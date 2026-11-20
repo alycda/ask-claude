@@ -29,6 +29,9 @@ pub mod reassemble;
 /// build the request body.
 pub mod request;
 
+/// whether a stream gets colour.
+pub mod color;
+
 /// print the stream as it arrives.
 pub mod stream;
 

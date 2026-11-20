@@ -192,3 +192,34 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     grep -q 'session id is not one' <<<"$stderr"
     [ "$(cat "$TMP/victim.txt")" = precious ]
 }
+
+# stderr under --color (docs/plan.md, phase 6), the session's lines: the
+# same roles as the one shot in oneshot.bats.
+
+ESC=$'\033'
+
+@test "color: under --color=always the session's usage line is dim, and stdout carries no SGR" {
+    run --separate-stderr replay text.sse --color=always "ping"
+    [ "$status" -eq 0 ]
+    [ "$output" = "pong" ]
+    grep -qE "^${ESC}\[2m\[sesn_FIXTURE01 in=4 out=4 cache_read=0 cache_write=4311 cost=\\\$0\.00 [0-9]+s\]${ESC}\[0m\$" <<<"$stderr"
+}
+
+@test "color: under --color=always a session's stopped line is yellow" {
+    run --separate-stderr replay budget.sse --color=always "ping"
+    grep -qxF "${ESC}[33m[stopped: budget_reached, raise it with: ask-claude agent budget sesn_FIXTURE01 <cents>]${ESC}[0m" <<<"$stderr"
+}
+
+@test "color: under --color=always a session error has a bold red prefix and a plain message" {
+    run --separate-stderr replay error.sse --color=always "ping"
+    [ "$status" -eq 1 ]
+    grep -qE "^${ESC}\[1m${ESC}\[31mask-claude:${ESC}\[0m session error: " <<<"$stderr"
+    refute grep -qE "session error: .*${ESC}" <<<"$stderr"
+}
+
+@test "color: --color=never puts no SGR on a session's stderr" {
+    run --separate-stderr replay budget.sse --color=never "ping"
+    grep -q '^\[stopped: budget_reached' <<<"$stderr"
+    refute grep -q "$ESC" <<<"$stderr"
+}
+

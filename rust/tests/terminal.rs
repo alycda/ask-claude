@@ -100,6 +100,9 @@ impl Terminal {
                 cmd.env_remove(&name);
             }
         }
+        // colour is decided from the environment: a NO_COLOR in the shell
+        // that runs the tests must not decide it for them
+        cmd.env_remove("NO_COLOR");
         cmd.env("TERM", "xterm-256color")
             .env("HOME", &home)
             .env("XDG_STATE_HOME", dir.join("state"))
@@ -362,19 +365,27 @@ fn terminal_a_redirected_stdout_gets_no_terminal_codes() {
 
 // ---- the tool confirmation of a session, asked on /dev/tty (KTD9) --------
 
-/// `agent ping` on a pty over the session replay `replay`.
+/// `agent ping` on a pty over the session replay `replay`, with
+/// `NO_COLOR=1`: these tests are about the answer to a prompt, and they
+/// wait for the prompt as plain text, which a bold tool name would break
+/// up. The prompt's colour has its own test, on a terminal without it.
 fn agent_on_terminal(dir: &Path, replay: &Path) -> Option<Terminal> {
-    let replay = replay.as_os_str();
-    Terminal::start_env(
-        dir,
-        &["agent", "ping"],
-        None,
-        &[
-            ("ASK_CLAUDE_REPLAY", replay),
-            ("ASK_CLAUDE_AGENT", "agent_FIXTURE".as_ref()),
-            ("ASK_CLAUDE_ENVIRONMENT", "env_FIXTURE".as_ref()),
-        ],
-    )
+    agent_on_terminal_with(dir, replay, &[("NO_COLOR", "1".as_ref())])
+}
+
+/// `agent ping` on a pty over the session replay `replay`, with `env` set.
+fn agent_on_terminal_with(
+    dir: &Path,
+    replay: &Path,
+    env: &[(&str, &std::ffi::OsStr)],
+) -> Option<Terminal> {
+    let mut all: Vec<(&str, &std::ffi::OsStr)> = vec![
+        ("ASK_CLAUDE_REPLAY", replay.as_os_str()),
+        ("ASK_CLAUDE_AGENT", "agent_FIXTURE".as_ref()),
+        ("ASK_CLAUDE_ENVIRONMENT", "env_FIXTURE".as_ref()),
+    ];
+    all.extend_from_slice(env);
+    Terminal::start_env(dir, &["agent", "ping"], None, &all)
 }
 
 /// A replay directory whose turns ask for a bash call each, `calls` of
@@ -501,6 +512,8 @@ fn terminal_agent_asks_on_the_terminal_with_stderr_redirected() {
             ("ASK_CLAUDE_REPLAY", replay.as_os_str()),
             ("ASK_CLAUDE_AGENT", "agent_FIXTURE".as_ref()),
             ("ASK_CLAUDE_ENVIRONMENT", "env_FIXTURE".as_ref()),
+            // the prompt as plain text, as in `agent_on_terminal`
+            ("NO_COLOR", "1".as_ref()),
         ],
     ) else {
         return;
@@ -510,4 +523,120 @@ fn terminal_agent_asks_on_the_terminal_with_stderr_redirected() {
     let (status, screen) = term.exit();
     assert_eq!(status.code(), Some(0), "{screen}");
     assert_eq!(results(dir.path()), ["allow"], "{screen}");
+}
+
+// ---- K9: prompts in colour (docs/plan.md, phase 6) ------------------------
+
+const BOLD: &str = "\u{1b}[1m";
+const RESET: &str = "\u{1b}[0m";
+
+/// What was printed, with every escape sequence removed but SGR (`ESC [ ...
+/// m`): the line editor moves the cursor and clears around the prompt, and
+/// only the styling is asked about here.
+fn styling(screen: &str) -> String {
+    let mut out = String::new();
+    let mut chars = screen.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        match chars.peek() {
+            Some('[') => {
+                chars.next();
+                let mut seq = String::from("\u{1b}[");
+                for c in chars.by_ref() {
+                    seq.push(c);
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+                if seq.ends_with('m') {
+                    out.push_str(&seq);
+                }
+            }
+            // ESC 7, ESC 8 and the like: one character after the escape
+            Some(_) => {
+                chars.next();
+            }
+            None => {}
+        }
+    }
+    out
+}
+
+/// On a terminal the chat prompt is bold, the two characters and nothing
+/// else, closed by a reset before anything typed. `NO_COLOR=1` makes it
+/// plain: no bold anywhere on the screen.
+#[test]
+fn terminal_the_chat_prompt_is_bold_and_no_color_makes_it_plain() {
+    let dir = tempfile::tempdir().unwrap();
+    let Some(mut term) = Terminal::start(dir.path(), &[]) else {
+        return;
+    };
+    term.wait_for("", "> ");
+    term.type_keys(b"hi\r");
+    term.wait_for("", "pong");
+    term.wait_for("pong", "> ");
+    term.type_keys(b"\x04");
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    let styled = styling(&screen);
+    assert!(
+        styled.contains(&format!("{BOLD}> {RESET}")),
+        "the prompt is not bold: {styled:?}"
+    );
+    // the reply is never coloured, on a terminal either
+    assert!(styled.contains("pong"), "{styled:?}");
+    assert!(!styled.contains(&format!("{BOLD}pong")), "{styled:?}");
+
+    let dir = tempfile::tempdir().unwrap();
+    let Some(mut term) = Terminal::start_env(dir.path(), &[], None, &[("NO_COLOR", "1".as_ref())])
+    else {
+        return;
+    };
+    term.wait_for("", "> ");
+    term.type_keys(b"\x04");
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    assert!(!screen.contains(BOLD), "NO_COLOR=1 left a bold: {screen:?}");
+}
+
+/// The tool name in a confirmation prompt is bold. The value shown for
+/// approval is byte for byte what it was, with no sequence inside it or
+/// touching it: it is encoded exactly once (CODING_STANDARDS.md), and a
+/// sequence in it would be a second encoding of what the person approves.
+/// `NO_COLOR=1` gives the prompt as it was.
+#[test]
+fn terminal_the_tool_name_in_a_confirmation_is_bold_and_the_value_is_as_it_was() {
+    let value = r#"{"command":"echo 1"}"#;
+    let dir = tempfile::tempdir().unwrap();
+    let replay = asking(dir.path(), 1);
+    let Some(mut term) = agent_on_terminal_with(dir.path(), &replay, &[]) else {
+        return;
+    };
+    term.wait_for("", "[y/N/a(lways)] ");
+    term.type_keys(b"y\r");
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    assert!(
+        screen.contains(&format!("allow {BOLD}bash{RESET} {value}? [y/N/a(lways)] ")),
+        "{screen:?}"
+    );
+    assert_eq!(results(dir.path()), ["allow"], "{screen}");
+
+    let dir = tempfile::tempdir().unwrap();
+    let replay = asking(dir.path(), 1);
+    let Some(mut term) = agent_on_terminal(dir.path(), &replay) else {
+        return;
+    };
+    term.wait_for("", "[y/N/a(lways)] ");
+    term.type_keys(b"\r");
+    let (status, screen) = term.exit();
+    assert_eq!(status.code(), Some(0), "{screen}");
+    assert!(
+        screen.contains(&format!("allow bash {value}? [y/N/a(lways)] ")),
+        "{screen:?}"
+    );
+    assert!(!screen.contains(BOLD), "NO_COLOR=1 left a bold: {screen:?}");
 }

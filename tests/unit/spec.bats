@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 load helpers
 
-# The #USAGE block in ask-claude, checked with usage itself.
+# The spec the binary prints with --usage-spec, checked with usage itself.
 
 explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
 
@@ -152,4 +152,32 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     run explain --advisor claude-opus-5-5 "hi"
     grep -qE '^\s+flag\s+--advisor\s+claude-opus-5-5' <<<"$output"
     refute grep -q refused <<<"$output"
+}
+
+# --color <when> (phase 6): the flag is in the spec before anything reads it.
+
+@test "spec: --color binds auto, always and never, and defaults to auto" {
+    local when
+    for when in auto always never; do
+        run explain --color "$when" "hi"
+        grep -qE "^\s+flag\s+--color\s+$when( |\$)" <<<"$output"
+        refute grep -q 'refused' <<<"$output"
+    done
+    run explain "hi"
+    grep -qE '^\s+flag\s+--color\s+auto\s+default' <<<"$output"
+    run explain agent --color never "hi"
+    grep -qE '^\s+flag\s+--color\s+never' <<<"$output"
+}
+
+@test "color: --color sometimes exits 2 before any request, and names the three values" {
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" --color sometimes "ping"
+    [ "$status" -eq 2 ]
+    [ "$output" = "" ]
+    # refused as a value of the flag, not as a flag the binary does not know
+    grep -q "sometimes" <<<"$stderr"
+    grep -q 'auto' <<<"$stderr"
+    grep -q 'always' <<<"$stderr"
+    grep -q 'never' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+    [ -z "$(ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null)" ]
 }

@@ -22,32 +22,21 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // let Some(ref prompt) = cli.prompt else {
-    //   let Some(ref command) = cli.command else {
-
-    //   };
-    // };
-
-    if let Some(ref prompt) = cli.prompt {
-      if prompt.to_lowercase().trim() == "help" {
-        eprintln!("ask-claude: did you mean --help?");
-        return ExitCode::from(2);
-      }
-    } else if let Some(ref command) = cli.command {
-      match command {
-        Command::Agent(agent) => {
-          if let Some(ref prompt) = agent.prompt {
-            if prompt.to_lowercase().trim() == "help" {
-              eprintln!("ask-claude agent: did you mean --help?");
-              return ExitCode::from(2);
-            }
-          }
-        },
-        _ => {}
-      }
+    if let Some(name) = bare_help(&cli) {
+      eprintln!("{name}: did you mean --help?");
+      return ExitCode::from(2);
     }
 
     std::process::exit(ask_claude::run(cli));
+}
+
+fn bare_help(cli: &Cli) -> Option<&'static str> {
+  let (name, prompt) = match (&cli.prompt, &cli.command) {
+    (Some(prompt), _) => ("ask-claude", prompt),
+    (None, Some(Command::Agent(agent))) => ("ask-claude agent", agent.prompt.as_ref()?),
+    _ => return None,
+  };
+  prompt.trim().eq_ignore_ascii_case("help").then_some(name)
 }
 
 /// What the bash script gets from its first lines and from being a shell:

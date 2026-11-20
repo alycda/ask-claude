@@ -4,11 +4,12 @@ title: ask-claude
 paginate: true
 ---
 
-# ask-claude 0.3.3
+# ask-claude 0.4.0
 
-Talk to Claude from a shell: a bash script, and a Rust build of it.
+Talk to Claude from a shell. One binary, one request shape, streaming
+always on.
 
-Released 2026-11-16 · EffVer meso · `--github`, one `--mcp` server per host
+Released 2026-11-19 · EffVer macro · the bash script is removed
 
 <!--
 This deck is rewritten at every release, so its history is the project's
@@ -21,7 +22,7 @@ presenter view; in any other reader they are HTML comments.
 
 ## What it is
 
-One command line, two implementations, streaming always on.
+One Rust binary with no runtime dependencies.
 
 ```sh
 ask-claude "one question"           # Messages API: one shot
@@ -29,65 +30,62 @@ ask-claude                          # chat loop
 ask-claude --web "what changed?"    # the model may search and fetch
 ask-claude --github_ro "..."        # GitHub's MCP server, read-only
 ask-claude agent "question"         # a Managed Agents session
-ask-claude -p openai "question"     # Rust build only: chat completions
+ask-claude -p openai "question"     # any OpenAI-compatible API
 ```
 
 Messages chats are JSON files under `$XDG_STATE_HOME/ask-claude/`.
 A session's transcript lives with the API.
 
 <!--
-Both implementations take the same flags and write the same files, so a
-chat started with one resumes with the other. `--github_ro` is
-`--mcp https://api.githubcopilot.com/mcp/x/repos/readonly` and sends
-that long form's request byte for byte. It needs
-`ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM`.
+Every command on this slide is the one from the 0.3.3 deck. That is the
+point of the release: the command line did not change, the thing behind
+it did. The binary makes its own HTTPS requests and starts one other
+program, the `--local-mcp` command, through `sh`.
 -->
 
 ---
 
-## New since 0.3.2
+## New since 0.3.3
 
-- `--github` and `--github_ro`: shorthands for GitHub's MCP server,
-  read and write or the repos toolset read-only
-- Two `--mcp` URLs on one host exit 2 before any request: they would
-  go out under one name and share one token
-- An `--mcp` URL with a query string works
-  (`'https://mcp.supabase.com/mcp?project_ref=<ref>&read_only=true'`)
-- An `--mcp` value with whitespace exits 2; it used to be split into
-  several servers
-- `--vault` and `--memory` values are no longer glob-expanded against
-  the current directory
+- ask-claude is one Rust binary; the bash script and `lib/` are gone.
+  The last version with them: `git show v0.3.3:ask-claude`
+- No runtime dependencies. The script needed `curl`, `jq`, `usage`
+  and bash 5.1
+- It runs where `/bin/bash` is 3.2, which is macOS
+- The command line is unchanged: `usage diff` against the script's
+  spec at 0.3.3 finds 0 breaking changes, 1 compatible, 11 metadata
+- `-p openai`, which the script refused, works
+- `ask-claude.usage.kdl` is the tracked record of the spec
 
 <!--
-The query-string bug is the story to tell. `usage` hands a repeatable
-flag's values over joined with spaces and shell-quotes any value with a
-character outside its safe set, and the quotes stayed on. The script
-now undoes exactly that quoting, without `eval`. The Rust build never
-had it: clap hands over each value as given. It did share the
-whitespace split, and now refuses such a value too.
+The one compatible change: `agent --budget` accepts a negative number,
+which is then refused as not a whole number of cents. The macro label
+is worth a sentence. `just effort-floor` says micro, because the floor
+measures the command line. The label is macro because every adopter
+has to change how they install.
 -->
 
 ---
 
 ## How it is built
 
-- The script: a bash entry file, seven `lib/*.bash` files and nine
-  `jq` filters, 2,016 lines
-- The crate in `rust/`: 23 `.rs` files, 11,583 lines, 137 `#[test]`s;
+- The crate in `rust/`: 23 `.rs` files, 12,212 lines, 162 `#[test]`s;
   every dependency pinned to an exact version
-- 364 bats tests run against both, over the same recorded streams and
-  the same goldens; 7 hurl files check the live API contracts
-- `usage diff` compares the script's spec with the one the binary
-  prints, so the two command lines cannot drift apart unseen
+- 266 bats tests run the binary over recorded SSE and session
+  streams; 7 hurl files check the live API contracts
+- The goldens are frozen: they are what the script printed when it was
+  removed, and no second implementation is left to regenerate them
+- `just check-spec` fails when `ask-claude.usage.kdl` is stale
 - Every `feat:` and `fix:` commit follows a test that is red without it
 - GitHub Actions runs the gates on pull requests
 
 <!--
 Counts are `wc -l`, `grep -c '^@test'` and `grep -c '#\[test\]'` on
-this release's tree; the Rust line count includes its tests. This
-release is the two-implementation setup doing its job: each change
-landed in both, and one bug existed in only one of them. It is also the
-last release with the script.
+this release's tree; the Rust line count includes its tests. The bats
+count fell from 364: the tests of the `jq` filters and of the script's
+layout went with the files they tested. A new fixture's golden is now
+the binary's own output, read line by line in the commit that adds it.
+Next in docs/plan.md: colour in the printer.
 -->
 
 ---
@@ -107,6 +105,7 @@ last release with the script.
 | 0.3.1 | micro | 2026-11-13 | `--mcp-tool` allowlists, dynamic-filtering web tools |
 | 0.3.2 | meso | 2026-11-15 | The Rust build at parity; `ANTHROPIC_BASE_URL` |
 | 0.3.3 | meso | 2026-11-16 | `--github`, `--github_ro`; one `--mcp` server per host |
+| 0.4.0 | macro | 2026-11-19 | One Rust binary; the script and `lib/` removed |
 
 <!--
 One row per GitHub release. Versions between rows exist in CHANGELOG.md
@@ -119,24 +118,22 @@ CHANGELOG.md's heading can differ from it by a day or more.
 ## Adopting
 
 ```sh
-cargo install --locked --path rust   # the Rust build, on PATH
-# or keep the script: mise install, with lib/ beside ask-claude
+cargo install --locked --path rust   # needs a Rust toolchain
+# without a clone:
+cargo install --locked --git https://github.com/alycda/ask-claude \
+  --tag v0.4.0 ask-claude
 export ANTHROPIC_API_KEY=sk-ant-...
 ask-claude "one question"
 ```
 
-Check commands and scripts that pass `--mcp`:
-
-- Several URLs in one `--mcp` value now exit 2: give each URL its
-  own `--mcp`
-- Two `--mcp` URLs on one host now exit 2 before any request: keep one.
-  They already failed in 0.3.2, at the API, with exit 1
-- Quote a URL with a query string: unquoted, zsh globs the `?` and
-  `&` ends the command
+- A copy of the script, or a download of the repository's files, no
+  longer gives a runnable `ask-claude`: build it once
+- `mise install` provides the pinned toolchain
+- Flags, environment variables, the state directory and its files are
+  the same, so chats and sessions made with the script continue
 
 <!--
-Meso because of the first bullet: a command that worked in 0.3.2 can
-now exit 2. The second only changes the exit code and the message of
-something that never worked. `ANTHROPIC_BASE_URL` from 0.3.2 still
-applies to anyone coming from before it.
+The `--git` form is from the GitHub release notes, not the changelog.
+The crate is not on crates.io. Close on the last bullet: nothing an
+adopter has on disk needs converting.
 -->

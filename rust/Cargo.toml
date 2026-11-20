@@ -51,6 +51,20 @@ tempfile = "=3.27.0"
 # benches/goldens.rs: how fast the pure parts run over the recorded fixtures
 criterion = "=0.8.2"
 
+# tests/support: a failed assertion on the binary's output is a miette report,
+# its stdout, stderr or request log as the source and the line at fault
+# labelled. `fancy-no-syscall` is the graphical handler without terminal
+# detection (a test's output is captured, so there is no terminal to detect)
+# and without the derive macro (the reports are built at run time);
+# `fancy-base` alone does not compile in 7.6.0. textwrap is held at
+# 0.16.2, which miette's `^0.16` allows: 0.16.3 replaced unicode-linebreak
+# with icu_segmenter and about 25 crates of ICU data, to wrap a help line.
+miette = { version = "=7.6.0", default-features = false, features = ["fancy-no-syscall"] }
+textwrap = "=0.16.2"
+# tests/support: a line assertion takes the pattern its bats test grepped
+# for, verbatim. Already in the tree under usage-lib, so no crate is added
+regex = "=1.13.1"
+
 [[bench]]
 name = "goldens"
 harness = false

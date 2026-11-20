@@ -1,7 +1,7 @@
-# The offline gate for the bash script. mise installs the toolchain mise.toml
-# pins, checked against mise.lock. The job runs bats over the recorded
-# fixtures, the one terminal-bound test under a TERM readline accepts, and
-# the rule that every fixture is tracked. No recipe
+# The offline gate of the bats suite, run against the Rust binary. mise
+# installs the toolchain mise.toml pins, checked against mise.lock. The job
+# builds the binary, runs bats over the recorded fixtures, and checks the
+# rule that every fixture is tracked. No recipe
 # that calls the model runs here: `just test`, `just test-openai` and
 # `just test-agents` spend tokens and need keys.
 name: Bash
@@ -23,15 +23,16 @@ jobs:
 
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
-          install_args: jq usage bats just
+          install_args: jq usage bats just rust
 
-      # TERM is unset on a runner. That is the case the pty tag exists for:
-      # unit-tests must pass without it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      # builds the debug binary first; TERM is unset on a runner, and no test
+      # of the suite needs one
       - name: Unit tests
         run: just unit-tests
-
-      - name: The terminal-bound test alone
-        run: just pty-test
 
       # Fixtures are gitignored by pattern with tracked exceptions. A rule that
       # starts matching a tracked fixture leaves it tracked here, but a clone

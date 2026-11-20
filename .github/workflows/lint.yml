@@ -1,8 +1,6 @@
-# Static checks on the shell. shellcheck runs over the script, the recorder,
+# Static checks on the shell that is left: shellcheck runs over the recorder,
 # the test helpers, the bats files and the EffVer tools. A second job parses
-# the #USAGE spec with the usage CLI the script runs under. shfmt is not here
-# yet: the script is not in shfmt's shape, and a formatting commit comes
-# first.
+# the spec snapshot, ask-claude.usage.kdl, with the usage CLI.
 name: Lint
 
 on:
@@ -37,7 +35,7 @@ jobs:
           shellcheck -x "${files[@]}"
 
   spec:
-    name: "the #USAGE spec parses"
+    name: the spec snapshot parses
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -48,8 +46,8 @@ jobs:
 
       - name: usage reads the spec and explains a call
         run: |
-          usage explain -f ask-claude -- ask-claude -m haiku "hello" | grep -E '^\s+flag\s+--model\s+haiku'
-          usage generate completion zsh ask-claude -f ask-claude | grep -q '^#compdef ask-claude$'
+          usage explain -f ask-claude.usage.kdl -- ask-claude -m haiku "hello" | grep -E '^\s+flag\s+--model\s+haiku'
+          usage generate completion zsh ask-claude -f ask-claude.usage.kdl | grep -q '^#compdef ask-claude$'
 
   workflows:
     name: actionlint

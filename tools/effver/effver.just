@@ -1,22 +1,18 @@
 # EffVer recipes. The justfile pulls them in with `import 'tools/effver/effver.just'`.
 # bump-effver and check-effver are copied unchanged from alycda/dotfiles@effver.
 
-# MACRO.MESO.MICRO (0.MACRO.MICRO below 1.0); also updates the script's own copy
+# MACRO.MESO.MICRO (0.MACRO.MICRO below 1.0); the binary reads VERSION when it is built
 bump effort:
     tools/effver/bump-effver {{ effort }}
-    if [ -f ask-claude ]; then sed -i.bak "s/^readonly ASK_CLAUDE_VERSION=.*/readonly ASK_CLAUDE_VERSION=$(cat VERSION)/" ask-claude && rm ask-claude.bak; fi
 
 # Check VERSION and CHANGELOG.md in every commit of REVSET (default: the stack not on trunk yet).
 # Without .jj, REVSET is a git range such as origin/main..HEAD, and there is no default.
 check-effver revset='':
     if [ -d .jj ]; then tools/effver/check-effver --jj {{ quote(revset) }}; elif [ -n {{ quote(revset) }} ]; then tools/effver/check-effver {{ quote(revset) }}; else echo 'usage: just check-effver <git range>, e.g. origin/main..HEAD' >&2; exit 2; fi
 
-# The script's copy of the version matches VERSION
-check-version-line:
-    grep -qx "readonly ASK_CLAUDE_VERSION=$(cat VERSION)" ask-claude
-
-# Lowest effort the next bump can claim: usage diff of the #USAGE spec since the last version
-# commit. When the tip is that commit, the floor it had to meet, from the version commit before.
+# Lowest effort the next bump can claim: usage diff of the spec since the last version commit.
+# The spec is ask-claude.usage.kdl, or the script's #USAGE block where a tree has no snapshot.
+# When the tip is that commit, the floor it had to meet, from the version commit before.
 effort-floor:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -54,13 +50,31 @@ effort-floor:
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
     mkdir "$tmp/old" "$tmp/new"
-    if ! show "$rel" ask-claude >"$tmp/old/ask-claude"; then
-      echo "no ask-claude at the last version commit (${rel:0:12}): nothing to compare"
+    # The snapshot is the record of the Rust binary's spec and is read first.
+    # A tree from before it has the script, whose #USAGE block usage reads.
+    # usage names a spec after its bin, ask-claude in both, so the two kinds
+    # diff against each other: the release that spans the removal has the
+    # script at the last version and the snapshot at the tip.
+    if show "$rel" ask-claude.usage.kdl >"$tmp/old/ask-claude.usage.kdl"; then
+      old="$tmp/old/ask-claude.usage.kdl"
+    elif show "$rel" ask-claude >"$tmp/old/ask-claude"; then
+      old="$tmp/old/ask-claude"
+    else
+      echo "no ask-claude.usage.kdl or ask-claude at the last version commit (${rel:0:12}): nothing to compare"
       exit 0
     fi
-    cp ask-claude "$tmp/new/ask-claude"
+    if [ -f ask-claude.usage.kdl ]; then
+      new="$tmp/new/ask-claude.usage.kdl"
+      cp ask-claude.usage.kdl "$new"
+    elif [ -f ask-claude ]; then
+      new="$tmp/new/ask-claude"
+      cp ask-claude "$new"
+    else
+      echo "no ask-claude.usage.kdl or ask-claude in the working tree: nothing to compare"
+      exit 0
+    fi
     echo "since ${rel:0:12}, $(subject "$rel")"
-    if usage diff "$tmp/old/ask-claude" "$tmp/new/ask-claude"; then
+    if usage diff "$old" "$new"; then
       echo "floor: micro (no breaking interface change)"
     else
       echo "floor: meso (breaking interface change; macro if it hits most users)"

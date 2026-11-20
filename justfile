@@ -1,22 +1,12 @@
 import 'tools/effver/effver.just'
 
-[group('bash')]
-_help:
-    ./ask-claude --help
-
-[group('bash')]
-_agents-help:
-    ./ask-claude agent --help
-
 [group('rust')]
-[working-directory: 'rust/target/debug']
 help: build
-    ./ask-claude --help
+    rust/target/debug/ask-claude --help
 
 [group('rust')]
-[working-directory: 'rust/target/debug']
 agent-help: build
-    ./ask-claude agent --help
+    rust/target/debug/ask-claude agent --help
 
 # Each argument reaches the binary as one word ("$@", so `-S 'be terse'`
 # stays whole), flags before the question, and the binary runs where just
@@ -29,13 +19,8 @@ agent-help: build
 ask question="" *FLAGS: build
     bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
 
-[group('bash')]
-[positional-arguments]
-ask-bash question="" *FLAGS:
-    bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
-
-# shell completions from the Rust binary's usage spec (bash, fish, nu,
-# powershell, zsh), which `just parity` holds to the script's #USAGE block.
+# shell completions from the binary's usage spec (bash, fish, nu,
+# powershell, zsh), the spec ask-claude.usage.kdl records (`just check-spec`).
 # The completion script embeds the spec, so re-run it after the spec changes.
 # --install writes it where the shell looks (zsh
 # ~/.local/share/zsh/site-functions/_ask-claude, bash
@@ -50,10 +35,6 @@ completions shell *flags: build
     set -euo pipefail
     rust/target/debug/ask-claude --usage-spec | usage generate completion {{ quote(shell) }} ask-claude -f - {{ flags }}
 
-# Skips the tests tagged pty, which need a terminal name readline reports
-# bracketed paste for (`just pty-test` runs them), and rust-only, behaviour the
-# script does not have.
-
 [group('bash')]
 lint-bash:
     #!/usr/bin/env bash
@@ -63,29 +44,20 @@ lint-bash:
     printf '%s\n' "${files[@]}"
     shellcheck -x "${files[@]}"
 
-# offline: bats over recorded fixtures (tests/unit), no key needed
+# offline: bats over recorded fixtures (tests/unit) against the debug build, no key needed
 [group('bash')]
-unit-tests:
-    bats --filter-tags '!pty,!rust-only' tests/unit
+unit-tests: build
+    bats tests/unit
 
-# the pty-tagged tests alone, under a TERM readline reports bracketed paste for
-[group('bash')]
-pty-test:
-    TERM=xterm-256color bats --filter-tags pty tests/unit
-
-# the GitHub Actions workflows; mise fetches actionlint, so mise.toml stays the script's own toolchain
+# the GitHub Actions workflows; mise fetches actionlint, so mise.toml stays the project's own toolchain
 [group('ci')]
 actionlint:
     mise x actionlint@1.7.12 -- actionlint
 
-# one bats file, filtered as unit-tests filters the suite, so the two agree
+# one bats file of the suite
 [group('bash')]
-unit-test unit:
-    bats --filter-tags '!pty,!rust-only' tests/unit/{{ quote(unit) }}.bats
-
-[group('bash')]
-step name:
-    bats --filter-tags {{ quote("step:" + name) }} tests/unit/*-steps.bats
+unit-test unit: build
+    bats tests/unit/{{ quote(unit) }}.bats
 
 # live Anthropic contracts: cheap calls, two of them one web search each (1 cent
 # per search), one listing an MCP server's tools. Only the live recipes (this one and
@@ -206,41 +178,15 @@ lint:
 bench:
     cargo bench
 
-# bash vs Rust end to end: the replayed one shot over each recorded stream,
-# release build, timed with hyperfine (rust/target/bench-compare/)
+# rewrite ask-claude.usage.kdl, the tracked record of the spec, from the binary
 [group('rust')]
-bench-compare:
+spec: build
+    rust/target/debug/ask-claude --usage-spec > ask-claude.usage.kdl
+
+# ask-claude.usage.kdl is what the binary prints: a spec change that did not run `just spec` fails
+[group('rust')]
+check-spec: build
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo build --release --quiet --manifest-path rust/Cargo.toml
-    out=rust/target/bench-compare
-    rm -rf "$out/state" && mkdir -p "$out/state"
-    export ANTHROPIC_API_KEY=sk-ant-test-not-a-key XDG_STATE_HOME="$PWD/$out/state"
-    fixtures=text,thinking,code-execution,web-search,mcp
-    # the same reply out of both, or the timing compares different work
-    for f in ${fixtures//,/ }; do
-        sse=tests/fixtures/sse/$f.sse
-        diff <(ASK_CLAUDE_REPLAY=$sse ./ask-claude ping 2>/dev/null) \
-             <(ASK_CLAUDE_REPLAY=$sse rust/target/release/ask-claude ping 2>/dev/null) \
-            || { echo "bench-compare: bash and Rust print different replies for $f" >&2; exit 1; }
-    done
-    hyperfine --shell=none --warmup 3 \
-        -L fixture "$fixtures" -L bin ./ask-claude,rust/target/release/ask-claude \
-        --export-markdown "$out/summary.md" --export-json "$out/summary.json" \
-        "env ASK_CLAUDE_REPLAY=tests/fixtures/sse/{fixture}.sse {bin} ping"
-    echo "tables: $out/summary.md, raw: $out/summary.json"
-
-# the two binaries agree on their interface: usage diff of the bash spec and the Rust one
-[group('rust')]
-parity: build
-    #!/usr/bin/env bash
-    set -euo pipefail
-    usage diff ask-claude <(rust/target/debug/ask-claude --usage-spec)
-
-# Skips pty like unit-tests, and bash-only: the tests that read the script as a
-# file or pin what only the script does.
-
-# the bats suite against the Rust binary (R5 onwards; bash stays the oracle until R8)
-[group('rust')]
-test-rust: build
-    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats --filter-tags '!pty,!bash-only' tests/unit
+    diff -u ask-claude.usage.kdl <(rust/target/debug/ask-claude --usage-spec) \
+        || { echo "check-spec: ask-claude.usage.kdl is stale; run \`just spec\` and commit it" >&2; exit 1; }

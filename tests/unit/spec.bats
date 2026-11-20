@@ -59,18 +59,13 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     grep -q 'refused' <<<"$output"
 }
 
-@test "version: -V and --version print the script's copy of VERSION and exit 0" {
+@test "version: -V and --version print VERSION and exit 0" {
     run "$BIN" -V
     [ "$status" -eq 0 ]
     [ "$output" = "ask-claude $(cat "$ROOT/VERSION")" ]
     run "$BIN" --version
     [ "$status" -eq 0 ]
     [ "$output" = "ask-claude $(cat "$ROOT/VERSION")" ]
-}
-
-# bats test_tags=bash-only
-@test "version: the script's copy matches VERSION (just check-version-line)" {
-    grep -qx "readonly ASK_CLAUDE_VERSION=$(cat "$ROOT/VERSION")" "$BIN"
 }
 
 @test "completions: usage generates a script for each shell from the spec" {

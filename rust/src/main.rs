@@ -4,22 +4,39 @@
 // No panic reaches main: every input error is the bash exit code (KTD4).
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
+use std::process::ExitCode;
+
 use clap::CommandFactory;
 
-use ask_claude::cli::Cli;
+use ask_claude::cli::{Cli, Command};
 
-fn main() {
+fn main() -> ExitCode {
     process_defaults();
     let cli = Cli::parse_args();
     if cli.version {
         println!("ask-claude {}", ask_claude::version());
-        return;
+        return ExitCode::SUCCESS;
     }
     if cli.usage_spec {
         print!("{}", usage_spec());
-        return;
+        return ExitCode::SUCCESS;
     }
+
+    if let Some(name) = bare_help(&cli) {
+        eprintln!("{name}: did you mean --help?");
+        return ExitCode::from(2);
+    }
+
     std::process::exit(ask_claude::run(cli));
+}
+
+fn bare_help(cli: &Cli) -> Option<&'static str> {
+    let (name, prompt) = match (&cli.prompt, &cli.command) {
+        (Some(prompt), _) => ("ask-claude", prompt),
+        (None, Some(Command::Agent(agent))) => ("ask-claude agent", agent.prompt.as_ref()?),
+        _ => return None,
+    };
+    prompt.trim().eq_ignore_ascii_case("help").then_some(name)
 }
 
 /// What the bash script gets from its first lines and from being a shell:

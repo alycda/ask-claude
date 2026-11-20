@@ -4,11 +4,11 @@ title: ask-claude
 paginate: true
 ---
 
-# ask-claude 0.3.2
+# ask-claude 0.3.3
 
-Talk to Claude from a shell: a bash script, and now a Rust build of it.
+Talk to Claude from a shell: a bash script, and a Rust build of it.
 
-Released 2026-11-15 · EffVer meso · the Rust build
+Released 2026-11-16 · EffVer meso · `--github`, one `--mcp` server per host
 
 <!--
 This deck is rewritten at every release, so its history is the project's
@@ -27,7 +27,7 @@ One command line, two implementations, streaming always on.
 ask-claude "one question"           # Messages API: one shot
 ask-claude                          # chat loop
 ask-claude --web "what changed?"    # the model may search and fetch
-ask-claude --mcp <url> --mcp-tool <host>:<tool> "..."   # one MCP tool
+ask-claude --github_ro "..."        # GitHub's MCP server, read-only
 ask-claude agent "question"         # a Managed Agents session
 ask-claude -p openai "question"     # Rust build only: chat completions
 ```
@@ -37,32 +37,34 @@ A session's transcript lives with the API.
 
 <!--
 Both implementations take the same flags and write the same files, so a
-chat started with one resumes with the other. `-p openai` is the
-chat-completions shape for any OpenAI-compatible API, by base URL:
-`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`. The script still
-refuses it.
+chat started with one resumes with the other. `--github_ro` is
+`--mcp https://api.githubcopilot.com/mcp/x/repos/readonly` and sends
+that long form's request byte for byte. It needs
+`ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM`.
 -->
 
 ---
 
-## New since 0.3.1
+## New since 0.3.2
 
-- A Rust build at parity with the script: the same `#USAGE` interface
-  (`just parity` finds no breaking change) and the same bats suite
-  green on both
-- The script stays and is still the reference
-- `ANTHROPIC_BASE_URL` is the API root when `--base-url` is not given;
-  one line on stderr names any host that is not `api.anthropic.com`
-- A session's approval prompt is asked on the terminal it reads the
-  answer from, and keys typed before it appears are discarded
-- Bidi formatting characters no longer reach the terminal
+- `--github` and `--github_ro`: shorthands for GitHub's MCP server,
+  read and write or the repos toolset read-only
+- Two `--mcp` URLs on one host exit 2 before any request: they would
+  go out under one name and share one token
+- An `--mcp` URL with a query string works
+  (`'https://mcp.supabase.com/mcp?project_ref=<ref>&read_only=true'`)
+- An `--mcp` value with whitespace exits 2; it used to be split into
+  several servers
+- `--vault` and `--memory` values are no longer glob-expanded against
+  the current directory
 
 <!--
-One intended difference between the two: in a session, `a(lways)` in
-the Rust build allows the rest of the run's calls of that one tool; the
-script's allows every tool. The prompt fix closes a real hole: with
-`2> file` the question went to the file while a `y` typed at the
-terminal still approved the call.
+The query-string bug is the story to tell. `usage` hands a repeatable
+flag's values over joined with spaces and shell-quotes any value with a
+character outside its safe set, and the quotes stayed on. The script
+now undoes exactly that quoting, without `eval`. The Rust build never
+had it: clap hands over each value as given. It did share the
+whitespace split, and now refuses such a value too.
 -->
 
 ---
@@ -70,10 +72,10 @@ terminal still approved the call.
 ## How it is built
 
 - The script: a bash entry file, seven `lib/*.bash` files and nine
-  `jq` filters, 1,920 lines
-- The crate in `rust/`: 23 `.rs` files, 11,523 lines, 137 `#[test]`s;
+  `jq` filters, 2,016 lines
+- The crate in `rust/`: 23 `.rs` files, 11,583 lines, 137 `#[test]`s;
   every dependency pinned to an exact version
-- 350 bats tests run against both, over the same recorded streams and
+- 364 bats tests run against both, over the same recorded streams and
   the same goldens; 7 hurl files check the live API contracts
 - `usage diff` compares the script's spec with the one the binary
   prints, so the two command lines cannot drift apart unseen
@@ -82,11 +84,10 @@ terminal still approved the call.
 
 <!--
 Counts are `wc -l`, `grep -c '^@test'` and `grep -c '#\[test\]'` on
-this release's tree; the Rust line count includes its tests. The port
-was possible in one pull request because the goldens already pinned
-what the script prints, byte for byte: the Rust code had a fixed target.
-Expect the question about 1,900 lines becoming 11,500. Do not answer it
-with a performance claim; the deck has no benchmark.
+this release's tree; the Rust line count includes its tests. This
+release is the two-implementation setup doing its job: each change
+landed in both, and one bug existed in only one of them. It is also the
+last release with the script.
 -->
 
 ---
@@ -105,6 +106,7 @@ with a performance claim; the deck has no benchmark.
 | 0.3.0 | macro | 2026-11-07 | `agent --local-mcp`, per-server MCP tokens |
 | 0.3.1 | micro | 2026-11-13 | `--mcp-tool` allowlists, dynamic-filtering web tools |
 | 0.3.2 | meso | 2026-11-15 | The Rust build at parity; `ANTHROPIC_BASE_URL` |
+| 0.3.3 | meso | 2026-11-16 | `--github`, `--github_ro`; one `--mcp` server per host |
 
 <!--
 One row per GitHub release. Versions between rows exist in CHANGELOG.md
@@ -123,14 +125,18 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ask-claude "one question"
 ```
 
-- Check whether `ANTHROPIC_BASE_URL` is set in your environment, for
-  instance for another tool: ask-claude now sends its requests there,
-  and exits 2 if it is not https (or http on localhost)
-- Unset it for ask-claude, or pass `--base-url`, to keep the default
-- Without it set, nothing changes
+Check commands and scripts that pass `--mcp`:
+
+- Several URLs in one `--mcp` value now exit 2: give each URL its
+  own `--mcp`
+- Two `--mcp` URLs on one host now exit 2 before any request: keep one.
+  They already failed in 0.3.2, at the API, with exit 1
+- Quote a URL with a query string: unquoted, zsh globs the `?` and
+  `&` ends the command
 
 <!--
-This is the meso part: one environment variable that an adopter may
-already have set for something else. `just ask` and the shell
-completions use the Rust build from this release on.
+Meso because of the first bullet: a command that worked in 0.3.2 can
+now exit 2. The second only changes the exit code and the message of
+something that never worked. `ANTHROPIC_BASE_URL` from 0.3.2 still
+applies to anyone coming from before it.
 -->

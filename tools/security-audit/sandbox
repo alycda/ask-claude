@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# tools/security-audit/sandbox <scratch dir> <command> [args...]
+#
+# Runs one command of a security-audit run under the controls the Cloudflare
+# security-audit skill requires before target code may run
+# (docs/plans/2026-11-08-001-security-audit-run-2-plan.md; run 2 itself ran on
+# macOS, so it used a Docker sandbox instead, see docs/security-audit/REPORT.md):
+#
+# - no external network: a new network namespace with loopback only
+# - writes only to <scratch dir>: a new mount namespace in which every mount
+#   is read-only except <scratch dir>, bind-mounted writable on top; HOME,
+#   TMPDIR and XDG_STATE_HOME point inside it
+# - an empty environment from an allowlist (env -i): PATH, HOME, TMPDIR,
+#   XDG_STATE_HOME, LANG and a dummy ANTHROPIC_API_KEY
+# - limits: 60 s wall clock, 30 s CPU, 512 MiB address space, 64 processes,
+#   16 MiB per file
+#
+# Linux only: it needs unprivileged user namespaces (unshare --user). Docker
+# is not required. Checked, as root in a cloud container, by running probes
+# inside it: a curl could not resolve any host, and touch failed with
+# "Read-only file system" on the target, /, /tmp, /var/tmp, /run and
+# /dev/shm, while the scratch dir was writable; none of the probes reached
+# the host. Re-check those before relying on it on another machine.
+set -euo pipefail
+[ $# -ge 2 ] || {
+    echo "usage: $0 <scratch dir> <command> [args...]" >&2
+    exit 2
+}
+mkdir -p "$1"
+scratch=$(realpath "$1")
+shift
+mkdir -p "$scratch/home" "$scratch/tmp"
+# shellcheck disable=SC2016  # the inner script expands its own $1, $2 and $@
+exec unshare --user --map-root-user --net --mount --pid --fork --mount-proc -- bash -c '
+  set -euo pipefail
+  scratch=$1 path=$2
+  shift 2
+  ip link set lo up 2>/dev/null || true
+  mount --make-rprivate /
+  # every mount read-only; /proc, /sys, /dev and /dev/pts stay as they are
+  # (new namespaces of their own, or device nodes such as /dev/null)
+  for m in $(awk "{print \$2}" /proc/self/mounts | sort -u); do
+    case "$m" in /proc* | /sys* | /dev | /dev/pts) continue ;; esac
+    mount -o remount,bind,ro "$m" 2>/dev/null ||
+      { mount --bind "$m" "$m" 2>/dev/null && mount -o remount,bind,ro "$m" 2>/dev/null; } || true
+  done
+  mount --bind "$scratch" "$scratch"
+  mount -o remount,bind,rw "$scratch"
+  ulimit -t 30 -v 524288 -u 64 -f 32768
+  exec timeout 60 env -i PATH="$path" HOME="$scratch/home" TMPDIR="$scratch/tmp" \
+    XDG_STATE_HOME="$scratch/state" LANG=C.UTF-8 ANTHROPIC_API_KEY=sk-ant-test-not-a-key "$@"
+' _ "$scratch" "$PATH" "$@"

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# A stdio MCP server for the bats suite: newline-delimited JSON-RPC on stdin
+# and stdout, the transport `--local-mcp` speaks.
+#
+# FAKE_MCP_LOG      append every line received here
+# FAKE_MCP_PIDFILE  write this process's pid here
+# FAKE_MCP_TOOLS    JSON array of tool names to list (default ["get_weather"])
+# FAKE_MCP_SUFFIX   appended to every tool result text, read by jq from the
+#                   environment so it never sits on a command line
+# FAKE_MCP_MODE     ok (default) | no-init (exit at initialize) |
+#                   crash-on-call | hang-on-call | rpc-error | error-result |
+#                   noisy (a notification, a server request and a non-JSON
+#                   line before each tool result) | mixed (every MCP content
+#                   type in one result, the shape github-mcp-server's
+#                   get_file_contents uses for a file) | ignore-eof (at end of
+#                   input, ignore SIGTERM and keep running, as mcp-remote does
+#                   while it waits for an OAuth callback)
+# FAKE_MCP_SCHEMA_META  1: every inputSchema carries a $schema key, as
+#                   Supabase's and Cloudflare's servers send
+#
+# Every jq call reads the message from stdin: the argv test shims jq and
+# fails if a tool input or result reaches any jq command line.
+set -u
+log=${FAKE_MCP_LOG:-/dev/null}
+[ -z "${FAKE_MCP_PIDFILE:-}" ] || echo $$ >"$FAKE_MCP_PIDFILE"
+tools=${FAKE_MCP_TOOLS:-'["get_weather"]'}
+mode=${FAKE_MCP_MODE:-ok}
+export FAKE_MCP_SUFFIX="${FAKE_MCP_SUFFIX:-}"
+
+while IFS= read -r line; do
+    printf '%s\n' "$line" >>"$log"
+    method=$(jq -r '.method // ""' <<<"$line" 2>/dev/null) || continue
+    id=$(jq -c '.id // null' <<<"$line")
+    case "$method" in
+    initialize)
+        [ "$mode" != no-init ] || exit 1
+        jq -nc --argjson id "$id" '{jsonrpc: "2.0", id: $id, result: {protocolVersion: "2025-06-18",
+            capabilities: {tools: {}}, serverInfo: {name: "fake", version: "0"}}}'
+        ;;
+    tools/list)
+        jq -nc --argjson id "$id" --argjson t "$tools" --arg meta "${FAKE_MCP_SCHEMA_META:-}" '{jsonrpc: "2.0", id: $id, result: {tools: [$t[] |
+            {name: ., description: "fixture tool \(.)",
+             inputSchema: ((if $meta == "1" then {"$schema": "http://json-schema.org/draft-07/schema#"} else {} end)
+                           + {type: "object", properties: {city: {type: "string"}}, required: ["city"]})}]}}'
+        ;;
+    tools/call)
+        case "$mode" in
+        crash-on-call) exit 3 ;;
+        hang-on-call) sleep 30 && continue ;;
+        noisy)
+            echo '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"working"}}'
+            echo '{"jsonrpc":"2.0","id":"srv-1","method":"roots/list"}'
+            echo 'not json at all'
+            ;;
+        esac
+        case "$mode" in
+        rpc-error)
+            jq -nc --argjson id "$id" '{jsonrpc: "2.0", id: $id, error: {code: -32602, message: "bad arguments"}}'
+            ;;
+        mixed)
+            jq -c '{jsonrpc: "2.0", id: .id, result: {content: [
+                {type: "text", text: "downloaded"},
+                {type: "resource", resource: {uri: "repo://o/r/contents/VERSION", mimeType: "text/plain", text: "0.2.7\n"}},
+                {type: "resource", resource: {uri: "repo://o/r/contents/logo.png", mimeType: "image/png", blob: "iVBORw0K"}},
+                {type: "resource_link", uri: "repo://o/r/contents/README.md", name: "README.md"},
+                {type: "image", data: "iVBORw0K", mimeType: "image/png"}]}}' <<<"$line"
+            ;;
+        error-result)
+            jq -c '{jsonrpc: "2.0", id: .id, result: {content: [{type: "text",
+                text: ("no weather for " + (.params.arguments.city // "?") + env.FAKE_MCP_SUFFIX)}], isError: true}}' <<<"$line"
+            ;;
+        *)
+            jq -c '{jsonrpc: "2.0", id: .id, result: {content: [{type: "text",
+                text: ("Sunny in " + (.params.arguments.city // "?") + env.FAKE_MCP_SUFFIX)}], isError: false}}' <<<"$line"
+            ;;
+        esac
+        ;;
+    "") ;; # a response, e.g. the client's answer to roots/list
+    *) [ "$id" = null ] || jq -nc --argjson id "$id" '{jsonrpc: "2.0", id: $id, error: {code: -32601, message: "method not found"}}' ;;
+    esac
+done
+if [ "$mode" = ignore-eof ]; then
+    trap '' TERM
+    sleep 300 &
+    echo $! >"${FAKE_MCP_PIDFILE:-/dev/null}.child"
+    wait
+fi

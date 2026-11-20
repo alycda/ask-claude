@@ -4,11 +4,11 @@ title: ask-claude
 paginate: true
 ---
 
-# ask-claude 0.2.6
+# ask-claude 0.2.7
 
 Talk to Claude from a shell with nothing but `curl` and `jq`.
 
-Released 2026-11-06 · EffVer micro · the advisor tool
+Released 2026-11-06 · EffVer micro · the event log
 
 <!--
 This deck is rewritten at every release, so its history is the project's
@@ -44,33 +44,34 @@ Same script, same streaming printer.
 
 ---
 
-## New since 0.2.5
+## New since 0.2.6
 
-`--advisor <model>`: the reply can consult another model mid-turn,
-through the advisor tool (beta).
+An event log: one JSON line per Messages request and per session turn,
+appended to `events.jsonl` in the state directory.
 
-- At most 3 advisor calls a turn, billed at the advisor's rates
-- The stream shows `(advisor) ` or `(advisor error: <code>) `
-- The usage footer adds `advisor=<model> in=… out=…`
-- A chat that used an advisor resumes without the flag
-
-Also: the gates now run on every pull request.
+- Model, tokens, cache reads and writes, advisor usage, seconds,
+  stop reason, host
+- Never prompt, reply or error text
+- On by default, private like the history; `ASK_CLAUDE_EVENTS=off`
+- The README has five `jq` queries: tokens per chat, cache hit rate,
+  seconds by model, refusals, advisor spend
 
 <!--
-Adopting needs nothing: the flag is new and optional. The CI workflows
-arrived between 0.2.5 and this release, ahead of the Rust port, so the
-port's pull request would be gated by the same commands as local work.
+Demo: run two prompts, then `jq -s 'map(.input_tokens) | add'` over the
+file, or one of the README's queries. A `pause_turn` round is its own
+line; a session turn is one line carrying the session's usage so far.
+Known gap, say it: Ctrl-C during a Messages request leaves no line.
 -->
 
 ---
 
 ## How it is built
 
-- One bash script and eight `jq` filters in `lib/`: 1,287 lines
+- One bash script and nine `jq` filters in `lib/`: 1,394 lines
 - [`usage`](https://usage.jdx.dev), pinned at 7.3.0, reads the `#USAGE`
   block at the top of the script: flags, help, shell completions
 - Every `feat:` and `fix:` commit follows a test that is red without it
-- 196 bats tests replay recorded SSE and session streams
+- 245 bats tests replay recorded SSE and session streams
   (`ASK_CLAUDE_REPLAY`); 5 hurl files check the live API contracts
 - GitHub Actions runs the gates on pull requests
 - Versions are [EffVer](https://jacobtomlinson.dev/effver/): the number
@@ -78,9 +79,9 @@ port's pull request would be gated by the same commands as local work.
 
 <!--
 Line and test counts are `wc -l` and `grep -c '^@test'` on this
-release's tree. The session fixtures are live recordings with the ids
-redacted. `just unit-tests` skips the one terminal-bound test, which
-`just pty-test` runs alone.
+release's tree. The ninth filter is `lib/event.jq`, which builds the
+event line. The event log came with a requirements document and a plan
+under `docs/brainstorms/` and `docs/plans/`.
 -->
 
 ---
@@ -95,6 +96,7 @@ redacted. `just unit-tests` skips the one terminal-bound test, which
 | 0.2.4 | micro | 2026-11-05 | Managed Agents sessions (0.2.0, macro); `--web`, `--mcp` |
 | 0.2.5 | micro | 2026-11-06 | Ten fixes from the security audit |
 | 0.2.6 | micro | 2026-11-06 | `--advisor`, the advisor tool on Messages |
+| 0.2.7 | micro | 2026-11-06 | The event log, `events.jsonl` |
 
 <!--
 One row per GitHub release. Versions between rows exist in CHANGELOG.md

@@ -12,6 +12,7 @@ refused() { # args...
     [ -z "$(ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null)" ]
 }
 
+# bats test_tags=bash-only
 @test "refuse: -p openai, with the pointer to the plan" {
     refused -p openai "hi"
     grep -q '^ask-claude: --provider openai is not implemented in the bash version, see docs/plan.md$' <<<"$stderr"
@@ -21,7 +22,7 @@ refused() { # args...
     unset ANTHROPIC_API_KEY
     run --separate-stderr env -u ANTHROPIC_API_KEY ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" -p anthropic "hi"
     [ "$status" -eq 2 ]
-    ! grep -q 'not implemented' <<<"$stderr"
+    refute grep -q 'not implemented' <<<"$stderr"
     grep -q 'ANTHROPIC_API_KEY' <<<"$stderr"
 }
 
@@ -31,6 +32,19 @@ refused() { # args...
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" --base-url http://localhost:8080 "hi"
     [ "$status" -eq 0 ]
     [ "$output" = "pong" ]
+}
+
+@test "refuse: --base-url that only looks like localhost (user info before the real host)" {
+    local u
+    for u in http://localhost:@example.com http://127.0.0.1:1@example.com \
+        'http://[::1]:x@example.com' http://localhost:8080@example.com/ \
+        http://localhost.example.com http://127.0.0.1.example.com https://u:p@example.com; do
+        refused --base-url "$u" "hi"
+    done
+    for u in http://localhost http://127.0.0.1:9/x 'http://[::1]:1/' https://api.anthropic.com; do
+        run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" "$BIN" --base-url "$u" "hi"
+        [ "$status" -eq 0 ]
+    done
 }
 
 

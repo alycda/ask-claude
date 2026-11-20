@@ -39,7 +39,7 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ "$status" -eq 0 ]
     [ "$(requests)" -eq 0 ]
     [ -z "$(ls "$(STATE_DIR)"/sessions 2>/dev/null)" ]
-    ! grep -q 'resume with' <<<"$stderr"
+    refute grep -q 'resume with' <<<"$stderr"
 }
 
 @test "chat: blank lines are ignored" {

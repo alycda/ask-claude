@@ -1,0 +1,8 @@
+: connected
+
+data: {"type":"session.status_running","id":"sevt_FIXTURE01"}
+
+data: {"type":"session.usage","id":"sevt_FIXTURE02","usage":{"input_tokens":4,"output_tokens":4,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":4311,"ephemeral_1h_input_tokens":0},"list_cost":{"amount":"0","currency":"USD"},"active_seconds":1.075}}
+
+data: {"type":"session.status_idle","id":"sevt_FIXTURE03","stop_reason":{"type":"requires_action","event_ids":["sevt_FIXTURE07"]}}
+

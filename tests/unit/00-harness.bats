@@ -1,9 +1,17 @@
 #!/usr/bin/env bats
 load helpers
 
+# present <file>: the fixture exists and is not empty, else say which one is
+# missing. A bare `[ -s ]` fails without a name, and the first guess is then
+# that the test is wrong; the fixtures are gitignored by pattern with tracked
+# exceptions, so a missing one is usually an exception that was not added.
+present() {
+    [ -s "$1" ] || { echo "missing fixture: ${1#"$ROOT/"}" >&2; return 1; }
+}
+
 @test "harness: fixtures are present and parse" {
     for f in text thinking code-execution pause-turn refusal web-search web-fetch mcp; do
-        [ -s "$FIX/sse/$f.sse" ]
+        present "$FIX/sse/$f.sse"
         events "$f" | jq -e 'select(.type=="message_stop")' >/dev/null
     done
     jq -e '.error.type == "not_found_error"' "$FIX/sse/error.sse"
@@ -15,16 +23,20 @@ load helpers
     command -v bats
 }
 
-# Session fixtures (docs/plans/2026-11-05-001): recorded with
-# tests/record-session.sh, one file per stream, ids redacted. budget.sse and
-# error.sse are hand-derived from text.sse (a budget_reached and a
-# session.error cannot be forced cheaply). Every stream ends in an idle or a
-# termination, because that is where ask-claude stops reading.
+# Session fixtures (docs/plans/2026-11-05-001): one file per stream, ids in
+# the FIXTURE form tests/record-session.sh writes. text, confirm/1-2,
+# custom-tool/1-3, chat/1-3 and files/1 are live recordings, made with
+# tests/record-session.sh against the agents its header describes, and the
+# goldens are generated from them. budget.sse and error.sse are hand-derived
+# from text.sse. not-sse/1, terminated/1 and waiting-unknown/1 are still
+# reconstructed by hand, with a live stream's framing; they were not part of
+# the re-recording. Every stream ends in an idle or a termination, because
+# that is where ask-claude stops reading.
 sessions() { sed -n 's/^data: //p' "$FIX/sessions/$1.sse"; }
 
 @test "harness: session fixtures parse and end in idle or terminated" {
     for f in text budget error confirm/1 confirm/2 custom-tool/1 custom-tool/2 custom-tool/3; do
-        [ -s "$FIX/sessions/$f.sse" ]
+        present "$FIX/sessions/$f.sse"
         sessions "$f" | jq -e 'select(.type=="session.status_idle" or .type=="session.status_terminated")' >/dev/null
         last=$(sessions "$f" | tail -n 1 | jq -r .type)
         [ "$last" = session.status_idle ] || [ "$last" = session.status_terminated ]

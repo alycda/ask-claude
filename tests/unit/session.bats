@@ -45,3 +45,12 @@ events() { sed -n 's/^data: //p' "$FIX/sessions/$1.sse"; }
     printf '(bash) (mcp linear) \n' > "$TMP/want.txt"
     assert_golden "$TMP/want.txt" "$TMP/out.txt"
 }
+
+@test "session: a turn with no session.error or session.usage still folds (jq 1.8: last(empty) is empty)" {
+    run jq -s -c -f "$ROOT/lib/session-fold.jq" <<<'{"type":"session.status_idle","stop_reason":{"type":"end_turn"}}'
+    [ "$status" -eq 0 ]
+    jq -e '.stop_reason=="end_turn" and .error==null and .usage.input_tokens==0' <<<"$output"
+    run jq -s -c -f "$ROOT/lib/session-fold.jq" </dev/null
+    [ "$status" -eq 0 ]
+    jq -e '.stop_reason==null and .asks==[]' <<<"$output"
+}

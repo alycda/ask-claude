@@ -151,3 +151,4 @@ optionally `OPENAI_MODEL` in `.env`; Venice is just a base URL).
 - [Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages)
 - [Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview)
 - [Justfile](https://github.com/casey/just)
+- [Security Audit](https://github.com/cloudflare/security-audit-skill)

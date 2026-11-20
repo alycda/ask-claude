@@ -77,3 +77,28 @@ request() { sed -n "$1p" "$TMP/requests.jsonl"; }
     [ "$status" -eq 1 ]
     grep -q 'invalid x-api-key' <<<"$stderr"
 }
+
+@test "files: a planted <name>.part symlink does not redirect the download" {
+    cd "$TMP"
+    printf 'precious\n' >"$TMP/victim.txt"
+    ln -s "$TMP/victim.txt" "$TMP/result.txt.part"
+    run --separate-stderr replay files sesn_FIXTURE01 result.txt
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TMP/victim.txt")" = precious ]
+    [ -f "$TMP/result.txt" ] && [ ! -L "$TMP/result.txt" ]
+    [ "$(cat "$TMP/result.txt")" = "OUT" ]
+}
+
+@test "files: --force never replaces a symlink or a directory" {
+    cd "$TMP"
+    printf 'precious\n' >"$TMP/victim.txt"
+    ln -s "$TMP/victim.txt" "$TMP/result.txt"
+    run --separate-stderr replay --force files sesn_FIXTURE01 result.txt
+    [ "$status" -eq 2 ]
+    [ "$(cat "$TMP/victim.txt")" = precious ]
+    unlink "$TMP/result.txt"
+    mkdir "$TMP/result.txt"
+    run --separate-stderr replay --force files sesn_FIXTURE01 result.txt
+    [ "$status" -eq 2 ]
+    [ -z "$(ls -A "$TMP/result.txt")" ]
+}

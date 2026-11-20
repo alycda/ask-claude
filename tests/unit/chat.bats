@@ -39,6 +39,7 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ -z "$(ls "$(STATE_DIR)"/*.json 2>/dev/null)" ]
 }
 
+# bats test_tags=pty
 @test "chat: the bash running the loop supports bracketed paste (>= 5.1)" {
     # usage's shebang resolves `bash` from PATH; the same resolution happens here
     bash -c '(( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) ))'

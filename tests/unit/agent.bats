@@ -88,10 +88,10 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     run --separate-stderr replay custom-tool "ping" </dev/null
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$TMP/requests.jsonl")" -eq 3 ]
-    request 2 | jq -e '.events[0].type=="user.custom_tool_result" and .events[0].custom_tool_use_id=="sevt_FIXTURE03" and .events[0].is_error==true'
+    request 2 | jq -e '.events[0].type=="user.custom_tool_result" and .events[0].custom_tool_use_id=="sevt_FIXTURE04" and .events[0].is_error==true'
     request 2 | jq -e '.events[0].content[0].text | test("no local tools")'
-    request 3 | jq -e '.events[0].custom_tool_use_id=="sevt_FIXTURE09"'
-    grep -q 'weather tool is unavailable' <<<"$output"
+    request 3 | jq -e '.events[0].custom_tool_use_id=="sevt_FIXTURE13"'
+    grep -q 'Weather service unavailable' <<<"$output"
 }
 
 
@@ -129,8 +129,9 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# bats test_tags=bash-only
 @test "resources: the token never goes on a command line" {
-    ! grep -qE -- '--arg(json)? +token' "$BIN"
+    refute grep -qE -- '--arg(json)? +token' "$BIN"
     grep -q 'env.GITHUB_TOKEN' "$ROOT/lib/session-create.jq"
 }
 
@@ -152,7 +153,7 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sessions/events-refused" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" agent resume sesn_FIXTURE01 <<<$'again\n/quit\n'
     [ "$status" -eq 0 ]
     grep -q 'is archived' <<<"$stderr"
-    ! grep -q '^pong' <<<"$output"
+    refute grep -q '^pong' <<<"$output"
 }
 
 @test "live paths: waiting on something this version cannot answer interrupts and exits 1" {
@@ -168,4 +169,16 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     run --separate-stderr env -u ANTHROPIC_API_KEY "$BIN" agent trace FIXTURE
     [ "$status" -eq 0 ]
     [ "$output" = "https://platform.claude.com/workspaces/default/sessions/sesn_FIXTURE01" ]
+}
+
+@test "agent: a session id that is not one is refused before it names a file" {
+    mkdir -p "$TMP/fx"
+    printf 'precious\n' >"$TMP/victim.txt"
+    # sessions/ is three levels below $TMP: state/ask-claude/sessions
+    printf '{"id":"../../../victim.txt","status":"running"}\n' >"$TMP/fx/create.json"
+    printf 'data: {"type":"session.status_idle","stop_reason":{"type":"end_turn"}}\n\n' >"$TMP/fx/1.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/fx" "$BIN" agent "ping"
+    [ "$status" -eq 1 ]
+    grep -q 'session id is not one' <<<"$stderr"
+    [ "$(cat "$TMP/victim.txt")" = precious ]
 }

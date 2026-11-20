@@ -1,12 +1,12 @@
 {
   "stop_reason": "requires_action",
   "event_ids": [
-    "sevt_FIXTURE03"
+    "sevt_FIXTURE04"
   ],
   "asks": [],
   "custom": [
     {
-      "id": "sevt_FIXTURE03",
+      "id": "sevt_FIXTURE04",
       "name": "get_weather",
       "input": {
         "city": "Paris"
@@ -17,9 +17,9 @@
     "input_tokens": 4,
     "output_tokens": 50,
     "cache_read": 0,
-    "cache_write": 4386,
+    "cache_write": 4399,
     "list_cost": "0",
-    "active_seconds": 0.955
+    "active_seconds": 1.015
   },
   "error": null
 }

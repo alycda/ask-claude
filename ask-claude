@@ -53,7 +53,7 @@
 set -uo pipefail
 # The script ships as one file, so it carries its own copy of VERSION;
 # `just bump` rewrites this line and `just check-version-line` compares them.
-readonly ASK_CLAUDE_VERSION=0.2.4
+readonly ASK_CLAUDE_VERSION=0.2.5
 # History holds whole conversations, including -f file contents: every file
 # and directory this script creates is private to the user, whatever the
 # shell's umask.
@@ -86,12 +86,18 @@ esac
 
 # --base-url: the API root, https://api.anthropic.com unless given. Anything
 # but https goes to a loopback address only, so the key never travels in
-# clear over a network.
+# clear over a network. The host is what curl will connect to, so the check
+# is on the whole authority: "http://localhost:@example.com" starts like
+# localhost, but curl reads "localhost:" as user info and connects to
+# example.com. No API root carries user info, so any "@" is refused.
 BASE_URL="${usage_base_url:-https://api.anthropic.com}"
 case "$BASE_URL" in
+*@*) die "--base-url must not carry user info (an @), got: $BASE_URL" ;;
 https://*) ;;
-http://localhost | http://localhost[:/]* | http://127.0.0.1 | http://127.0.0.1[:/]* | http://\[::1\] | http://\[::1\][:/]*) ;;
-*) die "--base-url must be https:// (or http:// on localhost), got: $BASE_URL" ;;
+*)
+  [[ $BASE_URL =~ ^http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/.*)?$ ]] ||
+    die "--base-url must be https:// (or http:// on localhost), got: $BASE_URL"
+  ;;
 esac
 API="${BASE_URL%/}/v1/messages"
 
@@ -329,9 +335,11 @@ call() {
   esac
 }
 
-# ask <text>: append a user turn, then call
+# ask <text>: append a user turn, then call. The text (a typed line, or a
+# whole -f file) reaches jq on stdin: a command line is readable by other
+# local accounts, the same reason transport keeps the body off curl's.
 ask() {
-  jq --arg c "$1" '. + [{"role":"user","content":$c}]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"
+  printf '%s' "$1" | jq --rawfile c /dev/stdin '. + [{"role":"user","content":$c}]' "$HIST" >"$HIST.tmp" && mv "$HIST.tmp" "$HIST"
   call
 }
 
@@ -365,7 +373,7 @@ ma_call() {
   [ -z "${ASK_CLAUDE_REQUEST_LOG:-}" ] || [ -z "$body" ] || printf '%s\n' "$body" >>"$ASK_CLAUDE_REQUEST_LOG"
   if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
     case "$method $path" in
-    "POST /sessions") echo '{"id":"sesn_FIXTURE01","status":"running"}' ;;
+    "POST /sessions") cat "$ASK_CLAUDE_REPLAY/create.json" 2>/dev/null || echo '{"id":"sesn_FIXTURE01","status":"running"}' ;;
     "POST /sessions/"*"/archive") cat "$ASK_CLAUDE_REPLAY/archive.json" 2>/dev/null || echo '{"id":"sesn_FIXTURE01","status":"terminated","archived_at":"2026-11-05T00:00:00Z"}' ;;
     "POST /sessions/"*"/events") cat "$ASK_CLAUDE_REPLAY/events-post.json" 2>/dev/null || echo '{}' ;;
     "POST /sessions/"*) cat "$ASK_CLAUDE_REPLAY/update.json" 2>/dev/null || jq -c '{id: "sesn_FIXTURE01"} + .' <<<"$body" ;;
@@ -421,7 +429,9 @@ session_stream_read() {
 # session_confirm <name> <input>: allow | deny. A tool confirmation is asked
 # at the terminal (y / n / a for the rest of this process) and denied when
 # there is none; ASK_CLAUDE_CONFIRM=allow|deny answers without asking. The
-# "always" answer is kept in a file, because this runs in a subshell.
+# "always" answer is kept in a file, because this runs in a subshell; the
+# file is $ALWAYS, which session_prereqs clears and removes on exit.
+ALWAYS=""
 session_confirm() {
   local answer
   case "${ASK_CLAUDE_CONFIRM:-ask}" in
@@ -430,7 +440,7 @@ session_confirm() {
     return
     ;;
   esac
-  if [ -e "$STATE/.always.$$" ]; then
+  if [ -n "$ALWAYS" ] && [ -e "$ALWAYS" ]; then
     echo allow
     return
   fi
@@ -443,7 +453,7 @@ session_confirm() {
   case "$answer" in
   y | Y | yes) echo allow ;;
   a | A | always)
-    : >"$STATE/.always.$$"
+    [ -z "$ALWAYS" ] || : >"$ALWAYS"
     echo allow
     ;;
   *) echo deny ;;
@@ -454,15 +464,24 @@ session_confirm() {
 # nothing when it waits on something this version cannot answer
 session_tty="" # set per answer round, outside the loop that redirects stdin
 session_answer() {
-  local fold=$1 answers="[]" id name input result
+  local fold=$1 answers="[]" ask id name input result
   if [ -t 0 ]; then session_tty=1; else session_tty=""; fi
-  while IFS=$'\t' read -r id name input; do
+  # One compact JSON line per ask (JSON escapes newlines, so a line is an
+  # ask). The input is shown as jq -c renders it, encoded exactly once: going
+  # through @tsv as well escaped its backslashes a second time, so a real
+  # newline (two commands) looked like a literal \n (one command).
+  while IFS= read -r ask; do
+    id=$(jq -r '.id // empty' <<<"$ask")
     [ -n "$id" ] || continue
+    # name and input go to the terminal (the prompt and the status lines):
+    # safe, like every other API value printed; the id goes back unchanged
+    name=$(jq -r "$SAFE"'.name | tostring | safe' <<<"$ask")
+    input=$(jq -r "$SAFE"'.input | tojson | safe' <<<"$ask")
     result=$(session_confirm "$name" "$input")
     [ "$result" = allow ] && echo "ask-claude: allowed $name ($input)" >&2
     [ "$result" = deny ] && [ -n "${ASK_CLAUDE_CONFIRM:-}" ] && echo "ask-claude: denied $name ($input): ASK_CLAUDE_CONFIRM=$ASK_CLAUDE_CONFIRM" >&2
     answers=$(jq -c --arg id "$id" --arg r "$result" '. + [{type: "user.tool_confirmation", tool_use_id: $id, result: $r}]' <<<"$answers")
-  done < <(jq -r '.asks[] | [.id, .name, (.input | tostring)] | @tsv' <<<"$fold")
+  done < <(jq -c '.asks[]' <<<"$fold")
   jq -c --argjson a "$answers" --arg msg "Tool unavailable: ask-claude $ASK_CLAUDE_VERSION runs no local tools (see docs/plan.md). Do not call it again; answer the user without it." '
     {events: ($a + [.custom[] | {type: "user.custom_tool_result", custom_tool_use_id: .id,
                                  content: [{type: "text", text: $msg}], is_error: true}])}' <<<"$fold"
@@ -499,7 +518,7 @@ session_turn() {
       return 130
     fi
     if [ ! -s "$log" ] || ! grep -q '^data: ' "$log"; then
-      echo "ask-claude: no response from the stream ($(head -c 200 "$log.err" "$log" 2>/dev/null | tr -d '\n' | cut -c1-200))" >&2
+      echo "ask-claude: no response from the stream ($(head -c 200 "$log.err" "$log" 2>/dev/null | tr -d '\n' | jq -Rr "$SAFE"'safe' | cut -c1-200))" >&2
       session_cleanup "$log"
       return 1
     fi
@@ -514,10 +533,10 @@ session_turn() {
       session_cleanup "$log"
       return 1
     fi
-    stop=$(jq -r '.stop_reason // ""' <<<"$fold")
+    stop=$(jq -r "$SAFE"'.stop_reason // "" | tostring | safe' <<<"$fold")
     if [ "$stop" = requires_action ]; then
       if [ "$(jq '(.asks | length) + (.custom | length)' <<<"$fold")" -eq 0 ]; then
-        echo "ask-claude: the session waits on something this version cannot answer ($(jq -r '.event_ids | join(" ")' <<<"$fold")); interrupting" >&2
+        echo "ask-claude: the session waits on something this version cannot answer ($(jq -r "$SAFE"'.event_ids | map(tostring) | join(" ") | safe' <<<"$fold")); interrupting" >&2
         ma_call POST "/sessions/$sesn/events" '{"events":[{"type":"user.interrupt"}]}' >/dev/null
         session_cleanup "$log"
         return 1
@@ -563,9 +582,10 @@ session_cleanup() {
 # event; prints the new session id, or an API error and returns 1.
 session_create() {
   local body resp sesn err
-  body=$(jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" --arg file "${session_file_id:-}" --arg file_name "$(basename "${usage_file:-}")" \
+  # the prompt on stdin, not on jq's command line (see ask)
+  body=$(printf '%s' "$1" | jq -n -c --arg agent "$usage_agent" --arg env "$usage_environment" --arg budget "$usage_budget" --arg file "${session_file_id:-}" --arg file_name "$(basename "${usage_file:-}")" \
     --arg vaults "${usage_vault:-}" --arg repo "${usage_repo:-}" --arg memories "${usage_memory:-}" \
-    --arg title "" --arg prompt "$1" -f "$LIB/session-create.jq")
+    --arg title "" --rawfile prompt /dev/stdin -f "$LIB/session-create.jq")
   resp=$(ma_call POST /sessions "$body")
   sesn=$(jq -r '.id // empty' <<<"$resp" 2>/dev/null)
   if [ -z "$sesn" ]; then
@@ -574,11 +594,22 @@ session_create() {
     echo "ask-claude: API error: $err" >&2
     return 1
   fi
+  # the id names a file under sessions/ and goes into URL paths and the
+  # terminal, so it must be an id and nothing else ("../x" would write
+  # outside sessions/)
+  if ! session_id_ok "$sesn"; then
+    echo "ask-claude: API error: the session id is not one (sesn_ and letters, digits, _ or -)" >&2
+    return 1
+  fi
   echo "$sesn"
 }
 
+# session_id_ok <id>: the shape of a session id the API hands out
+session_id_ok() { [[ $1 =~ ^sesn_[A-Za-z0-9_-]{1,128}$ ]]; }
+
 # session_remember <sesn>: the state file `list` and `resume` read
 session_remember() {
+  session_id_ok "$1" || return 1
   mkdir -p "$SESSIONS"
   printf 'agent=%s\nenvironment=%s\ncreated=%s\n' "$usage_agent" "$usage_environment" "$(date +%Y%m%dT%H%M%S)" >"$SESSIONS/$1"
 }
@@ -647,7 +678,7 @@ session_loop() {
       sesn=$(session_create "$line") || continue
       session_turn "$sesn" && session_remember "$sesn"
     else
-      session_turn "$sesn" "$(jq -n -c --arg t "$line" '{events: [{type: "user.message", content: [{type: "text", text: $t}]}]}')"
+      session_turn "$sesn" "$(printf '%s' "$line" | jq -n -c --rawfile t /dev/stdin '{events: [{type: "user.message", content: [{type: "text", text: $t}]}]}')"
     fi
     echo
   done
@@ -677,7 +708,7 @@ file_upload() {
 # the agent wrote to /mnt/session/outputs), or download the named ones into
 # the current directory
 session_files() {
-  local sesn=$1 page name id size
+  local sesn=$1 page name id size tmp
   shift
   page=$(ma_call GET "/files?scope_id=$sesn")
   session_api_error "$page" && return 1
@@ -689,17 +720,26 @@ session_files() {
     case "$name" in */* | "" | .* | -*) die "files takes names from \`ask-claude agent files $sesn\`, not paths" ;; esac
     id=$(jq -r --arg n "$name" 'last(.data[]? | select(.filename == $n)) | .id // empty' <<<"$page")
     [ -n "$id" ] || die "the session has no file named $name"
+    # --force replaces a file, never a link or a directory (mv would follow
+    # the one and move into the other)
+    if [ -L "$name" ] || { [ -e "$name" ] && [ ! -f "$name" ]; }; then
+      die "$name exists here and is not a regular file; not overwriting it"
+    fi
     if [ -e "$name" ] && [ "${usage_force:-}" != true ]; then
       die "$name exists here; --force overwrites it"
     fi
+    # The bytes go to a temp file this process creates (mktemp: O_EXCL), so
+    # nothing already in the directory, such as a planted symlink, can
+    # redirect them; then one rename puts the file in place.
+    tmp=$(mktemp "./.$name.XXXXXX") || die "cannot create a temporary file in $PWD"
     if [ -n "${ASK_CLAUDE_REPLAY:-}" ]; then
-      cat "$ASK_CLAUDE_REPLAY/files/$name" >"$name.part"
-    elif ! curl -sS --fail --max-time 600 "$BASE_URL/v1/files/$id/content" -H @<(ma_headers) -o "$name.part"; then
-      rm -f "$name.part"
+      cat "$ASK_CLAUDE_REPLAY/files/$name" >"$tmp"
+    elif ! curl -sS --fail --max-time 600 "$BASE_URL/v1/files/$id/content" -H @<(ma_headers) -o "$tmp"; then
+      rm -f "$tmp"
       echo "ask-claude: download of $name failed" >&2
       return 1
     fi
-    mv -- "$name.part" "$name"
+    mv -f -- "$tmp" "$name"
     size=$(wc -c <"$name")
     echo "ask-claude: wrote $name ($size bytes)" >&2
   done
@@ -767,6 +807,13 @@ session_prereqs() {
   esac
   [ -z "${usage_file:-}" ] || [ -r "$usage_file" ] || die "cannot read $usage_file"
   need_key
+  # An "always" answer lasts for this process only. The file is keyed by the
+  # PID, and PIDs are reused (deterministically, in a container that starts
+  # the same way each time): a file left by an earlier process with this PID,
+  # killed before its EXIT trap ran, must not answer for this one.
+  ALWAYS="$STATE/.always.$$"
+  rm -f "$ALWAYS"
+  trap 'rm -f "$ALWAYS"' EXIT
 }
 
 case "${usage_cmd:-}" in

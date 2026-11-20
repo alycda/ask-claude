@@ -4,11 +4,11 @@ title: ask-claude
 paginate: true
 ---
 
-# ask-claude 0.2.5
+# ask-claude 0.2.6
 
 Talk to Claude from a shell with nothing but `curl` and `jq`.
 
-Released 2026-11-06 · EffVer micro · the security audit's fixes
+Released 2026-11-06 · EffVer micro · the advisor tool
 
 <!--
 This deck is rewritten at every release, so its history is the project's
@@ -27,6 +27,7 @@ One script, two APIs, streaming always on.
 ask-claude "one question"           # Messages API: one shot
 ask-claude                          # chat loop
 ask-claude --web "what changed?"    # the model may search and fetch
+ask-claude --advisor <model> "..."  # consult a second model mid-turn
 ask-claude agent "question"         # a Managed Agents session
 ask-claude agent resume <session>   # the API keeps the transcript
 ```
@@ -43,46 +44,43 @@ Same script, same streaming printer.
 
 ---
 
-## New since 0.2.4
+## New since 0.2.5
 
-Ten fixes from a security audit (`docs/security-audit/`). Among them:
+`--advisor <model>`: the reply can consult another model mid-turn,
+through the advisor tool (beta).
 
-- `--base-url` checks the parsed host:
-  `http://localhost:@example.com` no longer sends the key to example.com
-- The `always` answer to a tool confirmation ends with its process
-- Every Managed Agents value the script prints goes through `safe`
-- Request text reaches `jq` on stdin, never on a command line
-- The API's session id is validated before it names a file
-- `agent files` writes a fresh temp file, never through a symlink
+- At most 3 advisor calls a turn, billed at the advisor's rates
+- The stream shows `(advisor) ` or `(advisor error: <code>) `
+- The usage footer adds `advisor=<model> in=… out=…`
+- A chat that used an advisor resumes without the flag
+
+Also: the gates now run on every pull request.
 
 <!--
-Each finding was fixed in its own commit with a regression test. The
-other four: the confirmation prompt shows tool input encoded once, the
-session fold has explicit defaults so jq 1.8 folds a turn, the recorder
-redacts ids as values only, and check-effver validates the parent
-VERSION before arithmetic. Nothing to do to adopt: the two behaviour
-changes were bugs.
+Adopting needs nothing: the flag is new and optional. The CI workflows
+arrived between 0.2.5 and this release, ahead of the Rust port, so the
+port's pull request would be gated by the same commands as local work.
 -->
 
 ---
 
 ## How it is built
 
-- One bash script and eight `jq` filters in `lib/`: 1,247 lines
+- One bash script and eight `jq` filters in `lib/`: 1,287 lines
 - [`usage`](https://usage.jdx.dev), pinned at 7.3.0, reads the `#USAGE`
   block at the top of the script: flags, help, shell completions
 - Every `feat:` and `fix:` commit follows a test that is red without it
-- 170 bats tests replay recorded SSE and session streams
+- 196 bats tests replay recorded SSE and session streams
   (`ASK_CLAUDE_REPLAY`); 5 hurl files check the live API contracts
-- The session fixtures are live recordings with the ids redacted
+- GitHub Actions runs the gates on pull requests
 - Versions are [EffVer](https://jacobtomlinson.dev/effver/): the number
   that changes says how much effort adopting takes
 
 <!--
 Line and test counts are `wc -l` and `grep -c '^@test'` on this
-release's tree. The harness says which streams are recorded and which
-are derived, and names a missing one. `just unit-tests` skips the one
-terminal-bound test, which `just pty-test` runs alone.
+release's tree. The session fixtures are live recordings with the ids
+redacted. `just unit-tests` skips the one terminal-bound test, which
+`just pty-test` runs alone.
 -->
 
 ---
@@ -96,6 +94,7 @@ terminal-bound test, which `just pty-test` runs alone.
 | 0.1.4 | micro | 2026-11-05 | `--base-url`, parity with `claude.sh` |
 | 0.2.4 | micro | 2026-11-05 | Managed Agents sessions (0.2.0, macro); `--web`, `--mcp` |
 | 0.2.5 | micro | 2026-11-06 | Ten fixes from the security audit |
+| 0.2.6 | micro | 2026-11-06 | `--advisor`, the advisor tool on Messages |
 
 <!--
 One row per GitHub release. Versions between rows exist in CHANGELOG.md

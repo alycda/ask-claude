@@ -128,6 +128,12 @@ explain() { usage explain -f "$(spec_file)" -- ask-claude "$@"; }
     refute grep -q refused <<<"$output"
 }
 
+@test "spec: --mcp-tool binds and repeats" {
+    run explain --mcp https://a.example/mcp --mcp-tool a.example:x --mcp-tool a.example:y "hi"
+    grep -qE '^\s+flag\s+--mcp-tool\s+a.example:x a.example:y\s' <<<"$output"
+    refute grep -q refused <<<"$output"
+}
+
 @test "spec: --advisor binds with its model" {
     run explain --advisor claude-opus-5-5 "hi"
     grep -qE '^\s+flag\s+--advisor\s+claude-opus-5-5' <<<"$output"

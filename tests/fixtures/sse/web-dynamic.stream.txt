@@ -1,0 +1,1 @@
+(running code) (web_search) (running code) (running code) (web_fetch) (web_fetch) (thinking) The latest jq release is 1.8.2, which its GitHub release notes call a patch release with security and bug fixes since 1.8.1, plus new builds for Windows arm64 and Docker arm/v7.

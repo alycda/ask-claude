@@ -80,7 +80,7 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
 
 @test "one-shot: --web and --mcp reach the request; a non-https MCP URL exits 2 first" {
     replay web-search --web "ping" >/dev/null 2>&1
-    jq -e '.tools[0].type=="web_search_20250305" and .tools[1].type=="web_fetch_20250910"' "$TMP/requests.jsonl"
+    jq -e '.tools[0].type=="web_search_20260318" and .tools[1].type=="web_fetch_20260318"' "$TMP/requests.jsonl"
     rm -f "$TMP/requests.jsonl"
     replay mcp --mcp https://mcp.deepwiki.com/mcp "ping" >/dev/null 2>&1
     jq -e '.mcp_servers[0].url=="https://mcp.deepwiki.com/mcp" and .tools[0].type=="mcp_toolset"' "$TMP/requests.jsonl"
@@ -119,6 +119,79 @@ history_file() { ls "$XDG_STATE_HOME"/ask-claude/*.json; }
         "$BIN" --mcp "$url" --mcp https://mcp.deepwiki.com/mcp "ping"
     [ "$status" -eq 0 ]
     jq -e '.mcp_servers[0].authorization_token == "tok_ODD" and (.mcp_servers[1] | has("authorization_token") | not)' "$TMP/requests.jsonl"
+}
+
+@test "one-shot: --mcp-tool sends that server's toolset as an allowlist" {
+    replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool mcp.deepwiki.com:ask_question "ping" >/dev/null 2>&1
+    jq -e '.tools[0] == {type: "mcp_toolset", mcp_server_name: "mcp-deepwiki-com",
+        default_config: {enabled: false}, configs: {ask_question: {enabled: true}}}' "$TMP/requests.jsonl"
+}
+
+@test "one-shot: an --mcp-tool that names no --mcp server exits 2 before any request" {
+    run --separate-stderr replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool mcp.example.com:search "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'names no --mcp server' <<<"$stderr"
+    grep -q 'mcp.deepwiki.com' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+    run --separate-stderr replay mcp --mcp-tool mcp.deepwiki.com:ask_question "ping"
+    [ "$status" -eq 2 ]
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+# The check in config.bash and the match in request.jq must fold case the
+# same way. Bash ${h,,} follows the locale, and in a UTF-8 locale it folds
+# the Kelvin sign (U+212A) to k, which jq's ascii_downcase does not: the
+# entry passed the check, matched nothing in the request, and the server
+# went out with every tool on. Both now fold ASCII only (0.3.1).
+@test "one-shot: an --mcp-tool for a host that only matches under locale case folding exits 2" {
+    local k=$'\xe2\x84\xaa' # U+212A as UTF-8 bytes, whatever the test's own locale
+    run --separate-stderr env LC_ALL=C.UTF-8 ASK_CLAUDE_REPLAY="$FIX/sse/mcp.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" \
+        "$BIN" --mcp "https://mcp.example.${k}om/mcp" --mcp-tool mcp.example.kom:search "ping"
+    [ "$status" -eq 2 ]
+    grep -q 'names no --mcp server' <<<"$stderr"
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+@test "one-shot: --mcp-tool still matches an ASCII host whatever its case" {
+    replay mcp --mcp https://MCP.DeepWiki.com/mcp --mcp-tool mcp.deepwiki.COM:ask_question "ping" >/dev/null 2>&1
+    jq -e '.tools[0].configs == {ask_question: {enabled: true}}' "$TMP/requests.jsonl"
+}
+
+@test "one-shot: an --mcp-tool that is not <host>:<tool> exits 2 before any request" {
+    local bad
+    for bad in ask_question mcp.deepwiki.com: :ask_question 'mcp.deepwiki.com:ask question' mcp.deepwiki.com:a:b; do
+        run --separate-stderr replay mcp --mcp https://mcp.deepwiki.com/mcp --mcp-tool "$bad" "ping"
+        [ "$status" -eq 2 ]
+        grep -q '<host>:<tool>' <<<"$stderr"
+    done
+    [ ! -e "$TMP/requests.jsonl" ]
+}
+
+# A pause_turn continuation without skills sends back the container the
+# previous round ran in (dynamic web filtering runs code there); the first
+# request of a turn sends none.
+
+# with_container <fixture> <out>: the fixture's stream, its reply carrying container_FIXTURE
+# Fails when the fixture no longer has the "container":null it replaces: a
+# test asserting no container is sent would then pass without testing anything.
+with_container() {
+    sed 's/"container":null/"container":{"id":"container_FIXTURE","expires_at":"2026-11-10T01:00:00Z"}/g' "$FIX/sse/$1.sse" >"$2"
+    grep -q '"container":{"id":"container_FIXTURE"' "$2" || { echo "with_container: no container injected into $1.sse"; return 1; }
+}
+
+@test "one-shot: a pause_turn continuation without skills sends back its round's container" {
+    with_container pause-turn "$TMP/paused.sse"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$TMP/paused.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" --web "ping"
+    grep -q 'pause_turn: continuing, round 1' <<<"$stderr"
+    jq -s -e '.[0] | has("container") | not' "$TMP/requests.jsonl"
+    jq -s -e 'length > 1 and (.[1:] | all(.container == "container_FIXTURE"))' "$TMP/requests.jsonl"
+}
+
+@test "chat: without skills a new turn does not reuse the last turn's container" {
+    with_container text "$TMP/text-container.sse"
+    printf 'hi\nagain\n/quit\n' | ASK_CLAUDE_REPLAY="$TMP/text-container.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" >/dev/null 2>&1
+    [ "$(jq -s length "$TMP/requests.jsonl")" -eq 2 ]
+    jq -s -e 'all(has("container") | not)' "$TMP/requests.jsonl"
 }
 
 @test "one-shot: a request log that cannot be written fails the request before anything is sent" {

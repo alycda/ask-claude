@@ -1,0 +1,48 @@
+{
+  "model": "claude-opus-5-5",
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi"
+    }
+  ],
+  "fallbacks": "default",
+  "stream": true,
+  "cache_control": {
+    "type": "ephemeral"
+  },
+  "mcp_servers": [
+    {
+      "type": "url",
+      "url": "https://mcp.deepwiki.com/mcp",
+      "name": "mcp-deepwiki-com"
+    },
+    {
+      "type": "url",
+      "url": "https://mcp.example.com/sse",
+      "name": "mcp-example-com"
+    }
+  ],
+  "tools": [
+    {
+      "type": "mcp_toolset",
+      "mcp_server_name": "mcp-deepwiki-com",
+      "default_config": {
+        "enabled": false
+      },
+      "configs": {
+        "read_wiki_structure": {
+          "enabled": true
+        },
+        "ask_question": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "type": "mcp_toolset",
+      "mcp_server_name": "mcp-example-com"
+    }
+  ]
+}

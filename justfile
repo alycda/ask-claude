@@ -39,7 +39,8 @@ unit-test unit:
 step name:
     bats --filter-tags {{ quote("step:" + name) }} tests/unit/*-steps.bats
 
-# live Anthropic contracts; one cheap call each. Only the live recipes (this one and
+# live Anthropic contracts: cheap calls, two of them one web search each (1 cent
+# per search), one listing an MCP server's tools. Only the live recipes (this one and
 # test-openai) read .env, and the key reaches hurl through a secrets file on a
 # pipe, not on its command line.
 [working-directory: 'tests']

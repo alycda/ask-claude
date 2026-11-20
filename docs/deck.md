@@ -4,11 +4,11 @@ title: ask-claude
 paginate: true
 ---
 
-# ask-claude 0.2.4
+# ask-claude 0.2.5
 
 Talk to Claude from a shell with nothing but `curl` and `jq`.
 
-Released 2026-11-05 · EffVer micro · the 0.2 line: Managed Agents
+Released 2026-11-06 · EffVer micro · the security audit's fixes
 
 <!--
 This deck is rewritten at every release, so its history is the project's
@@ -43,42 +43,46 @@ Same script, same streaming printer.
 
 ---
 
-## New since 0.1.4
+## New since 0.2.4
 
-- **0.2.0** (macro) `ask-claude agent`: one shot, chat, `list` and
-  `resume` on Managed Agents sessions; a budget on every session;
-  tool confirmations asked at the terminal
-- **0.2.1** `-f` uploads a file; `agent files` lists and downloads
-- **0.2.2** `--vault`, `--repo` and `--memory` on a session
-- **0.2.3** `agent budget`, `agent archive`, `agent trace`
-- **0.2.4** `--web` and `--mcp <https url>` on the Messages path
+Ten fixes from a security audit (`docs/security-audit/`). Among them:
+
+- `--base-url` checks the parsed host:
+  `http://localhost:@example.com` no longer sends the key to example.com
+- The `always` answer to a tool confirmation ends with its process
+- Every Managed Agents value the script prints goes through `safe`
+- Request text reaches `jq` on stdin, never on a command line
+- The API's session id is validated before it names a file
+- `agent files` writes a fresh temp file, never through a symlink
 
 <!--
-0.2.0 is macro for two reasons: the word `agent` as a prompt now opens
-the command (`ask-claude -- agent` keeps the old meaning), and adopting
-it means making an environment and an agent in the Console first.
-As of 0.2.3 nothing the spec declares is refused any more.
-A web search costs $10 per 1,000; everything else is tokens.
+Each finding was fixed in its own commit with a regression test. The
+other four: the confirmation prompt shows tool input encoded once, the
+session fold has explicit defaults so jq 1.8 folds a turn, the recorder
+redacts ids as values only, and check-effver validates the parent
+VERSION before arithmetic. Nothing to do to adopt: the two behaviour
+changes were bugs.
 -->
 
 ---
 
 ## How it is built
 
-- One bash script and eight `jq` filters in `lib/`: 1,197 lines
-- [`usage`](https://usage.jdx.dev) reads the `#USAGE` block at the top
-  of the script: flags, help, shell completions
-- Every `feat:` commit follows a `test:` commit that is red without it
-- 154 bats tests replay recorded SSE and session streams
+- One bash script and eight `jq` filters in `lib/`: 1,247 lines
+- [`usage`](https://usage.jdx.dev), pinned at 7.3.0, reads the `#USAGE`
+  block at the top of the script: flags, help, shell completions
+- Every `feat:` and `fix:` commit follows a test that is red without it
+- 170 bats tests replay recorded SSE and session streams
   (`ASK_CLAUDE_REPLAY`); 5 hurl files check the live API contracts
+- The session fixtures are live recordings with the ids redacted
 - Versions are [EffVer](https://jacobtomlinson.dev/effver/): the number
   that changes says how much effort adopting takes
 
 <!--
 Line and test counts are `wc -l` and `grep -c '^@test'` on this
-release's tree. The script more than doubled since 0.1.4; four of the
-eight filters are the session printer, folder, history and create
-request.
+release's tree. The harness says which streams are recorded and which
+are derived, and names a missing one. `just unit-tests` skips the one
+terminal-bound test, which `just pty-test` runs alone.
 -->
 
 ---
@@ -91,6 +95,7 @@ request.
 | --- | --- | --- | --- |
 | 0.1.4 | micro | 2026-11-05 | `--base-url`, parity with `claude.sh` |
 | 0.2.4 | micro | 2026-11-05 | Managed Agents sessions (0.2.0, macro); `--web`, `--mcp` |
+| 0.2.5 | micro | 2026-11-06 | Ten fixes from the security audit |
 
 <!--
 One row per GitHub release. Versions between rows exist in CHANGELOG.md

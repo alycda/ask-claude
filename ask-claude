@@ -1,8 +1,8 @@
 #!/usr/bin/env -S usage bash
-#USAGE about "chat loop; /new resets, /quit exits"
+#USAGE about "chat loop (messages api); /new resets, /quit exits"
 #USAGE unknown_flags "error"
 #USAGE arg "[prompt]" help="one shot, prints the response"
-#USAGE flag "-m --model <model>" help="haiku, sonnet, opus, fable, or a full model id" default="claude-opus-5-5" global=#true
+#USAGE flag "-m --model <model>" help="a full model id (see https://platform.claude.com/docs/en/api/cli/models/list)" default="claude-opus-5-5" global=#true
 #USAGE flag "-e --effort <effort>" help="how hard the model thinks" default="medium" global=#true {
 #USAGE   choices "low" "medium" "high" "xhigh" "max"
 #USAGE }
@@ -10,7 +10,7 @@
 #USAGE flag "-s --skills <skills>" help="comma-separated <skill_id>[@<version>]" global=#true
 #USAGE flag "-f --file <file>" help="prepend this file's contents to the prompt" global=#true
 #USAGE flag "-p --provider <provider>" help="anthropic|openai; only anthropic is implemented in bash" default="anthropic" global=#true
-#USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" global=#true
+#USAGE flag "--base-url <url>" help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" env="ANTHROPIC_BASE_URL" global=#true
 #USAGE flag "--max-tokens <n>" help="cap on output tokens per reply" default="16000" global=#true
 #USAGE flag "--web" help="let the model search and fetch the web (server tools; searches cost extra)" global=#true
 #USAGE flag "--mcp <url>" help="an MCP server (https) the model may call; repeatable; its token in ASK_CLAUDE_MCP_TOKEN_<HOST>, or ASK_CLAUDE_MCP_TOKEN for a lone server" var=#true global=#true
@@ -58,7 +58,7 @@
 set -uo pipefail
 # The script carries its own copy of VERSION, read by --version below;
 # `just bump` rewrites this line and `just check-version-line` compares them.
-readonly ASK_CLAUDE_VERSION=0.3.1
+readonly ASK_CLAUDE_VERSION=0.3.2
 # History holds whole conversations, including -f file contents: every file
 # and directory this script creates is private to the user, whatever the
 # shell's umask.
@@ -81,15 +81,16 @@ if [ "${usage_version:-}" = true ]; then
   exit 0
 fi
 
-# The modules, in the order the single file had them: config runs the
-# flag and state-dir checks, the rest define state and functions. The
-# script runs without -e, so a missing module is caught here, not as
-# "command not found" later.
+# The modules, in the order the single file had them, but common first: it
+# only sets SAFE and defines functions, and config prints a root from the
+# environment through safe_text. config runs the flag and state-dir checks,
+# the rest define state and functions. The script runs without -e, so a
+# missing module is caught here, not as "command not found" later.
 for _mod in config common chat messages local-mcp agent-api agent-turn; do
   [ -r "$LIB/$_mod.bash" ] || die "missing $LIB/$_mod.bash; the script needs every file in lib/"
 done
-. "$LIB/config.bash"
 . "$LIB/common.bash"
+. "$LIB/config.bash"
 . "$LIB/chat.bash"
 . "$LIB/messages.bash"
 . "$LIB/local-mcp.bash"

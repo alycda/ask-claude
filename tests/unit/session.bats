@@ -54,3 +54,19 @@ events() { sed -n 's/^data: //p' "$FIX/sessions/$1.sse"; }
     [ "$status" -eq 0 ]
     jq -e '.stop_reason==null and .asks==[]' <<<"$output"
 }
+
+# U+202E (RLO) and U+2069 (PDI) reorder what the user reads and are dropped;
+# U+200F (RLM) is ordinary right-to-left text and is kept (KTD16)
+@test "session: bidirectional formatting characters in an agent message never reach the terminal" {
+    printf '{"type":"agent.message","content":[{"type":"text","text":"a\\u202eb\\u2066c\\u2069d\\u200fe"}]}\n' > "$TMP/in.jsonl"
+    printf 'abcd\xe2\x80\x8fe' > "$TMP/expected.txt"
+    jq -rj -f "$ROOT/lib/session.jq" "$TMP/in.jsonl" > "$TMP/out.txt"
+    assert_golden "$TMP/expected.txt" "$TMP/out.txt"
+}
+
+@test "session: the history drops bidirectional formatting characters and keeps the marks" {
+    printf '{"data":[{"type":"user.message","content":[{"type":"text","text":"x\\u202ay"}]},{"type":"agent.message","content":[{"type":"text","text":"a\\u202eb\\u2066c\\u200fd"}]}]}\n' > "$TMP/page.json"
+    printf 'you: xy\n\nagent: abc\xe2\x80\x8fd\n\n' > "$TMP/expected.txt"
+    jq -r -f "$ROOT/lib/session-history.jq" "$TMP/page.json" > "$TMP/out.txt"
+    assert_golden "$TMP/expected.txt" "$TMP/out.txt"
+}

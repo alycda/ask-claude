@@ -1,0 +1,69 @@
+{
+  "run_id": "run-3",
+  "repo": "ask-claude",
+  "target": "a jj workspace checked out at source_ref, its source files read-only for the run",
+  "source_ref": {
+    "commit": "71ae96303e6f4fc755773a3d491adb86d308ec9b",
+    "jj_change": "voxtlums",
+    "subject": "fix(test): history.bats declares the quoted backticks to shellcheck",
+    "worktree_dirty": false,
+    "note": "jj workspace audit-target checked out at this commit; its source files were made read-only for the run"
+  },
+  "profile": "standard",
+  "scope_paths": [
+    "rust/"
+  ],
+  "scope_note": "scoped run: the Rust port (rust/). The bash script, lib/*.jq and lib/*.bash are read only as the oracle the port twins; surfaces outside rust/ are recorded out_of_scope.",
+  "budget": null,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "execution_capability": "no OS-enforced sandbox available (unshare is refused, no bwrap/firejail/nsjail): no target-controlled code is executed in this run; every check is a source check, and a decisive runtime fact becomes needs_validation",
+  "companion_files_selected": [
+    "AI-AND-LLM.md",
+    "PROTOCOLS-RPC-AND-MESSAGING.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "WEB-PROTOCOL-AND-AUTH.md",
+    "DESKTOP-MOBILE-AND-LOCAL-IPC.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md",
+    "MEMORY-SAFETY-AND-BINARY.md"
+  ],
+  "prior_runs": [
+    {
+      "path": "docs/security-audit/ (run 2)",
+      "run": "run-2 (its report names a run-1 before it)",
+      "source_ref": "9c21790e527c3f8ca3b5f569d26f3a14e8f8c664",
+      "ledger_units": 28,
+      "findings": 8,
+      "validators": "both PASS",
+      "compatibility": "compatible; all records target the bash script and jq programs (out of this run's scope), several with Rust twins in rust/"
+    }
+  ],
+  "shared_file_owner": "parent (the orchestrating session); agents write only their own agents/<id>/scratch/",
+  "orchestration_adaptations": [
+    "agent prompts carry the skill's blocks verbatim, delivered as a prompt file the agent reads first",
+    "each agent writes its single structured JSON result to its own scratch/result.json and returns a short pointer; the parent parses and validates it",
+    "validators run with node 24.22.3 from mise, on the run's own JSON only",
+    "Phase 6 prose drafted by a writer agent from the final records only, extracted verbatim by the parent and checked mechanically (all fingerprints present, no severity, ledger counts)"
+  ],
+  "skill": {
+    "repo": "https://github.com/cloudflare/security-audit-skill",
+    "commit": "c1c8a8c",
+    "dir": "skills/security-audit in the skill repository at the commit named above"
+  },
+  "run_status": "complete",
+  "companion_selection_source": "architecture.md section 8 and each ledger unit's selected_companion_blocks",
+  "agent_invocations": 68,
+  "agent_invocations_note": "4 reconnaissance, 1 architecture/ledger synthesis draft, 21 hunters over 5 waves (plus one same-owner reissue of a malformed result), 5 post-wave critics, 1 final-clean critic, 17 Phase 3 verifiers, 17 Phase 5 verifiers, 1 fresh verifier for a material Phase 5 replacement",
+  "completed_phases": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "reports": [
+    "REPORT.md",
+    "FINDINGS-DETAIL.md",
+    "NEEDS-VALIDATION.md"
+  ]
+}

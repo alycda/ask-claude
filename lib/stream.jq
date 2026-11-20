@@ -24,11 +24,14 @@
 # server-controlled, and jq -r turns JSON escapes such as \u001b back into raw
 # bytes. `safe` keeps tab and newline and drops every other C0/C1 control
 # character (ESC, BEL, CR, DEL, CSI U+009B ...), so the reply cannot drive the
-# terminal: no title or clipboard writes, no erased or forged lines.
+# terminal: no title or clipboard writes, no erased or forged lines. It also
+# drops the nine bidirectional formatting characters, U+202A to U+202E
+# (8234-8238) and U+2066 to U+2069 (8294-8297), which reorder what the user
+# reads; the marks U+200E, U+200F and U+061C stay, as ordinary RTL text.
 
 def safe:
     if type == "string" then
-        explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159)))) | implode
+        explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159) and (. < 8234 or . > 8238) and (. < 8294 or . > 8297)))) | implode
     else . end;
 
 (if .type == "content_block_start" then

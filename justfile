@@ -1,41 +1,89 @@
 import 'tools/effver/effver.just'
 
-help:
+[group('bash')]
+_help:
     ./ask-claude --help
 
-ask question="" *FLAGS:
-    ./ask-claude {{FLAGS}} {{ quote(question) }}
+[group('bash')]
+_agents-help:
+    ./ask-claude agent --help
 
-# shell completions from the #USAGE spec (bash, fish, nu, powershell, zsh). The
-# script embeds the spec, so re-run it after the spec changes. --install writes
-# it where the shell looks (zsh ~/.local/share/zsh/site-functions/_ask-claude,
-# bash ~/.local/share/bash-completion/completions/ask-claude,
-# fish ~/.config/fish/completions/ask-claude.fish) and prints the one-time
-# rc line zsh needs; without it the script goes to stdout.
+[group('rust')]
+[working-directory: 'rust/target/debug']
+help: build
+    ./ask-claude --help
 
-# tab completion for <shell> from the #USAGE spec; --install puts it where the shell looks
-completions shell *flags:
-    usage generate completion {{ quote(shell) }} ask-claude -f ask-claude {{ flags }}
+[group('rust')]
+[working-directory: 'rust/target/debug']
+agent-help: build
+    ./ask-claude agent --help
+
+# Each argument reaches the binary as one word ("$@", so `-S 'be terse'`
+# stays whole), flags before the question, and the binary runs where just
+# was invoked, so `-f notes.md` and `agent files` downloads mean that
+# directory, not the recipe's.
+
+[group('rust')]
+[positional-arguments]
+[working-directory: 'rust/target/debug']
+ask question="" *FLAGS: build
+    bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
+
+[group('bash')]
+[positional-arguments]
+ask-bash question="" *FLAGS:
+    bin=$PWD/ask-claude q=$1 && shift && cd {{ quote(invocation_directory()) }} && exec "$bin" "$@" "$q"
+
+# shell completions from the Rust binary's usage spec (bash, fish, nu,
+# powershell, zsh), which `just parity` holds to the script's #USAGE block.
+# The completion script embeds the spec, so re-run it after the spec changes.
+# --install writes it where the shell looks (zsh
+# ~/.local/share/zsh/site-functions/_ask-claude, bash
+# ~/.local/share/bash-completion/completions/ask-claude, fish
+# ~/.config/fish/completions/ask-claude.fish) and prints the one-time rc line
+# zsh needs; without it the script goes to stdout.
+
+# tab completion for <shell> from the binary's spec; --install puts it where the shell looks
+[group('rust')]
+completions shell *flags: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rust/target/debug/ask-claude --usage-spec | usage generate completion {{ quote(shell) }} ask-claude -f - {{ flags }}
 
 # Skips the tests tagged pty, which need a terminal name readline reports
 # bracketed paste for (`just pty-test` runs them), and rust-only, behaviour the
 # script does not have.
 
+[group('bash')]
+lint-bash:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shellcheck --version | head -2
+    mapfile -t files < <(git grep -l -E '^#!/usr/bin/env (bash|bats|-S usage bash)$' -- . ; git ls-files '*.bash')
+    printf '%s\n' "${files[@]}"
+    shellcheck -x "${files[@]}"
+
 # offline: bats over recorded fixtures (tests/unit), no key needed
+[group('bash')]
 unit-tests:
     bats --filter-tags '!pty,!rust-only' tests/unit
 
 # the pty-tagged tests alone, under a TERM readline reports bracketed paste for
+[group('bash')]
 pty-test:
     TERM=xterm-256color bats --filter-tags pty tests/unit
 
 # the GitHub Actions workflows; mise fetches actionlint, so mise.toml stays the script's own toolchain
+[group('ci')]
 actionlint:
     mise x actionlint@1.7.12 -- actionlint
 
+# one bats file, filtered as unit-tests filters the suite, so the two agree
+[group('bash')]
 unit-test unit:
-    bats tests/unit/{{ quote(unit) }}.bats
+    bats --filter-tags '!pty,!rust-only' tests/unit/{{ quote(unit) }}.bats
 
+[group('bash')]
 step name:
     bats --filter-tags {{ quote("step:" + name) }} tests/unit/*-steps.bats
 
@@ -43,17 +91,30 @@ step name:
 # per search), one listing an MCP server's tools. Only the live recipes (this one and
 # test-openai) read .env, and the key reaches hurl through a secrets file on a
 # pipe, not on its command line.
+[group('http')]
 [working-directory: 'tests']
 test:
     #!/usr/bin/env bash
     set -euo pipefail
     set -a; . "{{ justfile_directory() }}/.env"; set +a
     hurl --test --variable base_url=https://api.anthropic.com \
-        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") messages.hurl anthropic-stream.hurl
+        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") messages.hurl anthropic-stream.hurl errors.hurl
+
+# live: -s starts a code-execution sandbox and the reply carries container.id
+# (a few cents, so not part of test). Reads .env like test.
+[group('http')]
+[working-directory: 'tests']
+test-skills:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; . "{{ justfile_directory() }}/.env"; set +a
+    hurl --test --variable base_url=https://api.anthropic.com \
+        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") skills.hurl
 
 # Reads .env like test; the key reaches curl through a header file on a pipe.
 
 # custom skills on this account (id, title, latest version), for -s
+[group('http')]
 skills:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -68,6 +129,7 @@ skills:
 # ASK_CLAUDE_ENVIRONMENT, the ids from the Console. Never run by `test`.
 
 # live Managed Agents contracts: the three lists and one 10-cent session turn, archived after
+[group('http')]
 [working-directory: 'tests/agents']
 test-agents:
     #!/usr/bin/env bash
@@ -79,6 +141,7 @@ test-agents:
         --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") list.hurl sessions.hurl
 
 # the agents on this account (id, model, name), for --agent / ASK_CLAUDE_AGENT
+[group('http')]
 agents:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -88,6 +151,7 @@ agents:
         jq -r 'if .data then .data[] | [.id, (.model | if type == "object" then (.id // .name // tostring) else . end), .name] | @tsv else "just agents: \(.error.message // "unreadable response")\n" | halt_error end'
 
 # the environments on this account (id, networking, name), for --environment / ASK_CLAUDE_ENVIRONMENT
+[group('http')]
 environments:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -99,6 +163,7 @@ environments:
 # live OpenAI-compatible contract, one call. Reads .env like `test`: OPENAI_BASE_URL
 # is the API root (e.g. https://api.venice.ai/api/v1), OPENAI_API_KEY the key,
 # OPENAI_MODEL the model (default gemini-4-argon); the key goes to hurl on a pipe.
+[group('http')]
 [working-directory: 'tests/providers']
 test-openai:
     #!/usr/bin/env bash
@@ -106,3 +171,76 @@ test-openai:
     set -a; . "{{ justfile_directory() }}/.env"; set +a
     hurl --test --variable base_url="$OPENAI_BASE_URL" --variable model="${OPENAI_MODEL:-gemini-4-argon}" \
         --secrets-file <(printf 'api_key=%s\n' "$OPENAI_API_KEY") openai-compatible.hurl
+
+# ---- the Rust port (docs/plan.md phase 4; rust/) ------------------------
+# cargo comes from mise's rust; the recipes run it through `mise exec` until
+# the shims know the version (`mise use -g rust@1.99.1`).
+
+[group('rust')]
+[working-directory: 'rust']
+check:
+    cargo check
+
+# build the Rust binary (debug)
+[group('rust')]
+[working-directory: 'rust']
+build:
+    cargo build
+
+# the Rust unit tests: every lib/*.jq twin against the same goldens
+[group('rust')]
+[working-directory: 'rust']
+rust-test *ARGS:
+    cargo test {{ ARGS }}
+
+# fmt --check and clippy, the Rust side of `just lint`
+[group('rust')]
+[working-directory: 'rust']
+lint:
+    cargo fmt --check
+    cargo clippy -- -D warnings
+
+# criterion benchmarks over the recorded fixtures (rust/target/criterion/report)
+[group('rust')]
+[working-directory: 'rust']
+bench:
+    cargo bench
+
+# bash vs Rust end to end: the replayed one shot over each recorded stream,
+# release build, timed with hyperfine (rust/target/bench-compare/)
+[group('rust')]
+bench-compare:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build --release --quiet --manifest-path rust/Cargo.toml
+    out=rust/target/bench-compare
+    rm -rf "$out/state" && mkdir -p "$out/state"
+    export ANTHROPIC_API_KEY=sk-ant-test-not-a-key XDG_STATE_HOME="$PWD/$out/state"
+    fixtures=text,thinking,code-execution,web-search,mcp
+    # the same reply out of both, or the timing compares different work
+    for f in ${fixtures//,/ }; do
+        sse=tests/fixtures/sse/$f.sse
+        diff <(ASK_CLAUDE_REPLAY=$sse ./ask-claude ping 2>/dev/null) \
+             <(ASK_CLAUDE_REPLAY=$sse rust/target/release/ask-claude ping 2>/dev/null) \
+            || { echo "bench-compare: bash and Rust print different replies for $f" >&2; exit 1; }
+    done
+    hyperfine --shell=none --warmup 3 \
+        -L fixture "$fixtures" -L bin ./ask-claude,rust/target/release/ask-claude \
+        --export-markdown "$out/summary.md" --export-json "$out/summary.json" \
+        "env ASK_CLAUDE_REPLAY=tests/fixtures/sse/{fixture}.sse {bin} ping"
+    echo "tables: $out/summary.md, raw: $out/summary.json"
+
+# the two binaries agree on their interface: usage diff of the bash spec and the Rust one
+[group('rust')]
+parity: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    usage diff ask-claude <(rust/target/debug/ask-claude --usage-spec)
+
+# Skips pty like unit-tests, and bash-only: the tests that read the script as a
+# file or pin what only the script does.
+
+# the bats suite against the Rust binary (R5 onwards; bash stays the oracle until R8)
+[group('rust')]
+test-rust: build
+    ASK_CLAUDE_BIN="{{ justfile_directory() }}/rust/target/debug/ask-claude" bats --filter-tags '!pty,!bash-only' tests/unit

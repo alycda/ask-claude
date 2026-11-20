@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC2012  # ls counts files in a test, where find would add nothing
+# shellcheck disable=SC2012,SC2016  # ls counts files in a test, where find would add nothing; backticks quoted from a message, not run
 load helpers
 
 STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
@@ -77,4 +77,50 @@ ONE='[{"role":"user","content":"second"}]'
     bash -c "printf 'again\n/quit\n' | ASK_CLAUDE_REPLAY='$FIX/sse/text.sse' ASK_CLAUDE_BETA_LOG='$TMP/betas' '$BIN' resume 20260102" >/dev/null 2>&1
     [ -s "$TMP/betas" ]
     refute grep -q 'advisor' "$TMP/betas"
+}
+
+@test "list: needs no key" {
+    mkchat 20260101T000000 202601010000 "$ONE"
+    run --separate-stderr env -u ANTHROPIC_API_KEY "$BIN" list
+    [ "$status" -eq 0 ]
+    [ "${lines[0]%%  *}" = "20260101T000000" ]
+}
+
+@test "list and resume: a chat file holding a number counts its absolute value, as jq length does" {
+    mkchat 20260101T000000 202601010000 "$ONE"
+    mkchat 20260102T000000 202601020000 '-5'
+    run --separate-stderr "$BIN" list
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "20260102T000000  5 turns  " ]
+    # the newest chat with turns is the number, not the older chat
+    run --separate-stderr bash -c "printf '/quit\n' | ASK_CLAUDE_REPLAY='$FIX/sse/text.sse' '$BIN' resume"
+    grep -q '20260102T000000' <<<"$stderr"
+    refute grep -q '20260101T000000' <<<"$stderr"
+}
+
+@test "resume: a name with a path part or a glob character exits 2 before any lookup" {
+    mkchat 20260101T000000 202601010000 "$TWO"
+    for name in ../20260101 'x/y' '2026*' '2026?' '[2]026'; do
+        run --separate-stderr "$BIN" resume "$name"
+        [ "$status" -eq 2 ]
+        grep -q 'resume takes a chat name from `ask-claude list`' <<<"$stderr"
+    done
+}
+
+@test "resume: a prefix of two chats exits 2 and says how many" {
+    mkchat 20260101T000000 202601010000 "$TWO"
+    mkchat 20260101T000001 202601010001 "$ONE"
+    run --separate-stderr "$BIN" resume 20260101
+    [ "$status" -eq 2 ]
+    grep -q '"20260101" matches 2 chats' <<<"$stderr"
+}
+
+@test "resume: the chat is found before the key is asked for" {
+    run --separate-stderr env -u ANTHROPIC_API_KEY "$BIN" resume nope
+    [ "$status" -eq 2 ]
+    grep -q 'nothing to resume' <<<"$stderr"
+    mkchat 20260101T000000 202601010000 "$TWO"
+    run --separate-stderr env -u ANTHROPIC_API_KEY "$BIN" resume 20260101
+    [ "$status" -eq 2 ]
+    grep -q 'no key' <<<"$stderr"
 }

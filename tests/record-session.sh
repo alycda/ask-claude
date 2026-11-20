@@ -14,7 +14,8 @@
 # ASK_CLAUDE_IDMAP=<file> keeps the id map across those runs: each run loads
 # it, extends it and writes it back, so the tool_use answered in stream 2 has
 # the same FIXTURE id it had in stream 1. The file holds real ids: keep it out
-# of the repo (it is created 0600).
+# of the repo (it is created 0600). ANTHROPIC_BASE_URL, when set, is the API
+# root, as it is for ask-claude.
 # Ids and the agent's name are the only things redacted: keep prompts free of
 # anything private. `tests/record-session.sh --redact` runs the redaction on
 # stdin alone (tests/unit/record-session.bats).
@@ -59,7 +60,26 @@ name="${1:?name}"
 prompt="${2:-}"
 dir="${3:-$(dirname "$0")/fixtures/sessions}"
 : "${ANTHROPIC_API_KEY:?}" "${ASK_CLAUDE_AGENT:?}" "${ASK_CLAUDE_ENVIRONMENT:?}"
-api="${ASK_CLAUDE_BASE_URL:-https://api.anthropic.com}/v1"
+api="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+# the key goes where the variable points, and it is often exported for other
+# tools: ask-claude's gate (lib/config.bash) and its notice, before any request
+# shellcheck source=lib/common.bash
+. "$(dirname "$0")/../lib/common.bash" # safe_text
+case "$api" in
+*@*) echo "record-session: ANTHROPIC_BASE_URL must not carry user info (an @), got: $(safe_text "$api")" >&2; exit 2 ;;
+https://*) ;;
+*)
+  [[ $api =~ ^http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/.*)?$ ]] || {
+    echo "record-session: ANTHROPIC_BASE_URL must be https:// (or http:// on localhost), got: $(safe_text "$api")" >&2
+    exit 2
+  }
+  ;;
+esac
+if [ "${api%/}" != https://api.anthropic.com ]; then
+  host="${api#*://}"
+  echo "record-session: ANTHROPIC_BASE_URL is set; requests go to $(safe_text "${host%%/*}")" >&2
+fi
+api="${api%/}/v1"
 headers=$(mktemp)
 trap 'rm -f "$headers"' EXIT
 chmod 600 "$headers"

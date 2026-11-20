@@ -15,7 +15,18 @@ pub struct Config {
     /// `OPENAI_MODEL` when it is set
     pub model: String,
     pub max_tokens: u64,
+    /// The checked `--mcp` URLs, one per value, `--github`'s or
+    /// `--github_ro`'s last: what the request names as its servers
+    pub mcp: Vec<String>,
 }
+
+/// `--github`: GitHub's MCP server, its default toolsets, read and write.
+pub const GITHUB_MCP_URL: &str = "https://api.githubcopilot.com/mcp/";
+/// `--github_ro`: GitHub's MCP server, the repos toolset, read-only.
+pub const GITHUB_RO_MCP_URL: &str = "https://api.githubcopilot.com/mcp/x/repos/readonly";
+/// The one variable both GitHub shorthands read their token from: the
+/// `ASK_CLAUDE_MCP_TOKEN_<HOST>` of `api.githubcopilot.com`.
+const GITHUB_TOKEN_VARIABLE: &str = "ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM";
 
 /// Which API shape a request takes, and the Base URL it goes to
 /// (CONCEPTS.md). A vendor that serves one of these shapes is a base URL,
@@ -68,22 +79,60 @@ pub fn check(r: &RequestFlags) -> Result<Config, String> {
         p => return Err(format!("unknown provider \"{p}\" (anthropic|openai)")),
     };
 
-    // usage joins a repeated flag's values with spaces, and the script
-    // splits them again
-    let mcp: Vec<&str> = r.mcp.iter().flat_map(|m| words(m)).collect();
+    // --github and --github_ro: shorthands for --mcp <url>, added to the
+    // list before every --mcp check, so from then on each is one --mcp
+    // server like any other. They are one server, and GitHub refuses a
+    // request without a token on every path, so each requires its server's
+    // own variable (the shared one does not count).
+    let mut mcp: Vec<String> = r.mcp.clone();
+    if r.github && r.github_ro {
+        return Err("--github and --github_ro are one server, api.githubcopilot.com: pass one (--github reads and writes, --github_ro reads repos only)".into());
+    }
+    let github = match (r.github, r.github_ro) {
+        (true, _) => Some(("--github", GITHUB_MCP_URL)),
+        (_, true) => Some(("--github_ro", GITHUB_RO_MCP_URL)),
+        _ => None,
+    };
+    if let Some((flag, url)) = github {
+        mcp.push(url.into());
+        if std::env::var_os(GITHUB_TOKEN_VARIABLE).is_none_or(|t| t.is_empty()) {
+            return Err(format!(
+                "{flag} needs {GITHUB_TOKEN_VARIABLE}, a GitHub token (for --github_ro, a fine-grained token with public repositories read-only is enough)"
+            ));
+        }
+    }
+
+    // Each value is one URL, never split: one with whitespace or a control
+    // character is refused. One server per host: the request names a server
+    // after its host and reads its token from the host's variable, so a
+    // second URL on a host would go out under the same name and share the
+    // token. The variable is the key: it folds everything the name folds,
+    // and case too.
     let mut vars = String::new();
     for v in &mcp {
+        if v.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(format!(
+                "--mcp takes https URLs, got one with whitespace or a control character: {}",
+                crate::stream::safe(v)
+            ));
+        }
         if !v.starts_with("https://") {
             return Err(format!("--mcp takes https URLs, got: {v}"));
         }
         // the variable the request reads for this server's token
-        vars.push_str(&format!(" {}", crate::request::token_variable(v)));
+        let var = crate::request::token_variable(v);
+        if vars.split(' ').any(|seen| seen == var) {
+            return Err(format!(
+                "--mcp {v} is on the host of another --mcp server (or of --github or --github_ro): the API takes one server per name, and request.jq names a server after its host; give one URL per host"
+            ));
+        }
+        vars.push_str(&format!(" {var}"));
     }
 
     // hosts fold case ASCII only, exactly as request.jq's ascii_downcase
     // does, so an entry cannot pass here and match nothing in the request
     let hosts: Vec<String> = mcp.iter().map(|v| crate::request::hostname(v)).collect();
-    for t in r.mcp_tool.iter().flat_map(|m| words(m)) {
+    for t in &r.mcp_tool {
         let Some((h, tool)) = t.split_once(':').filter(|(h, tool)| {
             !h.is_empty()
                 && h.bytes()
@@ -126,6 +175,7 @@ pub fn check(r: &RequestFlags) -> Result<Config, String> {
         provider,
         model,
         max_tokens,
+        mcp,
     })
 }
 
@@ -206,6 +256,8 @@ fn anthropic_only(r: &RequestFlags) -> Result<(), String> {
         ("--web", r.web),
         ("--mcp", !r.mcp.is_empty()),
         ("--mcp-tool", !r.mcp_tool.is_empty()),
+        ("--github", r.github),
+        ("--github_ro", r.github_ro),
         ("-s", r.skills.is_some()),
         ("--advisor", r.advisor.is_some()),
     ];
@@ -256,11 +308,4 @@ fn base_url_gate(url: &str, source: &str) -> Result<(), String> {
             crate::stream::safe(url)
         ))
     }
-}
-
-/// `for v in ${usage_mcp:-}`: a value's words as bash splits them on the
-/// default IFS (space, tab, newline) and no other whitespace, so the check
-/// counts and reads the entries the script counts and reads.
-fn words(value: &str) -> impl Iterator<Item = &str> {
-    value.split([' ', '\t', '\n']).filter(|w| !w.is_empty())
 }

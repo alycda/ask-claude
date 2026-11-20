@@ -130,6 +130,21 @@ STATE_DIR() { echo "$XDG_STATE_HOME/ask-claude"; }
     [ ! -e "$TMP/requests.jsonl" ]
 }
 
+# usage hands a repeatable flag's values over space-joined, a value with
+# * ? [ in single quotes. Split with globbing on, 'nope*' (quotes included)
+# matched a file of that shape in the current directory, and the refusal
+# named the file instead of the value. The value is no vault id, so both
+# binaries refuse it; Rust gets it bare and never globbed.
+@test "resources: a --vault value is not glob-expanded against the current directory" {
+    mkdir "$TMP/cwd" && : > "$TMP/cwd/'nopeGLOBBED'" && cd "$TMP/cwd"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sessions/text.sse" "$BIN" agent --agent agent_x --environment env_x --vault 'nope*' "ping"
+    [ "$status" -eq 2 ]
+    # the value as given (the script shows it in usage's quotes, Rust bare),
+    # never the name of the file it would match
+    grep -qF 'nope*' <<<"$stderr"
+    refute grep -q GLOBBED <<<"$stderr"
+}
+
 # bats test_tags=bash-only
 @test "resources: the token never goes on a command line" {
     refute grep -qE -- '--arg(json)? +token' "$BIN"

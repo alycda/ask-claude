@@ -31,7 +31,7 @@ check() {
     }
 }
 
-# skills <text>: lib/skills.jq over raw text, the way claude.sh calls it
+# skills <text>: lib/skills.jq over raw text, the way claude.sh called it
 skills() { printf '%s' "$1" | jq -R -s -c -f "$ROOT/lib/skills.jq"; }
 
 # --- request -----------------------------------------------------------------

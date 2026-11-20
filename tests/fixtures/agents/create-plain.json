@@ -1,0 +1,25 @@
+{
+  "agent": {
+    "type": "agent",
+    "id": "agent_FIXTURE"
+  },
+  "environment_id": "env_FIXTURE",
+  "budget": {
+    "type": "limit",
+    "max_list_cost": {
+      "amount": "100",
+      "currency": "USD"
+    }
+  },
+  "initial_events": [
+    {
+      "type": "user.message",
+      "content": [
+        {
+          "type": "text",
+          "text": "ping"
+        }
+      ]
+    }
+  ]
+}

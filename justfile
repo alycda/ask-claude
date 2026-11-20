@@ -50,6 +50,39 @@ skills:
         jq -r 'if .data then .data[] | [.id, (.display_title // "-"), (.latest_version // "-")] | @tsv
                else "just skills: \(.error.message // "unreadable response")\n" | halt_error end'
 
+# live Managed Agents contracts: one session turn (10 cents, archived after) and
+# the three lists. Reads .env like test, plus ASK_CLAUDE_AGENT and
+# ASK_CLAUDE_ENVIRONMENT, the ids from the Console. Never run by `test`.
+
+# live Managed Agents contracts: the three lists and one 10-cent session turn, archived after
+[working-directory: 'tests/agents']
+test-agents:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; . "{{ justfile_directory() }}/.env"; set +a
+    : "${ASK_CLAUDE_AGENT:?set it in .env, the agent id from the Console}" "${ASK_CLAUDE_ENVIRONMENT:?set it in .env, the environment id from the Console}"
+    hurl --test --variable base_url=https://api.anthropic.com \
+        --variable agent="$ASK_CLAUDE_AGENT" --variable environment="$ASK_CLAUDE_ENVIRONMENT" \
+        --secrets-file <(printf 'api_key=%s\n' "$ANTHROPIC_API_KEY") list.hurl sessions.hurl
+
+# the agents on this account (id, model, name), for --agent / ASK_CLAUDE_AGENT
+agents:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; . "{{ justfile_directory() }}/.env"; set +a
+    curl -sS 'https://api.anthropic.com/v1/agents?limit=100' \
+        -H @<(printf 'x-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: managed-agents-2026-04-01\n' "$ANTHROPIC_API_KEY") |
+        jq -r 'if .data then .data[] | [.id, (.model | if type == "object" then (.id // .name // tostring) else . end), .name] | @tsv else "just agents: \(.error.message // "unreadable response")\n" | halt_error end'
+
+# the environments on this account (id, networking, name), for --environment / ASK_CLAUDE_ENVIRONMENT
+environments:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; . "{{ justfile_directory() }}/.env"; set +a
+    curl -sS 'https://api.anthropic.com/v1/environments?limit=100' \
+        -H @<(printf 'x-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: managed-agents-2026-04-01\n' "$ANTHROPIC_API_KEY") |
+        jq -r 'if .data then .data[] | [.id, (.config.networking.type // "-"), .name] | @tsv else "just environments: \(.error.message // "unreadable response")\n" | halt_error end'
+
 # live OpenAI-compatible contract, one call. Reads .env like `test`: OPENAI_BASE_URL
 # is the API root (e.g. https://api.venice.ai/api/v1), OPENAI_API_KEY the key,
 # OPENAI_MODEL the model (default gemini-4-argon); the key goes to hurl on a pipe.

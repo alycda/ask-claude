@@ -32,3 +32,5 @@ refused() { # args...
     [ "$status" -eq 0 ]
     [ "$output" = "pong" ]
 }
+
+

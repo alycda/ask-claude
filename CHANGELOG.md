@@ -10,6 +10,57 @@ adds one, and `just check-effver` checks it against `VERSION`.
 `just effort-floor` names the lowest effort a release can claim, from a
 `usage diff` of the `#USAGE` spec since the last version.
 
+## 0.2.4 (micro) - 2026-11-05
+
+- `--web` lets the model search and fetch the web; `--mcp <https url>` lets it
+  call an MCP server (`ASK_CLAUDE_MCP_TOKEN` for its auth). Both work with
+  `-s`, in a one shot and in the chat, and the stream shows what is being
+  used. A web search costs $10 per 1,000; everything else is tokens.
+- Adopting needs no change from 0.2.3.
+
+## 0.2.3 (micro) - 2026-11-05
+
+- `ask-claude agent budget <session> <cents>` changes a session's cap (`0`
+  removes it, for good), `agent archive <session>` archives an idle one,
+  `agent trace <session>` prints its page in the Console
+  (`ASK_CLAUDE_WORKSPACE` when the key is not in the Default workspace).
+  Nothing the spec declares is refused any more.
+
+## 0.2.2 (micro) - 2026-11-05
+
+- `agent --vault <vlt_id>`, `--repo owner/name[@branch]` (with `GITHUB_TOKEN`)
+  and `--memory <memstore_id>[:ro]` attach credentials, a repository and
+  memory stores to the session; the README says what to make in the Console
+  for each.
+- Still refused with exit 2: `agent budget`, `agent archive`, `agent trace`.
+
+## 0.2.1 (micro) - 2026-11-05
+
+- `-f FILE` with `agent` uploads the file and the agent finds it at
+  `/mnt/session/uploads/<name>`; `ask-claude agent files <session>` lists what
+  a session holds and downloads the named ones into the current directory
+  (`--force` to overwrite).
+- Still refused with exit 2: `agent budget`, `agent archive`, `agent trace`.
+
+## 0.2.0 (macro) - 2026-11-05
+
+- `ask-claude agent "question"` runs a prompt as a Managed Agents session,
+  and `ask-claude agent` with no prompt a chat on one (`/new`, `/history`,
+  `/quit`); `agent list` and `agent resume <session>` work from the API, which
+  keeps the transcript. The reply streams, the usage line shows the session
+  id, tokens and cost at list price. Every session gets a budget (`--budget`,
+  100 cents unless told otherwise, `0` for none). A tool confirmation is
+  asked at the terminal and denied without one (`ASK_CLAUDE_CONFIRM`);
+  custom tools on the agent get an error result.
+- Declared but not built yet, and refused with exit 2: `-f` with `agent`,
+  `agent files`, `agent budget`, `agent archive`, `agent trace`.
+- Breaking: the word `agent` as a one-shot prompt now opens the command
+  (`ask-claude -- agent` keeps the old meaning).
+- To adopt: make an environment and an agent in the Console
+  (platform.claude.com), put their ids in `ASK_CLAUDE_ENVIRONMENT` and
+  `ASK_CLAUDE_AGENT` (`just environments`, `just agents`), and read the Agents
+  section of the README for what a session costs.
+
 ## 0.1.4 (micro) - 2026-11-05
 
 - The bash `ask-claude` now does everything `claude.sh` did (one shot,

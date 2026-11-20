@@ -1,0 +1,1 @@
+(mcp deepwiki) jq is written primarily in C (its lexer, parser, compiler, and VM), with its website/docs build system in Python.

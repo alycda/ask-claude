@@ -12,6 +12,13 @@ ask-claude resume [chat]            continue a chat (name or prefix)
 ask-claude --help                   every flag
 ```
 
+`--web` lets the model search and fetch the web (server tools; a search
+costs $10 per 1,000, a fetch nothing beyond tokens). `--mcp <https url>`
+(repeatable) lets it call an MCP server through the MCP connector;
+`ASK_CLAUDE_MCP_TOKEN` is sent as its authorization token. Both work with
+`-s`, in the one-shot and in the chat; the stream shows `(web_search) `,
+`(web_fetch) ` and `(mcp <server>) ` while the model uses them.
+
 In the chat loop, `/new` starts a fresh chat, `/history` prints the current
 one, and `/quit` exits and prints the command to resume it.
 
@@ -23,6 +30,7 @@ one, and `/quit` exits and prints the command to resume it.
 | `XDG_STATE_HOME` | chats live in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/` |
 | `ASK_CLAUDE_REPLAY` | testing: read this recorded `.sse` file instead of calling the API |
 | `ASK_CLAUDE_REQUEST_LOG` | testing: append each request body to this file |
+| `ASK_CLAUDE_MCP_TOKEN` | authorization token for the `--mcp` servers |
 
 Nothing else is read.
 
@@ -32,6 +40,59 @@ One JSON array of turns per chat, named by its start time
 (`20260102T150405.json`). A chat that used skills keeps its container id
 beside it in `<name>.json.container`, so the next turn reuses the container.
 An empty chat leaves no file.
+
+## Agents
+
+`ask-claude agent` runs a prompt, or a chat, as a [Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview)
+session: an Anthropic-run sandbox with network, packages, web tools and
+MCP servers, as the agent you made allows. The API keeps the transcript.
+
+```
+ask-claude agent "one question"          one shot in a new session
+ask-claude agent                         chat; /new, /history, /quit
+ask-claude agent list                    sessions on the account, newest first
+ask-claude agent resume <sesn|prefix>    continue one
+ask-claude agent files <sesn> [name]... what the agent wrote; download the named ones
+ask-claude agent budget <sesn> <cents>  change the cap (0 removes it, for good)
+ask-claude agent archive <sesn>          archive an idle session
+ask-claude agent trace <sesn>            its page in the Console
+```
+
+Once, in the Console (platform.claude.com): an **environment** (start with
+limited networking, add `allowed_hosts` for what the job needs) and an
+**agent** (model, system prompt, which tools; set bash to *ask* unless you
+trust it). `just environments` and `just agents` print their ids. Put them in
+`.env` or pass `--environment` and `--agent`:
+
+| Variable | Use |
+|---|---|
+| `ASK_CLAUDE_AGENT` | the agent id, `--agent` overrides |
+| `ASK_CLAUDE_ENVIRONMENT` | the environment id, `--environment` overrides |
+| `ASK_CLAUDE_CONFIRM` | `ask` (default), `allow`, or `deny` for tool confirmations |
+
+Every session gets a budget, 100 cents at list price unless `--budget` says
+otherwise (`0` for none). Session time bills at $0.08 per active hour on top
+of tokens, and web searches at $10 per 1,000; the usage line shows cost so far. When the agent wants to run a
+tool its policy marks *ask*, ask-claude asks you (`y`, `n`, `a` for the rest
+of the run) and denies when there is no terminal. A custom tool on the
+agent is answered with an error: nothing runs on this machine yet.
+
+What else a session can carry, each made once in the Console:
+
+- `--vault <vlt_id>` (repeatable): credentials for MCP servers the agent
+  declares, or secrets substituted into the agent's outbound requests. The
+  environment's `allowed_hosts` must include the credential's host.
+- `--repo owner/name[@branch]`: a GitHub repository mounted at
+  `/workspace/<name>`, read with `GITHUB_TOKEN` from the environment.
+- `--memory <memstore_id>[:ro]` (repeatable, up to 8): memory stores mounted
+  under `/mnt/memory/`, `:ro` for read-only.
+
+`ask-claude agent trace <sesn>` prints a session's page in the Console
+(`ASK_CLAUDE_WORKSPACE` when the key is not in the Default workspace). Ctrl-C
+during a turn sends `user.interrupt`, so the session stops too. Sessions
+started here
+are listed in `${XDG_STATE_HOME:-$HOME/.local/state}/ask-claude/sessions/`;
+`resume`, `files`, `budget`, `archive` and `trace` take a prefix of one.
 
 ## Exit codes
 
@@ -72,10 +133,11 @@ just --list                                   # the map
 `just skills` lists the custom skill ids on the account, for `-s`.
 `just completions zsh --install` (or bash, fish) installs tab completion for
 the spec, and says what to add to the shell's rc file.
-`just test` makes one cheap live call per Anthropic contract, and
-`just test-openai` does the same for an OpenAI-compatible API
-(`OPENAI_BASE_URL`, `OPENAI_API_KEY` and optionally `OPENAI_MODEL` in
-`.env`; Venice is just a base URL).
+`just test` makes one cheap live call per Anthropic contract,
+`just test-agents` one session turn plus the lists (`ASK_CLAUDE_AGENT` and
+`ASK_CLAUDE_ENVIRONMENT` in `.env`), and `just test-openai` does the same
+for an OpenAI-compatible API (`OPENAI_BASE_URL`, `OPENAI_API_KEY` and
+optionally `OPENAI_MODEL` in `.env`; Venice is just a base URL).
 
 ---
 
@@ -87,4 +149,5 @@ the spec, and says what to add to the shell's rc file.
 - [JQ](https://learnxinyminutes.com/jq/)
 - [Usage](https://usage.jdx.dev/)
 - [Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages)
+- [Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview)
 - [Justfile](https://github.com/casey/just)

@@ -24,11 +24,15 @@ Owner: **A** = Alyssa writes the code, **C** = Claude writes tests/fixtures.
 
 ## Oracle
 
-claude.sh is the reference implementation. Its three inline jq programs were
+claude.sh was the reference implementation. Its three inline jq programs were
 extracted verbatim and run over recorded SSE fixtures to produce the goldens in
-`tests/fixtures/`. A golden is not a design choice; it is "what claude.sh does
-today". Change a golden only with a commit message saying why claude.sh was
-wrong.
+`tests/fixtures/`. A golden is not a design choice; it is "what claude.sh did".
+Change a golden only with a commit message saying why that behaviour was wrong.
+
+claude.sh itself was removed after 0.1.4, once the bash `ask-claude` did
+everything it did. It is still in the history: as imported, in "feat: import
+claude.sh as originally written", and as last kept, with the security-audit
+fixes, at the `v0.1.4` bookmark (`jj file show -r v0.1.4 docs/claude.sh`).
 
 Fixtures (recorded 2026-11-02 against api.anthropic.com, ids redacted):
 
@@ -114,6 +118,18 @@ by `data: [DONE]`. One reassembler covers both; it is written once, in Rust.
 |---|---|---|---|
 | OpenAI | `https://api.openai.com/v1` | an OpenAI key | `gpt-4.1-mini` |
 | Venice | `https://api.venice.ai/api/v1` | a Venice key | `gemini-4-argon` |
+
+## Phase 3b: sessions on Managed Agents (0.2.x)
+
+Planned in `docs/plans/2026-11-05-001-feat-managed-agents-sessions-plan.md`;
+the units there are the commits here. 0.2.0: U1 fixtures and goldens, U2
+`lib/session.jq` and `lib/session-fold.jq`, U3 the `agent` command in the
+spec, U4 one shot, U5 chat, resume, list, U6 tool confirmations, U7 live
+contracts (`just test-agents`) and recipes. 0.2.1: U8 files. 0.2.2: U9
+vaults, repository, memory. 0.2.3: U10 session operations. The one-stream-
+per-turn seam (`ASK_CLAUDE_REPLAY` as a directory of turns) is the bats
+seam for all of it, and the Rust `Provider` trait gains a `Sessions`
+transport at R7.
 
 ## Phase 4: Rust port
 

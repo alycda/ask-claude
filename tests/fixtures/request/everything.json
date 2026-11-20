@@ -1,0 +1,52 @@
+{
+  "model": "claude-opus-5-5",
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi"
+    }
+  ],
+  "fallbacks": "default",
+  "stream": true,
+  "cache_control": {
+    "type": "ephemeral"
+  },
+  "mcp_servers": [
+    {
+      "type": "url",
+      "url": "https://mcp.deepwiki.com/mcp",
+      "name": "mcp-deepwiki-com",
+      "authorization_token": "tok_FIXTURE"
+    }
+  ],
+  "tools": [
+    {
+      "type": "code_execution_20260521",
+      "name": "code_execution"
+    },
+    {
+      "type": "web_search_20250305",
+      "name": "web_search",
+      "max_uses": 5
+    },
+    {
+      "type": "web_fetch_20250910",
+      "name": "web_fetch",
+      "max_uses": 5
+    },
+    {
+      "type": "mcp_toolset",
+      "mcp_server_name": "mcp-deepwiki-com"
+    }
+  ],
+  "container": {
+    "skills": [
+      {
+        "skill_id": "pptx",
+        "version": "latest",
+        "type": "anthropic"
+      }
+    ]
+  }
+}

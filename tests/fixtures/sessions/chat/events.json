@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "type": "user.message",
+      "id": "sevt_FIXTURE03",
+      "content": [
+        {
+          "text": "Reply with the single word: pong",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "type": "agent.message",
+      "id": "sevt_FIXTURE05",
+      "content": [
+        {
+          "text": "pong",
+          "type": "text"
+        }
+      ]
+    }
+  ]
+}

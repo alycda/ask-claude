@@ -1,0 +1,49 @@
+{
+  "data": [
+    {
+      "id": "sesn_FIXTURE01",
+      "title": "fixture custom tool",
+      "status": "idle",
+      "created_at": "2026-11-05T10:33:17.328087Z",
+      "updated_at": "2026-11-05T10:33:49.730491Z",
+      "usage": {
+        "list_cost": {
+          "amount": "0",
+          "currency": "USD"
+        },
+        "input_tokens": 6,
+        "output_tokens": 242
+      }
+    },
+    {
+      "id": "sesn_FIXTURE02",
+      "title": "fixture confirm",
+      "status": "idle",
+      "created_at": "2026-11-05T10:32:15.730211Z",
+      "updated_at": "2026-11-05T10:32:47.888974Z",
+      "usage": {
+        "list_cost": {
+          "amount": "0",
+          "currency": "USD"
+        },
+        "input_tokens": 6,
+        "output_tokens": 53
+      }
+    },
+    {
+      "id": "sesn_FIXTURE03",
+      "title": "fixture text",
+      "status": "idle",
+      "created_at": "2026-11-05T10:30:59.693941Z",
+      "updated_at": "2026-11-05T10:31:01.330769Z",
+      "usage": {
+        "list_cost": {
+          "amount": "0",
+          "currency": "USD"
+        },
+        "input_tokens": 4,
+        "output_tokens": 4
+      }
+    }
+  ]
+}

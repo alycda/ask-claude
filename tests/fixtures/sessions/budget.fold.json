@@ -1,0 +1,15 @@
+{
+  "stop_reason": "budget_reached",
+  "event_ids": [],
+  "asks": [],
+  "custom": [],
+  "usage": {
+    "input_tokens": 4,
+    "output_tokens": 4,
+    "cache_read": 0,
+    "cache_write": 4311,
+    "list_cost": "0",
+    "active_seconds": 1.075
+  },
+  "error": null
+}

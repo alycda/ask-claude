@@ -8,7 +8,7 @@ use std::process::ExitCode;
 
 use clap::CommandFactory;
 
-use ask_claude::cli::Cli;
+use ask_claude::cli::{Cli, Command};
 
 fn main() -> ExitCode {
     process_defaults();
@@ -22,10 +22,28 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // let Some(ref prompt) = cli.prompt else {
+    //   let Some(ref command) = cli.command else {
+
+    //   };
+    // };
+
     if let Some(ref prompt) = cli.prompt {
       if prompt.to_lowercase().trim() == "help" {
         eprintln!("ask-claude: did you mean --help?");
         return ExitCode::from(2);
+      }
+    } else if let Some(ref command) = cli.command {
+      match command {
+        Command::Agent(agent) => {
+          if let Some(ref prompt) = agent.prompt {
+            if prompt.to_lowercase().trim() == "help" {
+              eprintln!("ask-claude agent: did you mean --help?");
+              return ExitCode::from(2);
+            }
+          }
+        },
+        _ => {}
       }
     }
 

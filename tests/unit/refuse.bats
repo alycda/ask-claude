@@ -11,13 +11,13 @@ refused() { # args...
     [ -z "$(ls "$XDG_STATE_HOME"/ask-claude/*.json 2>/dev/null)" ]
 }
 
-# sent() { # want args...: exit 0, and the one turn sent is want
-#     local want=$1; shift
-#     rm -f "$TMP/requests.jsonl"
-#     run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" "$@"
-#     [ "$status" -eq 0 ]
-#     [ "$(jq -r '.messages[0].content' "$TMP/requests.jsonl")" = "$want" ]
-# }
+sent() { # want args...: exit 0, and the one turn sent is want
+    local want=$1; shift
+    rm -f "$TMP/requests.jsonl"
+    run --separate-stderr env ASK_CLAUDE_REPLAY="$FIX/sse/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" "$@"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.messages[0].content' "$TMP/requests.jsonl")" = "$want" ]
+}
 
 @test "refuse: -p anthropic is the default and still works" {
     unset ANTHROPIC_API_KEY
@@ -50,38 +50,43 @@ refused() { # args...
 
 # disable_help_subcommand makes `help` the positional prompt, so a bare
 # `help`, typed from habit (`git help`, `cargo help`), was sent as a turn.
-# The prompt is refused when it is the word alone; after `--` it is sent.
+# The prompt is refused when it is the word alone, and `--` does not let
+# it through: a one-word help gives the model nothing to act on, so the
+# hint names --help and no way to send the word.
 @test "refuse: a bare help points at --help instead of sending it" {
     local a
-    for a in help HELP Help "-m claude-opus-5-5 help" "-e low help"; do
+    for a in help HELP Help "-m claude-opus-5-5 help" "-e low help" "-- help" "-m claude-opus-5-5 -- help"; do
         # shellcheck disable=SC2086  # each case is several words on purpose
         refused $a
         grep -q -- '--help' <<<"$stderr"
-        grep -q -- '-- help' <<<"$stderr"
+        refute grep -q -- '-- help' <<<"$stderr"
     done
 }
 
-# @test "refuse: agent help, the same, before a session is created" {
-#     ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE refused agent help
-#     grep -q -- '--help' <<<"$stderr"
-#     grep -q -- 'agent -- help' <<<"$stderr"
-# }
+@test "refuse: agent help, the same, before a session is created" {
+    local a
+    for a in "agent help" "agent -- help"; do
+        # shellcheck disable=SC2086  # each case is several words on purpose
+        ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE refused $a
+        grep -q -- '--help' <<<"$stderr"
+        refute grep -q -- '-- help' <<<"$stderr"
+    done
+}
 
-# @test "refuse: a bare help is refused before the key check" {
-#     run --separate-stderr env -u ANTHROPIC_API_KEY ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" help
-#     [ "$status" -eq 2 ]
-#     [ ! -e "$TMP/requests.jsonl" ]
-#     grep -q -- '--help' <<<"$stderr"
-#     refute grep -q 'ANTHROPIC_API_KEY' <<<"$stderr"
-# }
+@test "refuse: a bare help is refused before the key check" {
+    run --separate-stderr env -u ANTHROPIC_API_KEY ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" help
+    [ "$status" -eq 2 ]
+    [ ! -e "$TMP/requests.jsonl" ]
+    grep -q -- '--help' <<<"$stderr"
+    refute grep -q 'ANTHROPIC_API_KEY' <<<"$stderr"
+}
 
-# @test "refuse: help after --, or as the start of a longer prompt, is sent" {
-#     sent help -- help
-#     sent help -m claude-opus-5-5 -- help
-#     sent "help me with this" "help me with this"
-#     run --separate-stderr env ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE \
-#         ASK_CLAUDE_REPLAY="$FIX/sessions/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" agent -- help
-#     [ "$status" -eq 0 ]
-#     [ "$output" = "pong" ]
-#     grep -q '"text":"help"' "$TMP/requests.jsonl"
-# }
+@test "refuse: help with anything after it is a prompt, and is sent" {
+    sent "help me with this" "help me with this"
+    sent "help?" "help?"
+    run --separate-stderr env ASK_CLAUDE_AGENT=agent_FIXTURE ASK_CLAUDE_ENVIRONMENT=env_FIXTURE \
+        ASK_CLAUDE_REPLAY="$FIX/sessions/text.sse" ASK_CLAUDE_REQUEST_LOG="$TMP/requests.jsonl" "$BIN" agent "help me with this"
+    [ "$status" -eq 0 ]
+    [ "$output" = "pong" ]
+    grep -q '"text":"help me with this"' "$TMP/requests.jsonl"
+}

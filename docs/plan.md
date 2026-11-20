@@ -335,3 +335,48 @@ code execution, an error, a chat, `--color=never`, and `NO_COLOR=1`.
 Version: one optional flag, so `just effort-floor` says micro. Colour on by
 default on a terminal changes what a person sees and nothing a program
 reads; the label is the maintainer's.
+
+## Binary tests in Rust
+
+Planned 2026-11-20, on the maintainer's decision of that date. It replaces
+the phase 5 decision "Black-box suite: bats stays" for the tests that run
+the binary; the tests of the bash tooling stay in bats. The reason: a failing
+Rust test is quicker for the maintainer to fix than a failing bats test, and
+a TUI or GUI, if one comes, is tested from Rust anyway, as the pty tests in
+`rust/tests/terminal.rs` already are. What makes a test black-box is the
+process boundary, not the language it is written in.
+
+### Decisions (settled 2026-11-20)
+
+| Decision | Choice | Consequence, and the alternative not taken |
+| --- | --- | --- |
+| Binary tests | Rust integration tests under `rust/tests/`, one file per bats file, that reach the binary only through `std::process::Command`: environment, arguments, stdin, exit status, stdout, stderr and the files it leaves in its sandbox | bats kept this property by construction; here it is a rule: a binary test does not `use ask_claude`, and `rust/tests/support/` is its only harness. `ASK_CLAUDE_BIN` still points the tests at another build. Not taken: one commit porting all of them, about 210 tests in one review |
+| Tooling tests | stay in bats: `effort-floor`, `check-effver`, `record-session`, `spec`, `00-harness` | they test `tools/effver/`, `tests/record-session.sh`, the justfile and the `usage` CLI's reading of the spec. A Rust test of them would shell out to the same tools, so bats, jq and usage stay in the developer's toolchain for as long as those are bash |
+| Patterns | a line assertion takes the regex its bats test grepped for, verbatim but for one translation: grep reads a basic regex, where `(`, `)`, `{`, `}`, `+`, `?` and `\|` are literal, so a twin escapes them | a twin is checked against its bats test by reading the two side by side. Not taken: a BRE-to-regex converter in the harness, more code than the escapes it saves |
+| Failure output | a miette report: the stream or file as the source, the lines at fault labelled, the invocation as help | the output a fix starts from. Not taken: `pretty_assertions` or `similar-asserts`, which diff two values and most assertions here are predicates over lines; a hand-written renderer, about a hundred lines of harness to keep |
+| JSON oracle | lost for the request log: a Rust assertion parses it with the serde_json the binary wrote it with | jq was a second parser, so a serde_json fault showed as a failure; now it can pass on both sides. The byte-for-byte goldens are unchanged and still hold the printer. Where a value is small, an assertion compares its exact text, not a parsed `Value` |
+| Pace | one pair of commits per bats file: the twins, green on arrival, then the deletion; a file is ported when a change touches it or one of its tests fails. New binary tests are Rust from B2 on | the suite is never half moved within a file. Not taken: porting on a schedule, which spends review on files nobody is changing |
+
+### Graph
+
+```file
+└─ B0  docs: plan the binary tests' move to Rust      (this section)
+   └─ B1  chore: miette and regex for the binary tests    C
+      └─ B2  test: Rust twins of chat.bats                C
+         └─ B3  test: chat.bats deleted                   C
+            └─ B4…  one pair per remaining file, as ported      C
+```
+
+B2 needs B1's crates. B3 needs B2: a bats test is deleted only once its twin
+is in the tree and green.
+
+| # | Commit | Files | Validation | Owner | Status |
+| --- | --- | --- | --- | --- | --- |
+| B0 | docs: plan the binary tests' move to Rust | `docs/plan.md` | the decision row it replaces is named; the tooling files that stay are listed | C | [x] |
+| B1 | chore: miette and regex for the binary tests | `rust/Cargo.toml`, `rust/Cargo.lock` | `cargo tree -e normal` unchanged, so the binary gains no crate; the dev tree gains miette, owo-colors, textwrap, smawk, unicode-linebreak and unicode-width 0.1, listed in the commit body. `textwrap = "=0.16.2"` holds back about 25 crates of ICU that 0.16.3 brings. `just rust-test` green | C | [x] |
+| B2 | test: Rust twins of `chat.bats` | `rust/tests/support/mod.rs`, `rust/tests/chat.rs` | green on arrival: it moves assertions, it adds no behaviour. Each of the 9 bats tests is matched to its twin in the commit body, assertion by assertion. Each twin is seen to fail once, with its pattern broken, and one report is quoted in the body. `bats tests/unit/chat.bats` green on the same build | C | [x] |
+| B3 | test: `chat.bats` deleted | `tests/unit/chat.bats`, `CONCEPTS.md` (Unit suite), `AGENTS.md` (the loop), `rust/tests/chat.rs` (its module comment) | `just unit-tests` green, 9 tests fewer; `just rust-test` green | C | [x] |
+| B4… | the same pair for each remaining file | `rust/tests/<file>.rs`, `rust/tests/support/mod.rs`, `tests/unit/<file>.bats` | as B2 and B3. The first file with an assertion on a request's JSON adds a labelled span on the value at fault to the report. `agent-local-mcp` goes last: `fake-server` is bash, and its process checks (`kill -0`, zombies) need their own helper | C | [ ] |
+
+Done when `tests/unit/` holds only the tooling tests and `bash.yml` runs
+those alone.

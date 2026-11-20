@@ -110,7 +110,7 @@ A recorded Stream, or a recorded request or response body, with every id and nam
 The pass that replaces every API identifier and name in a Fixture before it is tracked. It matches values, never keys, and it is tested without the API.
 
 ### Unit suite
-The bats tests that run the binary over Fixtures through the Replay seam, and the Rust tests that hold the crate's functions to the Goldens. It needs no key.
+The tests that run the binary over Fixtures through the Replay seam, and the Rust tests that hold the crate's functions to the Goldens. It needs no key. The tests of the binary are moving from bats to Rust one file at a time (`docs/plan.md`, "Binary tests in Rust"); a Rust one reaches the binary only through `rust/tests/support/`, so it stays black-box as the bats ones are. The tests of the bash tooling stay in bats.
 
 ### Live contract
 A hurl file that makes one cheap call against a real API and checks the shape of what comes back. Live contracts are the only tests that read the key, and none runs by default.

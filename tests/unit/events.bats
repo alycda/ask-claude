@@ -3,7 +3,7 @@
 load helpers
 
 # The event log: $XDG_STATE_HOME/ask-claude/events.jsonl, one JSON line per
-# request (lib/event.jq builds the line; tests/unit/event.bats has its goldens).
+# request (rust/src/event.rs builds the line; rust/tests/goldens.rs has its goldens).
 # These run the binary under test against recorded fixtures.
 
 replay() { ASK_CLAUDE_REPLAY="$FIX/sse/$1.sse" "$BIN" "${@:2}"; }
@@ -134,7 +134,16 @@ history_name() { basename "$(ls "$XDG_STATE_HOME"/ask-claude/*.json)" .json; }
     diff <(sed 's/ [0-9]*s\]$/]/' "$TMP/err.0") <(sed 's/ [0-9]*s\]$/]/' "$TMP/err.1")
 }
 
+# append_is_limited: an append to a file already at ulimit -f fails here.
+# Linux holds every write to the limit. macOS 15 does not hold an O_APPEND
+# write to it, so a log at the limit still grows and there is nothing to test.
+append_is_limited() {
+    head -c 2048 /dev/zero >"$TMP/limit-probe"
+    refute bash -c 'ulimit -f 2 && echo x >>"$1"' _ "$TMP/limit-probe" 2>/dev/null
+}
+
 @test "events: a log at the ulimit -f size is skipped, and the process lives" {
+    append_is_limited || skip "an append is not held to ulimit -f on this system"
     replay text "ping" >/dev/null 2>&1
     # 2 KiB: room for the replay and the chat, none for one more log line,
     # so the append raises SIGXFSZ (the script appends from a subshell)

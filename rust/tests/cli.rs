@@ -1,7 +1,7 @@
 //! The binary: its interface (R0), the bytes at its edges (R1: a stream
 //! line is bytes, decoded the way jq decodes it) and the first end-to-end
 //! turn through the replay seam (R5). The rest of the behaviour is the bats
-//! suite, run against this binary by `just test-rust`.
+//! suite, run against this binary by `just unit-tests`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,33 +18,30 @@ fn repo() -> PathBuf {
 }
 
 #[test]
-fn r0_usage_spec_is_the_bash_spec() {
+fn r0_usage_spec_names_the_binary_and_its_agent_command() {
     let out = bin().arg("--usage-spec").output().unwrap();
     assert!(out.status.success());
     let spec = String::from_utf8(out.stdout).unwrap();
     assert!(spec.contains("bin ask-claude"), "{spec}");
     assert!(spec.contains("cmd agent"), "{spec}");
+}
 
-    // usage diff against the script itself, when the usage CLI is here
-    if which::which_usage().is_none() {
-        eprintln!("usage not on PATH: the diff is left to `just parity`");
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let kdl = dir.path().join("rust.kdl");
-    std::fs::write(&kdl, &spec).unwrap();
-    let diff = Command::new("usage")
-        .arg("diff")
-        .arg(repo().join("ask-claude"))
-        .arg(&kdl)
-        .output()
-        .unwrap();
-    let report =
-        String::from_utf8_lossy(&diff.stdout).to_string() + &String::from_utf8_lossy(&diff.stderr);
-    // newer usage says "No interface changes." when the specs agree
+/// The spec has a record in the tree: `ask-claude.usage.kdl` at the root is
+/// what `--usage-spec` prints, byte for byte. `just effort-floor` and review
+/// read that file at any commit without building the binary of that commit,
+/// so a spec change that does not move the file is a spec change nothing
+/// records. The environment is cleared because the spec names environment
+/// variables and must not read them.
+#[test]
+fn d1_usage_spec_is_the_tracked_snapshot() {
+    let snapshot = std::fs::read(repo().join("ask-claude.usage.kdl"))
+        .expect("ask-claude.usage.kdl is tracked at the root");
+    let out = bin().arg("--usage-spec").env_clear().output().unwrap();
+    assert!(out.status.success());
     assert!(
-        report.contains("Found 0 breaking") || report.contains("No interface changes"),
-        "{report}"
+        out.stdout == snapshot,
+        "--usage-spec is not ask-claude.usage.kdl; `just spec` rewrites the snapshot:\n{}",
+        String::from_utf8_lossy(&out.stdout)
     );
 }
 
@@ -156,7 +153,7 @@ fn r0_unknown_flag_is_an_error() {
 }
 
 /// R5: the one shot through `ASK_CLAUDE_REPLAY`, the way `tests/unit/oneshot.bats`
-/// drives the bash script. Green means `just test-rust` is worth running.
+/// drives the binary. Green means `just unit-tests` is worth running.
 #[test]
 fn r5_one_shot_through_replay_prints_pong() {
     let state = tempfile::tempdir().unwrap();
@@ -597,13 +594,77 @@ fn ctrl_c_as_an_error_body_ends_exits_130_with_the_turn_dangling() {
     );
 }
 
-mod which {
-    /// `usage` on PATH, or None.
-    pub fn which_usage() -> Option<std::path::PathBuf> {
-        std::env::var_os("PATH").and_then(|paths| {
-            std::env::split_paths(&paths)
-                .map(|d| d.join("usage"))
-                .find(|p| p.is_file())
-        })
-    }
+// ---- D3: the two tests of stream.bats that run the binary, and the one
+// request.bats test whose input is the environment ----
+
+/// stream.bats, "a reply through the binary prints no bidi formatting
+/// character on stdout or stderr, and keeps U+200F": the model name and the
+/// stop reason on stderr are API values too and go through `safe`.
+#[test]
+fn d3_a_reply_prints_no_bidi_formatting_character_on_either_stream() {
+    let dir = tempfile::tempdir().unwrap();
+    let sse = dir.path().join("bidi.sse");
+    let events = [
+        r#"{"type":"message_start","message":{"model":"claude\u202e-opus-5-5","usage":{"input_tokens":1,"output_tokens":0}}}"#,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a\u202eb\u2066c\u200fd"}}"#,
+        r#"{"type":"content_block_stop","index":0}"#,
+        r#"{"type":"message_delta","delta":{"stop_reason":"stop\u2066_sequence"},"usage":{"output_tokens":3}}"#,
+        r#"{"type":"message_stop"}"#,
+    ];
+    let body: String = events.iter().map(|e| format!("data: {e}\n\n")).collect();
+    std::fs::write(&sse, body).unwrap();
+    let out = one_shot(dir.path(), &sse).arg("ping").output().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), "abc\u{200f}d\n");
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(!err.chars().any(is_bidi_formatting), "{err:?}");
+    assert!(
+        err.lines().any(|l| l.starts_with("[claude-opus-5-5 in=1 ")),
+        "{err}"
+    );
+    assert!(
+        err.lines().any(|l| l == "[stopped: stop_sequence]"),
+        "{err}"
+    );
+}
+
+/// stream.bats, "an API error message through the binary prints no bidi
+/// formatting character".
+#[test]
+fn d3_an_api_error_message_prints_no_bidi_formatting_character() {
+    let dir = tempfile::tempdir().unwrap();
+    let sse = dir.path().join("error.sse");
+    std::fs::write(
+        &sse,
+        r#"{"type":"error","error":{"type":"invalid_request_error","message":"bad \u202emodel\u2069 name\u200f"},"request_id":"req_FIXTURE"}"#,
+    )
+    .unwrap();
+    let out = one_shot(dir.path(), &sse).arg("ping").output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(!err.chars().any(is_bidi_formatting), "{err:?}");
+    assert!(err.contains("bad model name\u{200f}"), "{err:?}");
+}
+
+/// The nine characters stream.bats' `no_bidi` looks for.
+fn is_bidi_formatting(c: char) -> bool {
+    matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// request.bats, "request: a lone server's own token wins over the shared
+/// one". The token variables are read from the environment, so the test is
+/// the binary's request, read back from the request log.
+#[test]
+fn d3_a_lone_servers_own_token_wins_over_the_shared_one() {
+    let dir = tempfile::tempdir().unwrap();
+    one_shot(dir.path(), &repo().join("tests/fixtures/sse/mcp.sse"))
+        .env("ASK_CLAUDE_MCP_TOKEN", "tok_SHARED")
+        .env("ASK_CLAUDE_MCP_TOKEN_MCP_DEEPWIKI_COM", "tok_A")
+        .args(["--mcp", "https://mcp.deepwiki.com/mcp", "ping"])
+        .assert()
+        .success();
+    let log = std::fs::read_to_string(dir.path().join("requests.jsonl")).unwrap();
+    let request: serde_json::Value = serde_json::from_str(log.lines().next().unwrap()).unwrap();
+    assert_eq!(request["mcp_servers"][0]["authorization_token"], "tok_A");
 }

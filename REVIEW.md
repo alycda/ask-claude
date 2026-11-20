@@ -26,14 +26,15 @@ needs, what the severities mean here, and what not to flag.
   medium and seven low; nothing here has been high yet.
 - **medium**: the same principal gets a write or a grant inside the state
   directory, or a displayed value that differs from the one approved.
-- **low**: hardening with the same trust as the script, or a defect
+- **low**: hardening with the same trust as the binary, or a defect
   reachable only by the user's own input.
 
 ## What not to flag
 
-- Behaviour that matches a golden is not a defect: the golden is what the
-  oracle does today. Flag it as a candidate for a golden change, which is
-  its own commit saying why the oracle was wrong.
+- Behaviour that matches a golden is not a defect: the goldens are frozen
+  at what the bash script printed when it was removed. Flag it as a
+  candidate for a golden change, which is its own commit saying why the
+  golden was wrong.
 - Warnings in a reference or imported script that the port has already
   fixed. The shellcheck findings in the imported `claude.sh` were left
   there on purpose while it was the oracle.

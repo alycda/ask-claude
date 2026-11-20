@@ -1,0 +1,95 @@
+name ask-claude
+bin ask-claude
+about "chat loop; /new resets, /quit exits"
+unknown_flags error
+disable_help_subcommand #true
+args_override_self #false
+usage "Usage: ask-claude [OPTIONS] [prompt] [COMMAND]"
+flag "-m --model" help="a full model id (see https://platform.claude.com/docs/en/api/cli/models/list)" global=#true default=claude-opus-5-5 {
+    arg <model>
+}
+flag "-e --effort" help="how hard the model thinks" global=#true default=medium {
+    arg <effort> {
+        choices low medium high xhigh max
+    }
+}
+flag "-S --system" help="system prompt" global=#true {
+    arg <system>
+}
+flag "-s --skills" help="comma-separated <skill_id>[@<version>]" global=#true {
+    arg <skills>
+}
+flag "-p --provider" help="anthropic, or openai for any chat-completions API (see --base-url)" global=#true default=anthropic {
+    arg <provider>
+}
+flag --base-url help="API root, e.g. https://api.venice.ai/api/v1 for Venice; defaults per provider" global=#true env=ANTHROPIC_BASE_URL {
+    arg <url>
+}
+flag --max-tokens help="cap on output tokens per reply" global=#true default="16000" {
+    arg <n>
+}
+flag --web help="let the model search and fetch the web (server tools; searches cost extra)" global=#true
+flag --mcp help="an MCP server (https) the model may call; repeatable; its token in ASK_CLAUDE_MCP_TOKEN_<HOST>, or ASK_CLAUDE_MCP_TOKEN for a lone server" var=#true global=#true {
+    arg <url>
+}
+flag --advisor help="a model the reply may consult mid-turn (server tool, at most 3 calls a turn, billed at that model's rates); must be at least as capable as -m" global=#true {
+    arg <model>
+}
+flag --mcp-tool help="only these tools of that --mcp server, e.g. mcp.example.com:search; repeatable; a server not named keeps all its tools" var=#true global=#true {
+    arg <mcp-tool>
+}
+flag --github help="shorthand for --mcp https://api.githubcopilot.com/mcp/, GitHub's MCP server, default toolsets, read and write; needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM" global=#true
+flag --github_ro help="shorthand for --mcp https://api.githubcopilot.com/mcp/x/repos/readonly, GitHub's MCP server, repos toolset, read-only; needs ASK_CLAUDE_MCP_TOKEN_API_GITHUBCOPILOT_COM" global=#true
+flag "-f --file" help="prepend this file's contents to the prompt" global=#true {
+    arg <file>
+}
+flag "-V --version" help="print the version"
+arg "[prompt]" help="one shot, prints the response" required=#false
+cmd list display_order=16 args_override_self=#false help="chats on disk, newest first"
+cmd resume display_order=17 args_override_self=#false help="continue a chat" {
+    arg "[chat]" help="chat name or unique prefix; newest chat if omitted" required=#false
+}
+cmd agent display_order=18 args_override_self=#false help="a Managed Agents session: one shot with a prompt, a chat without" {
+    flag --agent help="agent id from the Console" global=#true env=ASK_CLAUDE_AGENT {
+        arg <id>
+    }
+    flag --environment help="environment id from the Console" global=#true env=ASK_CLAUDE_ENVIRONMENT {
+        arg <id>
+    }
+    flag --budget help="spend cap for the session at list price; 0 for none" global=#true allow_negative_numbers=#true default="100" {
+        arg <cents> allow_negative_numbers=#true
+    }
+    flag --vault help="vault of credentials to attach; repeatable" var=#true global=#true {
+        arg <id>
+    }
+    flag --repo help="GitHub repository to mount, owner/name[@branch]; GITHUB_TOKEN" global=#true {
+        arg <url>
+    }
+    flag --memory help="memory store to attach, <id>[:ro]; repeatable, up to 8" var=#true global=#true {
+        arg <id>
+    }
+    flag --force help="files: overwrite what exists" global=#true
+    flag --local-mcp help="a stdio MCP server on this machine that answers the agent's custom tools, e.g. 'tb --mcp'" global=#true env=ASK_CLAUDE_LOCAL_MCP {
+        arg <command>
+    }
+    arg "[prompt]" help="one shot in a new session" required=#false
+    cmd list display_order=8 args_override_self=#false help="sessions, newest first"
+    cmd tools display_order=9 args_override_self=#false help="the --local-mcp server's tools as custom tool definitions, for the agent"
+    cmd resume display_order=10 args_override_self=#false help="continue a session" {
+        arg <session> help="session id or unique prefix"
+    }
+    cmd files display_order=11 args_override_self=#false help="what the agent wrote; download the named ones" {
+        arg <session>
+        arg "[name]…" help="files to download into the current directory" required=#false var=#true var_min=0
+    }
+    cmd budget display_order=12 args_override_self=#false help="change the spend cap of a session" {
+        arg <session>
+        arg <cents> help="new cap at list price; 0 removes it, for good"
+    }
+    cmd archive display_order=13 args_override_self=#false help="archive an idle session" {
+        arg <session>
+    }
+    cmd trace display_order=14 args_override_self=#false help="print the Console URL of a session" {
+        arg <session>
+    }
+}

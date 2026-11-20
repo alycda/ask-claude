@@ -62,9 +62,15 @@ dir="${3:-$(dirname "$0")/fixtures/sessions}"
 : "${ANTHROPIC_API_KEY:?}" "${ASK_CLAUDE_AGENT:?}" "${ASK_CLAUDE_ENVIRONMENT:?}"
 api="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
 # the key goes where the variable points, and it is often exported for other
-# tools: ask-claude's gate (lib/config.bash) and its notice, before any request
-# shellcheck source=lib/common.bash
-. "$(dirname "$0")/../lib/common.bash" # safe_text
+# tools: ask-claude's gate (rust/src/config.rs) and its notice, before any request
+
+# safe_text <string>: the string without what must not reach a terminal:
+# control characters other than tab and newline, C1, and the nine
+# bidirectional formatting characters. The same set as `safe` in
+# rust/src/stream.rs: change both together.
+safe_text() {
+  printf '%s' "$1" | jq -Rrs 'explode | map(select(. == 9 or . == 10 or (. >= 32 and . != 127 and (. < 128 or . > 159) and (. < 8234 or . > 8238) and (. < 8294 or . > 8297)))) | implode'
+}
 case "$api" in
 *@*) echo "record-session: ANTHROPIC_BASE_URL must not carry user info (an @), got: $(safe_text "$api")" >&2; exit 2 ;;
 https://*) ;;

@@ -1,10 +1,7 @@
-# Checks on the Rust port (rust/, docs/plan.md phase 4), run only when its
-# files or the spec it must match change. Two steps must pass from the first
-# scaffold: the crate builds, and `just parity` finds no breaking difference
-# between the two usage specs. fmt, clippy and the tests are allowed to fail
-# until the port clears its gates: the golden tests are red on todo!() by
-# design until each step lands, and a spike may be unformatted. Turn
-# continue-on-error off when the parity gate's verified commit says so.
+# Checks on the crate (rust/), run only when its files, the fixtures or the
+# spec snapshot change: fmt and clippy, the build, `just check-spec` (the
+# tracked snapshot is what the binary prints) and the tests. Every step must
+# pass.
 name: Rust
 
 on:
@@ -12,7 +9,7 @@ on:
     branches: [main]
     paths:
       - 'rust/**'
-      - 'ask-claude'
+      - 'ask-claude.usage.kdl'
       - 'tests/fixtures/**'
       - 'mise.toml'
       - 'mise.lock'
@@ -21,7 +18,7 @@ on:
   pull_request:
     paths:
       - 'rust/**'
-      - 'ask-claude'
+      - 'ask-claude.usage.kdl'
       - 'tests/fixtures/**'
       - 'mise.toml'
       - 'mise.lock'
@@ -33,7 +30,7 @@ permissions:
 
 jobs:
   rust:
-    name: rust (build, parity, lint, test)
+    name: rust (build, spec, lint, test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -52,8 +49,8 @@ jobs:
       - name: Build
         run: just build
 
-      - name: Parity of the two usage specs
-        run: just parity
+      - name: The spec snapshot is current
+        run: just check-spec
 
       - name: Tests
         run: just rust-test

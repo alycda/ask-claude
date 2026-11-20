@@ -1,0 +1,21 @@
+{
+  "model": "my secret prompt\nsecond line",
+  "stop_reason": "end_turn\u001b[2J",
+  "stop_details": {
+    "category": "the user asked: how do I"
+  },
+  "usage": {
+    "input_tokens": 1,
+    "output_tokens": 1,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "iterations": [
+      {
+        "type": "advisor_message",
+        "model": "advisor said: \u0007ring",
+        "input_tokens": 1,
+        "output_tokens": 1
+      }
+    ]
+  }
+}

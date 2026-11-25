@@ -335,3 +335,53 @@ code execution, an error, a chat, `--color=never`, and `NO_COLOR=1`.
 Version: one optional flag, so `just effort-floor` says micro. Colour on by
 default on a terminal changes what a person sees and nothing a program
 reads; the label is the maintainer's.
+
+## Phase 7: files a Messages reply wrote
+
+Planned 2026-11-25. With `-s`, the model runs code in a container, and a
+`bash_code_execution` call returns each file it left in `$OUTPUT_DIR` as
+a `{"type": "bash_code_execution_output", "file_id": ...}` entry in the
+result's `content` list ([code execution tool, "Retrieve generated
+files"](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool#retrieve-generated-files)).
+The Chat already keeps that content, and so the ids. Nothing reads them:
+`agent files` gets a session's files back, and a Messages Chat has no way
+to. The Files API is out of beta: `GET /v1/files/<id>` is the metadata
+(`filename`, `size_bytes`, `downloadable`), `GET /v1/files/<id>/content`
+the bytes, with `x-api-key` and `anthropic-version` and no beta header.
+
+### Decisions (proposed 2026-11-25, not settled)
+
+| Decision | Choice | Consequence, and the alternative not taken |
+| --- | --- | --- |
+| Shape | `ask-claude files <chat> [name]... [--force]`, the twin of `agent files <session> [name]...` | one subcommand, one spec change, and an added subcommand keeps the floor at micro. Not taken: downloading every file after each turn, which writes model-chosen names into the working directory unasked; and `/files` in the chat loop alone, which a one-shot cannot reach |
+| The ids | read from the Chat on disk, every assistant turn, each id once, in the order first written | the list needs no request when a Chat has no file, and the Chat is the record. Not taken: listing `GET /v1/files` for the workspace, which mixes every Chat's and every upload's files |
+| The list | `name  size  id`, aligned as `agent files` aligns it, every name through `safe` | the name is the model's: it is listed as it is, so a person can see it, and refused as a download target if it is a path or starts with `.` or `-` |
+| An id | validated as a file id before it names a URL (`CODING_STANDARDS.md`, "Values the API controls"); one that is not is named on stderr and never sent | the id came from the reply, so it is API-controlled. Exit 1 at the end, after the rest are listed |
+| Metadata that is an error | the id and the API's message on stderr, the rest listed, exit 1 | an expired file is 404 on its content and its metadata is kept 30 days, so one gone file must not hide the others |
+| Downloads | the rules of `agent files`: a name from the list, into the current directory, mode 600, through a fresh temp file and one rename, `--force` for a regular file only | one rule for both commands. Not taken: sharing `--force` as a global flag, which would put it on every command's help |
+| After a turn | `[<n> file(s): ask-claude files <chat>]` on stderr when the reply wrote any; stdout unchanged | the reply's printer and its goldens stay as they are. Not taken: a `(file <name>)` marker in the stream, which needs a metadata request per file mid-stream and changes stdout |
+| Replay | under `files`, `ASK_CLAUDE_REPLAY` is a directory of `<id>.json` (the metadata) and `<id>` (the content) | `tests/fixtures/files/`; the stream replay is untouched, since `files` sends no turn |
+
+### Graph
+
+```file
+└─ V   version(0.4.0)
+   └─ P7  docs: plan phase 7                                  C
+      └─ W1  test: files code execution wrote                 C
+         └─ W2  TODO: record code-execution-file.sse live     C
+            └─ W3  TODO: feat: ask-claude files               A
+               └─ V7  TODO(verifier) → version                A
+```
+
+A chain, because each step reads the one before: W2 may change the file
+entry W1 assumed, and W3 is written against whatever W2 leaves.
+
+| # | Commit | Files | Validation | Owner | Status |
+| --- | --- | --- | --- | --- | --- |
+| W1 | test: files code execution wrote | `tests/fixtures/sse/code-execution-file.{sse,message.json,stream.txt}`, `tests/fixtures/files/`, `tests/unit/files.bats`, `ask-claude.usage.kdl` | red for exactly the 16 new tests in `files.bats` and `d1_usage_spec_is_the_tracked_snapshot`. Green before and after: a reply that wrote no file names no command, and `r1`, `r2` and `r4` over the new fixture, whose goldens are the binary's output | C | [t] |
+| W2 | test: record code-execution-file.sse live | `tests/fixtures/sse/code-execution-file.*` | the W1 fixture is hand-written from `code-execution.sse`: the docs show the result's `content` only empty, so the entry's `type` is unconfirmed. One `-s` turn against api.anthropic.com whose command writes `$OUTPUT_DIR/report.md`, the stream saved as `sse/code-execution.sse` was and its ids redacted with `tests/record-session.sh --redact`, so the file id is `file_FIXTURE01`; if the entry differs, the tests that read it change in this commit, saying why | C | [ ] |
+| W3 | feat: `ask-claude files` | `rust/src/` | W1 and W2 green, no edit to them; `just check-spec`; README's command table gains the line | A | [ ] |
+
+Gate (V7), in order: `just lint`, `just rust-test`, `just unit-tests`,
+`just check-spec`, `just test`; then live, one `-s` turn that writes a
+file, `ask-claude files <chat>` and a download of it.

@@ -49,7 +49,12 @@ cmd list display_order=16 args_override_self=#false help="chats on disk, newest 
 cmd resume display_order=17 args_override_self=#false help="continue a chat" {
     arg "[chat]" help="chat name or unique prefix; newest chat if omitted" required=#false
 }
-cmd agent display_order=18 args_override_self=#false help="a Managed Agents session: one shot with a prompt, a chat without" {
+cmd files display_order=18 args_override_self=#false help="files code execution wrote in a chat; download the named ones" {
+    flag --force help="overwrite what exists"
+    arg <chat> help="chat name or unique prefix"
+    arg "[name]…" help="files to download into the current directory" required=#false var=#true var_min=0
+}
+cmd agent display_order=19 args_override_self=#false help="a Managed Agents session: one shot with a prompt, a chat without" {
     flag --agent help="agent id from the Console" global=#true env=ASK_CLAUDE_AGENT {
         arg <id>
     }
